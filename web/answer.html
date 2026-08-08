@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#13231d">
+  <title>培训效果评估 · 研序</title>
+  <link rel="icon" href="/assets/yx-mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/studio.css">
+</head>
+<body class="answer-page">
+  <main class="answer-wrap" id="app">
+    <div class="answer-brand"><img class="brand-symbol" src="/assets/yx-mark.svg" alt=""><span>研序</span></div>
+    <div class="answer-card"><div class="answer-skeleton" role="status" aria-label="正在加载问卷" aria-busy="true"><span></span><span></span><span></span><span></span></div></div>
+  </main>
+  <script src="/lucide.min.js"></script>
+  <script>
+    const $ = (s, el) => (el || document).querySelector(s);
+    const $$ = (s, el) => Array.from((el || document).querySelectorAll(s));
+    const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const icon = (name, cls = '') => `<i data-lucide="${esc(name)}" class="${esc(cls)}" aria-hidden="true"></i>`;
+    const refreshIcons = (root = document) => { if (window.lucide) window.lucide.createIcons({ root, attrs: { 'stroke-width': 1.75 } }); };
+    const token = new URLSearchParams(location.search).get('token') || '';
+    const draftKey = 'yansu-questionnaire-draft:' + token;
+    const scoreLabels = ['很差', '较差', '一般', '满意', '非常满意'];
+
+    async function load() {
+      if (!token) { showError('问卷链接不完整', '请向培训组织方重新获取有效链接。'); return; }
+      try {
+        const res = await fetch('/api/q/pub?token=' + encodeURIComponent(token));
+        const data = await res.json();
+        if (data.code !== 0) { showError(data.msg || '链接已失效'); return; }
+        render(data.data);
+      } catch (e) { showError('暂时无法加载问卷', '请检查网络后刷新页面重试。'); }
+    }
+
+    function brand() {
+      return `<div class="answer-brand"><img class="brand-symbol" src="/assets/yx-mark.svg" alt=""><span>研序</span></div>`;
+    }
+
+    function showError(title, detail = '如有疑问，请联系培训组织方。') {
+      $('#app').innerHTML = `${brand()}<div class="answer-card answer-success"><span class="success-icon" style="background:var(--danger-bg);color:var(--danger)">${icon('link-2-off')}</span><h2>${esc(title)}</h2><p>${esc(detail)}</p><button type="button" class="btn gray answer-retry" id="answer-retry">${icon('refresh-cw')}重新加载</button></div>`;
+      $('#answer-retry').onclick = () => location.reload();
+      refreshIcons($('#app'));
+    }
+
+    function render(data) {
+      document.title = `${data.title} · 研序`;
+      const requiredTotal = data.questions.filter((q) => q.type !== 'text').length;
+      $('#app').innerHTML = `
+        ${brand()}
+        <div class="answer-progress" ${requiredTotal ? '' : 'hidden'}>
+          <div><span>必答题完成度</span><span id="progress-text">0 / ${requiredTotal}</span></div>
+          <div class="progress"><i id="progress-bar" style="width:0%"></i></div>
+        </div>
+        <section class="answer-card answer-head">
+          <span class="eyebrow">培训效果评估</span>
+          <h1>${esc(data.title)}</h1>
+          <p>${data.project_title ? `本问卷用于了解“${esc(data.project_title)}”的培训效果。` : '您的反馈将帮助我们持续改进培训体验。'}所有结果仅用于培训分析与改进。</p>
+          <div class="answer-meta"><span>${icon('users-round')}${esc(data.target)}</span><span>${icon('list-checks')}${data.questions.length} 道题</span><span>${icon('clock-3')}预计 ${Math.max(2, Math.ceil(data.questions.length * .45))} 分钟</span></div>
+        </section>
+        <form class="answer-card" id="answer-form" novalidate>
+          <div class="aq">
+            <label class="qt" for="respondent">您的称呼 <span style="color:var(--text-3);font-weight:400">（选填）</span></label>
+            <input class="answer-text" id="respondent" autocomplete="name" placeholder="如：张先生 / 李女士；也可匿名提交">
+          </div>
+          ${data.questions.map((q, i) => questionHtml(q, i)).join('')}
+          <button type="submit" class="btn answer-submit" id="submit">${icon('send')}<span>提交问卷</span></button>
+          <p class="answer-privacy">${icon('shield-check')}回答会自动保存在当前设备，提交后仅用于本次培训的效果分析与改进。</p>
+        </form>`;
+      restoreDraft(data.questions);
+      bindInteractions(data.questions);
+      refreshIcons($('#app'));
+    }
+
+    function questionHtml(q, i) {
+      const required = q.type !== 'text';
+      const title = `<div class="qt">${i + 1}. ${esc(q.title)}${required ? '<span class="required-mark" aria-label="必答">*</span>' : '<span style="color:var(--text-3);font-weight:400">（选填）</span>'}</div>`;
+      let control = '';
+      if (q.type === 'score') {
+        control = `<div class="score-group" role="radiogroup" aria-label="${esc(q.title)}">${[1,2,3,4,5].map((n) => `<label class="score-option"><input type="radio" name="q${i}" value="${n}" ${required ? 'required' : ''}><b>${n}</b><small>${scoreLabels[n - 1]}</small></label>`).join('')}</div>`;
+      } else if (q.type === 'single') {
+        control = `<div class="radio-list" role="radiogroup" aria-label="${esc(q.title)}">${(q.options || []).map((o) => `<label class="radio-option"><input type="radio" name="q${i}" value="${esc(o)}" ${required ? 'required' : ''}><span>${esc(o)}</span></label>`).join('')}</div>`;
+      } else {
+        control = `<textarea name="q${i}" placeholder="请输入您的意见或建议…" aria-label="${esc(q.title)}"></textarea>`;
+      }
+      return `<section class="aq" data-i="${i}" data-type="${esc(q.type)}">${title}${control}<div class="question-error" aria-live="polite"></div></section>`;
+    }
+
+    function bindInteractions(questions) {
+      $$('input[type="radio"]').forEach((input) => {
+        input.onchange = () => {
+          const aq = input.closest('.aq');
+          $$('.score-option, .radio-option', aq).forEach((label) => label.classList.toggle('on', $('input', label).checked));
+          $('.question-error', aq).textContent = '';
+          updateProgress(questions);
+          saveDraft(questions);
+        };
+      });
+      $$('textarea, #respondent').forEach((input) => { input.oninput = () => saveDraft(questions); });
+      $('#answer-form').onsubmit = (e) => { e.preventDefault(); submit(questions); };
+      updateProgress(questions);
+    }
+
+    function restoreDraft(questions) {
+      try {
+        const draft = JSON.parse(localStorage.getItem(draftKey) || 'null');
+        if (!draft) return;
+        $('#respondent').value = draft.respondent || '';
+        questions.forEach((q, i) => {
+          const value = draft.answers && draft.answers[i];
+          if (value === undefined || value === null || value === '') return;
+          if (q.type === 'text') {
+            const textarea = $(`textarea[name="q${i}"]`);
+            if (textarea) textarea.value = value;
+          } else {
+            const input = $$(`input[name="q${i}"]`).find((item) => String(item.value) === String(value));
+            if (input) { input.checked = true; input.closest('label').classList.add('on'); }
+          }
+        });
+      } catch (e) { /* 本地草稿损坏不影响答题 */ }
+    }
+
+    function saveDraft(questions) {
+      try {
+        const answers = questions.map((q, i) => q.type === 'text' ? ($(`textarea[name="q${i}"]`)?.value || '') : ($(`input[name="q${i}"]:checked`)?.value || ''));
+        localStorage.setItem(draftKey, JSON.stringify({ respondent: $('#respondent')?.value || '', answers }));
+      } catch (e) { /* 无法使用本地存储时继续正常答题 */ }
+    }
+
+    function updateProgress(questions) {
+      const required = questions.map((q, i) => ({ q, i })).filter((x) => x.q.type !== 'text');
+      const done = required.filter((x) => $(`input[name="q${x.i}"]:checked`)).length;
+      const pct = required.length ? done / required.length * 100 : 0;
+      if (!required.length) return;
+      $('#progress-text').textContent = `${done} / ${required.length}`;
+      $('#progress-bar').style.width = pct + '%';
+    }
+
+    async function submit(questions) {
+      const answers = [];
+      let firstInvalid = null;
+      questions.forEach((q, i) => {
+        const aq = $(`.aq[data-i="${i}"]`);
+        const error = $('.question-error', aq);
+        error.textContent = '';
+        if (q.type === 'text') {
+          answers.push({ value: $('textarea', aq).value.trim() });
+          return;
+        }
+        const checked = $(`input[name="q${i}"]:checked`, aq);
+        if (!checked) {
+          error.textContent = '这道题需要作答';
+          if (!firstInvalid) firstInvalid = $('input', aq) || aq;
+          answers.push({ value: q.type === 'score' ? 0 : '' });
+        } else {
+          answers.push({ value: q.type === 'score' ? Number(checked.value) : checked.value });
+        }
+      });
+      if (firstInvalid) {
+        firstInvalid.focus({ preventScroll: true });
+        firstInvalid.closest('.aq').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
+      const btn = $('#submit');
+      btn.disabled = true;
+      btn.innerHTML = `${icon('loader-circle', 'spin')}<span>正在提交</span>`;
+      refreshIcons(btn);
+      try {
+        const res = await fetch('/api/q/answer', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token, respondent: $('#respondent').value.trim() || '匿名', answers }),
+        });
+        const data = await res.json();
+        if (data.code !== 0) throw new Error(data.msg || '提交失败');
+        try { localStorage.removeItem(draftKey); } catch (e) {}
+        $('#app').innerHTML = `${brand()}<div class="answer-card answer-success"><span class="success-icon">${icon('circle-check-big')}</span><h2>感谢您的反馈</h2><p>问卷已成功提交，您的意见将帮助我们做得更好。</p></div>`;
+        refreshIcons($('#app'));
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } catch (e) {
+        btn.disabled = false;
+        btn.innerHTML = `${icon('send')}<span>重新提交</span>`;
+        refreshIcons(btn);
+        const old = $('.submit-error');
+        if (old) old.remove();
+        btn.insertAdjacentHTML('beforebegin', `<p class="submit-error" role="alert">${esc(e.message || '提交失败，请稍后重试')}</p>`);
+      }
+    }
+
+    refreshIcons(document);
+    load();
+  </script>
+</body>
+</html>
