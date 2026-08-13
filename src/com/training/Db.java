@@ -221,15 +221,21 @@ public class Db {
         Connection c = get();
         boolean previousAutoCommit = c.getAutoCommit();
         c.setAutoCommit(false);
+        Exception failure = null;
         try {
             T result = work.run();
             c.commit();
             return result;
         } catch (Exception e) {
+            failure = e;
             try { c.rollback(); } catch (SQLException rollbackError) { e.addSuppressed(rollbackError); }
             throw e;
         } finally {
-            c.setAutoCommit(previousAutoCommit);
+            try { c.setAutoCommit(previousAutoCommit); }
+            catch (SQLException restoreError) {
+                if (failure != null) failure.addSuppressed(restoreError);
+                else throw restoreError;
+            }
         }
     }
 
@@ -277,6 +283,10 @@ public class Db {
 
     private static void bind(PreparedStatement ps, Object... args) throws SQLException {
         for (int i = 0; i < args.length; i++) {
+            Object value = args[i];
+            if ((value instanceof Double && !Double.isFinite((Double) value)) ||
+                    (value instanceof Float && !Float.isFinite((Float) value)))
+                throw new SQLException("拒绝写入非有限数值");
             ps.setObject(i + 1, args[i]);
         }
     }

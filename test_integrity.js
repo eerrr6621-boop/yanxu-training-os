@@ -1,10 +1,29 @@
 /* 关键业务不变量回归：请只在隔离数据库上运行。 */
-const BASE = process.env.TRAINING_API_BASE || 'http://localhost:8080/api';
+function requireLoopbackApiBase() {
+  const raw = String(process.env.TRAINING_API_BASE || '').trim();
+  if (!raw) throw new Error('必须显式设置 TRAINING_API_BASE，例如 http://127.0.0.1:18082/api');
+  let url;
+  try { url = new URL(raw); } catch { throw new Error('TRAINING_API_BASE 不是有效 URL'); }
+  if (!['http:', 'https:'].includes(url.protocol)) throw new Error('TRAINING_API_BASE 仅支持 http/https');
+  if (url.username || url.password || url.search || url.hash) throw new Error('TRAINING_API_BASE 不得包含凭据、查询参数或片段');
+  const host = url.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  const ipv4 = host.split('.').map(Number);
+  const isLoopback = host === 'localhost' || host === '::1' || host === '0:0:0:0:0:0:0:1' ||
+    (ipv4.length === 4 && ipv4.every((part) => Number.isInteger(part) && part >= 0 && part <= 255) && ipv4[0] === 127);
+  if (!isLoopback) throw new Error(`拒绝非 loopback 测试目标: ${url.hostname}`);
+  const path = url.pathname.replace(/\/+$/, '') || '/';
+  if (path !== '/api') throw new Error('TRAINING_API_BASE 路径必须为 /api');
+  return url.origin + path;
+}
+
+let BASE;
+try { BASE = requireLoopbackApiBase(); }
+catch (error) { console.error('安全检查失败:', error.message); process.exit(2); }
 let token = '';
 let pass = 0;
 let fail = 0;
 
-async function call(path, body, auth = token) {
+async function callWithStatus(path, body, auth = token) {
   const headers = { 'Content-Type': 'application/json' };
   if (auth) headers['X-Token'] = auth;
   const response = await fetch(BASE + path, {
@@ -12,7 +31,26 @@ async function call(path, body, auth = token) {
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  return response.json();
+  return { status: response.status, body: await response.json() };
+}
+
+async function call(path, body, auth = token) {
+  return (await callWithStatus(path, body, auth)).body;
+}
+
+async function rawCall(path, options = {}) {
+  const method = options.method || (options.rawBody === undefined ? 'GET' : 'POST');
+  const headers = { ...(options.headers || {}) };
+  const auth = options.auth === undefined ? token : options.auth;
+  if (auth) headers['X-Token'] = auth;
+  if (options.cookie) headers.Cookie = options.cookie;
+  if (options.contentType !== null && options.rawBody !== undefined)
+    headers['Content-Type'] = options.contentType || 'application/json';
+  const response = await fetch(BASE + path, { method, headers, body: options.rawBody });
+  const text = await response.text();
+  let body = null;
+  try { body = text ? JSON.parse(text) : null; } catch { body = null; }
+  return { status: response.status, headers: response.headers, text, body };
 }
 
 function check(name, condition, detail = '') {
@@ -34,6 +72,53 @@ function closeEnough(a, b) {
   check('管理员登录', r.code === 0 && r.data && r.data.token);
   token = r.data.token;
 
+  let http = await callWithStatus('/dispatches?project_id=not-a-number');
+  check('非法 project_id 返回 HTTP 400', http.status === 400 && http.body.code === 400);
+  http = await callWithStatus('/dispatches?teacher_id=not-a-number');
+  check('非法 teacher_id 返回 HTTP 400', http.status === 400 && http.body.code === 400);
+  http = await callWithStatus('/stats/q?id=not-a-number');
+  check('非法 questionnaire id 返回 HTTP 400', http.status === 400 && http.body.code === 400);
+
+  const demandPayload = (title, status = '待处理') => ({
+    title, unit: '状态原子性测试单位', contact: '测试员', phone: '13900000001', hours: 4,
+    content: '验证项目启动与需求状态的一致性', teacher_req: '测试师资',
+    expect_date: '2026-08-10', status, remark: '',
+  });
+  const startableProject = (title, demandId) => ({
+    demand_id: demandId, bid_id: 0, title, unit: '状态原子性测试单位', hours: 4, amount: 0,
+    start_date: '2026-08-10', end_date: '2026-08-11', owner: '测试员',
+    participant_count: 8, delivery_mode: '线下集中', venue: '测试教室', contract_no: '',
+    status: '进行中', remark: '',
+  });
+
+  r = await call('/demands', demandPayload('新需求不能伪造完成', '已完成'));
+  check('新需求不能伪造完成状态', r.code === 400);
+  r = await call('/demands', demandPayload('新需求不能伪造流标', '已流标'));
+  check('新需求不能伪造流标状态', r.code === 400);
+
+  r = await call('/demands', demandPayload('合法启动需求'));
+  check('创建合法待处理需求测试数据', r.code === 0);
+  const startableDemandId = r.data;
+  r = await call('/bids', { demand_id: startableDemandId, amount: 1000, proposal: '完整性测试方案', bid_date: '2026-08-01', status: '待评审', review: '' });
+  check('合法需求可创建投标', r.code === 0);
+  const startableBidId = r.data;
+  r = await call('/bids/win', { id: startableBidId });
+  check('中标流程自动创建待启动项目', r.code === 0 && r.data && r.data.project_id > 0);
+  const startableProjectId = r.data.project_id;
+  const startableProjects = await call('/projects');
+  const startableProjectRow = startableProjects.data.find((x) => x.id === startableProjectId);
+  r = await call('/projects', {
+    ...startableProjectRow, owner: '测试员', participant_count: 8,
+    delivery_mode: '线下集中', venue: '测试教室', end_date: '2026-08-11',
+    contract_no: 'TEST-STARTABLE-001',
+  });
+  check('补齐自动立项项目的启动资料', r.code === 0);
+  http = await callWithStatus('/projects/start', { id: startableProjectId });
+  check('关联已立项需求的项目可合法启动', http.status === 200 && http.body.code === 0);
+  const [startedProjects, startedDemands] = await Promise.all([call('/projects'), call('/demands')]);
+  check('合法启动后项目进入进行中', startedProjects.data.find((x) => x.id === startableProjectId && x.status === '进行中'));
+  check('合法启动后关联需求进入进行中', startedDemands.data.find((x) => x.id === startableDemandId && x.status === '进行中'));
+
   r = await call('/projects', {
     title: '完整性测试项目', unit: '测试单位', hours: 4, amount: 1000,
     start_date: '2026-08-03', end_date: '2026-08-04', owner: '测试员',
@@ -42,9 +127,18 @@ function closeEnough(a, b) {
   });
   check('新项目不能伪造归档状态', r.code === 0);
   const projectId = r.data;
+  r = await call('/projects', {
+    demand_id: -1, bid_id: -1, title: '负数来源不能绕过校验', unit: '测试单位', hours: 4, amount: 1000,
+    start_date: '2026-08-03', end_date: '2026-08-04', owner: '测试员',
+    participant_count: 10, delivery_mode: '线下集中', venue: '测试教室',
+    contract_no: 'TEST-NEGATIVE-SOURCE', status: '待启动', remark: '',
+  });
+  check('新项目拒绝负数需求与投标来源编号', r.code === 400);
   r = await call('/projects');
   let project = r.data.find((x) => x.id === projectId);
-  check('新项目由服务端设为进行中', project && project.status === '进行中');
+  check('新项目由服务端设为待启动', project && project.status === '待启动');
+  r = await call('/projects/start', { id: projectId });
+  check('资料完整后可启动项目', r.code === 0);
 
   r = await call('/teachers/checkout', { id: 5 });
   check('无待执行课程的师资可以出库', r.code === 0);
@@ -68,7 +162,7 @@ function closeEnough(a, b) {
   check('新调度从待发送开始且审计字段为空', dispatch && dispatch.status === '待发送' && !dispatch.sent_at && !dispatch.confirmed_at && !dispatch.msg_log);
 
   r = await call('/dispatches/send', { id: dispatchId });
-  check('发送授课邀请', r.code === 0);
+  check('记录已通知师资', r.code === 0);
   r = await call('/dispatches?project_id=' + projectId);
   dispatch = r.data.find((x) => x.id === dispatchId);
   r = await call('/dispatches', { ...dispatch, hours: 5 });
@@ -186,6 +280,79 @@ function closeEnough(a, b) {
       closeEnough(row.fee, feeByTeacher.get(String(teacher.id)) || 0);
   });
   check('师资统计等于原始排课与课酬合计', stats.code === 0 && statsMatch);
+
+  r = await call('/teacher_evals', {
+    teacher_id: 5, project_id: otherProjectId, score: 5,
+    comment: '伪造未授课评价', evaluator: '测试员', eval_date: '2026-08-04',
+  });
+  check('没有已完成授课记录的师资不能被评价', r.code === 400);
+
+  const users = await call('/users');
+  const currentAdmin = users.data.find((x) => x.username === 'admin');
+  const manager = users.data.find((x) => x.username === 'manager');
+  r = await call('/users', { ...currentAdmin, role: 'viewer', status: 1, password: '' });
+  check('管理员不能变更自己的角色', r.code === 400);
+
+  r = await call('/login', { username: 'manager', password: 'manager123' }, '');
+  check('会话撤销测试账号登录', r.code === 0 && r.data && r.data.token);
+  let managerToken = r.data.token;
+
+  http = await callWithStatus('/users', {
+    ...manager, name: '短密码不应保存', role: 'viewer', status: 0, password: '123',
+  });
+  check('用户编辑带短密码返回 HTTP 400', http.status === 400 && http.body.code === 400);
+  let refreshedUsers = await call('/users');
+  let refreshedManager = refreshedUsers.data.find((x) => x.id === manager.id);
+  check('短密码失败后姓名不发生部分更新', refreshedManager && refreshedManager.name === manager.name);
+  check('短密码失败后角色不发生部分更新', refreshedManager && refreshedManager.role === manager.role);
+  check('短密码失败后状态不发生部分更新', refreshedManager && Number(refreshedManager.status) === Number(manager.status));
+  r = await call('/me', undefined, managerToken);
+  check('短密码失败不误撤销既有会话', r.code === 0);
+
+  r = await call('/users', { ...manager, name: '业务管理员-姓名变更', password: '' });
+  check('管理员可单独修改其他用户姓名', r.code === 0);
+  r = await call('/me', undefined, managerToken);
+  check('仅修改姓名不撤销既有会话', r.code === 0);
+  r = await call('/users', { ...manager, password: '' });
+  check('姓名测试数据已恢复', r.code === 0);
+
+  r = await call('/login', { username: 'manager', password: 'manager123' }, '');
+  managerToken = r.data && r.data.token;
+  r = await call('/users', { ...manager, role: 'viewer', status: 1, password: '' });
+  check('管理员可调整其他用户角色', r.code === 0);
+  r = await call('/me', undefined, managerToken);
+  check('修改角色会撤销既有会话', r.code === 401);
+  r = await call('/users', { ...manager, role: 'manager', status: 1, password: '' });
+  check('角色测试数据已恢复', r.code === 0);
+
+  r = await call('/login', { username: 'manager', password: 'manager123' }, '');
+  managerToken = r.data && r.data.token;
+  r = await call('/users', { ...manager, status: 0, password: '' });
+  check('管理员可停用其他用户', r.code === 0);
+  r = await call('/me', undefined, managerToken);
+  check('修改状态会撤销既有会话', r.code === 401);
+  r = await call('/users', { ...manager, status: 1, password: '' });
+  check('状态测试数据已恢复', r.code === 0);
+
+  r = await call('/login', { username: 'manager', password: 'manager123' }, '');
+  managerToken = r.data && r.data.token;
+  r = await call('/users', { ...manager, username: 'manager_integrity_test', password: '' });
+  check('管理员可修改其他用户名', r.code === 0);
+  r = await call('/me', undefined, managerToken);
+  check('修改用户名会撤销既有会话', r.code === 401);
+  r = await call('/users', { ...manager, username: 'manager', password: '' });
+  check('用户名测试数据已恢复', r.code === 0);
+
+  r = await call('/login', { username: 'manager', password: 'manager123' }, '');
+  managerToken = r.data && r.data.token;
+  r = await call('/users', { ...manager, password: 'manager4567' });
+  check('管理员可修改其他用户密码', r.code === 0);
+  r = await call('/me', undefined, managerToken);
+  check('修改密码会撤销既有会话', r.code === 401);
+  r = await call('/users', { ...manager, password: 'manager123' });
+  check('密码测试数据已恢复', r.code === 0);
+  r = await call('/login', { username: 'manager', password: 'manager123' }, '');
+  check('恢复后测试账号可正常登录', r.code === 0 && r.data && r.data.token);
 
   const oversized = await fetch(BASE + '/login', {
     method: 'POST',

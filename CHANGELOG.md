@@ -2,6 +2,37 @@
 
 All notable changes to Yanxu Training OS. Dates follow the production release history; the format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.6.0] — 2026-08-13 · Technology Showcase V10 R1
+
+### Added
+- V10 keeps the established purple/blue showcase aesthetic while rebuilding the landing
+  hero around a new ImageGen technology-orbit image and a new transparent ImageGen brand
+  mark (`yx-mark-v10.png`). A dedicated, responsive `v10.css` layer carries the visual
+  system without removing the existing business cockpit.
+- Browser acceptance now walks every role-visible page: 22 local admin pages, 21
+  production manager pages and 20 production viewer pages.
+- GitHub Actions now compiles Java 17 and runs all 128 checks against two fresh,
+  loopback-only databases on pushes, pull requests, a weekly schedule and manual dispatch.
+- Redistributed dependency licenses and notices are collected under
+  `third_party_licenses/`.
+
+### Changed
+- Authentication moved to an HttpOnly session cookie. Passwords now use salted PBKDF2,
+  with compatible verification and on-login migration of legacy password hashes.
+- API routing now enforces methods and JSON content types, strictly parses JSON, rejects
+  non-finite numbers, and keeps all serialized responses valid JSON.
+- Demand, bid and project workflow invariants were tightened. Existing source links cannot
+  be rebound through generic CRUD, and project source IDs must be either both zero or both
+  positive and valid; negative source IDs are rejected.
+- Regression baseline increased to 52 end-to-end API checks and 76 integrity/security
+  checks, all passing against fresh loopback-only databases.
+
+### Security
+- Session cookies are `HttpOnly`, `SameSite=Lax`, and `Secure` on public hosts; the former
+  `X-Token` path remains only as a compatibility fallback.
+- Write APIs reject unsupported methods, non-JSON bodies, trailing JSON garbage, excessive
+  nesting, invalid IDs and NaN/Infinity values before database mutation.
+
 ## [1.5.0] — 2026-08-07 · Operations Cockpit
 
 ### Added
@@ -61,7 +92,8 @@ All notable changes to Yanxu Training OS. Dates follow the production release hi
   process line; real HTML/CSS login (no text baked into images).
 - Atomic front-end release pipeline: stage → checksum verify → `web-before` rollback
   snapshot → swap → verify; three-viewport browser acceptance (1440×900 / 740×900 / 390×844).
-- Regression suite at 51 API + 38 integrity checks.
+- Regression suite at the time: 51 API + 38 integrity checks (current V10 baseline is
+  52 API + 76 integrity/security checks).
 
 ### Removed
 - Decorative WebGL scene (blue orbs / orbits / canvas) — replaced by a no-canvas bridge
