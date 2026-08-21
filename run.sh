@@ -16,9 +16,10 @@ find_java() {
   local candidate
   for candidate in \
     "${JAVA_HOME:+$JAVA_HOME/bin/java}" \
-    "/Users/tongyuqing/.local/bin/java" \
     "/opt/homebrew/opt/openjdk@21/bin/java" \
     "/opt/homebrew/opt/openjdk@17/bin/java" \
+    "/usr/local/opt/openjdk@21/bin/java" \
+    "/usr/local/opt/openjdk@17/bin/java" \
     "$(command -v java 2>/dev/null || true)"; do
     if [ -n "$candidate" ] && [ -x "$candidate" ] && "$candidate" -version >/dev/null 2>&1; then
       printf '%s' "$candidate"
@@ -52,6 +53,7 @@ echo "研序培训运营中心已启动：http://localhost:$PORT"
 echo "关闭此窗口即可停止服务。"
 JAVA_ARGS=(-Dfile.encoding=UTF-8)
 if [ "$DEMO_MODE" -eq 1 ]; then
-  JAVA_ARGS+=(-Dbootstrap.demo=true -Ddata.dir=demo-data)
+  DEMO_BIND_ADDRESS="${TRAINING_BIND_ADDRESS:-127.0.0.1}"
+  JAVA_ARGS+=(-Dbootstrap.demo=true -Ddata.dir=demo-data "-Dbind.address=$DEMO_BIND_ADDRESS")
 fi
 exec "$JAVA_BIN" "${JAVA_ARGS[@]}" -cp "out:lib/h2.jar" com.training.Main "$PORT"

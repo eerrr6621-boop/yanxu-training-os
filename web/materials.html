@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-build="yanxu-v11-materials">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f5f7ff">
+  <meta name="description" content="研序培训资料中心｜无需登录即可下载已上架的学习包与培训资料">
+  <title>培训资料中心 · 研序</title>
+  <link rel="icon" href="/assets/yx-mark-v10.png?v=20260822v11" type="image/png">
+  <link rel="stylesheet" href="/materials.css?v=20260822v11r1">
+</head>
+<body>
+  <div class="material-atmosphere" aria-hidden="true"><i></i><i></i><span></span></div>
+  <header class="material-topbar">
+    <a class="material-brand" href="/" aria-label="返回研序首页">
+      <img src="/assets/yx-mark-v10.png?v=20260822v11" alt="">
+      <span><b>研序</b><small>TRAINING MATERIALS</small></span>
+    </a>
+    <div class="material-top-actions">
+      <span class="public-access">无需登录 · 公开下载</span>
+      <a class="system-link" href="/">进入管理系统 <i data-lucide="arrow-up-right" aria-hidden="true"></i></a>
+    </div>
+  </header>
+
+  <main class="material-main">
+    <section class="material-hero" aria-labelledby="material-title">
+      <div class="material-hero-copy">
+        <span class="material-kicker"><i data-lucide="library-big" aria-hidden="true"></i>YANXU · LEARNING LIBRARY</span>
+        <h1 id="material-title">培训资料<br><em>随时取用</em></h1>
+        <p>集中获取研序发布的课程讲义、工具模板与专题学习包。无需账号，选择资料后即可安全下载。</p>
+      </div>
+      <div class="material-signal" aria-hidden="true">
+        <div class="signal-orbit"><i></i><i></i><i></i><span><b>YX</b><small>LIBRARY</small></span></div>
+      </div>
+      <div class="material-stats" aria-label="资料中心概况">
+        <span><small>已上架</small><b id="material-count">—</b><em>份资料</em></span>
+        <span><small>资料分类</small><b id="category-count">—</b><em>个主题</em></span>
+        <span><small>开放方式</small><b>PUBLIC</b><em>免登录</em></span>
+      </div>
+    </section>
+
+    <section class="material-controls" aria-label="资料筛选">
+      <label class="material-search" for="material-search">
+        <i data-lucide="search" aria-hidden="true"></i>
+        <input id="material-search" type="search" placeholder="搜索资料名称、分类或简介" autocomplete="off">
+        <kbd>/</kbd>
+      </label>
+      <div class="material-categories" id="material-categories" role="group" aria-label="按资料分类筛选"></div>
+      <div class="admin-actions" id="admin-actions" hidden>
+        <span><i data-lucide="shield-check" aria-hidden="true"></i>管理员模式</span>
+        <button type="button" id="add-material"><i data-lucide="cloud-upload" aria-hidden="true"></i>添加学习包</button>
+      </div>
+    </section>
+
+    <section class="material-library" aria-labelledby="library-heading">
+      <div class="library-heading">
+        <div><span>RESOURCE INDEX</span><h2 id="library-heading">学习包目录</h2></div>
+        <p id="library-summary" role="status" aria-live="polite">正在同步资料…</p>
+      </div>
+      <div class="material-grid" id="material-grid" aria-busy="true">
+        <div class="material-skeleton"></div><div class="material-skeleton"></div><div class="material-skeleton"></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="material-footer">
+    <span>研序 · 培训运营中心</span>
+    <span>资料由系统管理员统一维护</span>
+  </footer>
+
+  <div class="material-toast" id="material-toast" role="status" aria-live="polite" hidden></div>
+  <div id="material-modal-root"></div>
+  <script src="/lucide.min.js?v=20260822v11"></script>
+  <script src="/materials.js?v=20260822v11"></script>
+</body>
+</html>

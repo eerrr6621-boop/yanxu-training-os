@@ -17,9 +17,10 @@ public class Api {
      * 业务处理共享同一把数据库锁，保证状态校验与更新原子化，并保护单一 H2 连接。
      * 请求体会在进入这把锁之前限量读取，慢客户端不会占住整个系统的业务锁。
      */
-    private static final Object MUTATION_LOCK = new Object();
+    static final Object MUTATION_LOCK = new Object();
     private static final String BODY_ATTRIBUTE = Api.class.getName() + ".body";
     private static final String RESPONSE_ATTRIBUTE = Api.class.getName() + ".response";
+    private static final String SESSION_COOKIE = "yx_session";
     private static final int MAX_BODY_BYTES = 1024 * 1024;
 
     private static final class ApiResponse {
@@ -53,60 +54,65 @@ public class Api {
         String path = ex.getRequestURI().getPath();
         try {
             String method = ex.getRequestMethod();
-            if (!("GET".equalsIgnoreCase(method) || "HEAD".equalsIgnoreCase(method)))
+            if ("POST".equalsIgnoreCase(method)) {
+                requireJsonContentType(ex);
                 ex.setAttribute(BODY_ATTRIBUTE, readBodyLimited(ex));
+            }
             synchronized (MUTATION_LOCK) { route(ex, path); }
         } catch (ApiException e) {
             err(ex, e.code, e.getMessage());
+        } catch (IllegalArgumentException e) {
+            err(ex, 400, e.getMessage() == null ? "请求参数格式不正确" : e.getMessage());
         } catch (Exception e) {
             e.printStackTrace();
-            err(ex, 500, "服务器错误: " + e.getMessage());
+            err(ex, 500, "服务器暂时无法处理请求，请稍后重试");
         }
         flushResponse(ex);
     }
 
     private static void route(HttpExchange ex, String path) throws Exception {
         // ---------- 无需登录 ----------
-        if (path.equals("/api/login")) { login(ex); return; }
-        if (path.equals("/api/q/pub")) { qPub(ex); return; }
-        if (path.equals("/api/q/answer")) { qAnswer(ex); return; }
+        if (path.equals("/api/login")) { requireMethod(ex, "POST"); login(ex); return; }
+        if (path.equals("/api/q/pub")) { requireMethod(ex, "GET", "HEAD"); qPub(ex); return; }
+        if (path.equals("/api/q/answer")) { requireMethod(ex, "POST"); qAnswer(ex); return; }
 
         // ---------- 需登录 ----------
         Auth.Session s = Auth.get(token(ex));
-        if (s == null) { err(ex, 401, "未登录或会话已过期，请重新登录"); return; }
+        if (s == null) { clearSessionCookie(ex); err(ex, 401, "未登录或会话已过期，请重新登录"); return; }
 
-        if (path.equals("/api/logout")) { Auth.logout(token(ex)); ok(ex, null); return; }
-        if (path.equals("/api/me")) { ok(ex, me(s)); return; }
-        if (path.equals("/api/password")) { changePwd(ex, s); return; }
+        if (path.equals("/api/logout")) { requireMethod(ex, "POST"); Auth.logout(token(ex)); clearSessionCookie(ex); ok(ex, null); return; }
+        if (path.equals("/api/me")) { requireMethod(ex, "GET", "HEAD"); ok(ex, me(s)); return; }
+        if (path.equals("/api/password")) { requireMethod(ex, "POST"); changePwd(ex, s); return; }
 
         if (path.startsWith("/api/stats/")) {
-            if (path.equals("/api/stats/overview")) { statsOverview(ex); return; }
-            if (path.equals("/api/stats/report")) { statsReport(ex); return; }
-            if (path.equals("/api/stats/q")) { qStats(ex); return; }
+            if (path.equals("/api/stats/overview")) { requireMethod(ex, "GET", "HEAD"); statsOverview(ex); return; }
+            if (path.equals("/api/stats/report")) { requireMethod(ex, "GET", "HEAD"); statsReport(ex); return; }
+            if (path.equals("/api/stats/q")) { requireMethod(ex, "GET", "HEAD"); qStats(ex); return; }
         }
 
         if (path.startsWith("/api/users")) {
             if (!Auth.isAdmin(s)) { err(ex, 403, "无权限：仅系统管理员可管理用户"); return; }
-            if (path.equals("/api/users/resetpwd")) { resetPwd(ex); return; }
+            if (path.equals("/api/users/resetpwd")) { requireMethod(ex, "POST"); resetPwd(ex); return; }
             // 其余 /api/users 请求继续走下方通用 CRUD
         }
 
         // 工作流动作
-        if (path.equals("/api/bids/win")) { requireWrite(s); bidWin(ex); return; }
-        if (path.equals("/api/projects/check")) { projectTransitionCheck(ex); return; }
-        if (path.equals("/api/projects/complete")) { requireWrite(s); projectTransition(ex, "complete"); return; }
-        if (path.equals("/api/projects/archive")) { requireWrite(s); projectTransition(ex, "archive"); return; }
-        if (path.equals("/api/dispatches/send")) { requireWrite(s); dispatchSend(ex); return; }
-        if (path.equals("/api/dispatches/confirm")) { requireWrite(s); dispatchConfirm(ex); return; }
-        if (path.equals("/api/dispatches/complete")) { requireWrite(s); dispatchComplete(ex); return; }
-        if (path.equals("/api/q/publish")) { requireWrite(s); qStatus(ex, "已发布"); return; }
-        if (path.equals("/api/q/close")) { requireWrite(s); qStatus(ex, "已关闭"); return; }
-        if (path.equals("/api/q/send")) { requireWrite(s); qSend(ex); return; }
-        if (path.equals("/api/fees/calc")) { requireWrite(s); feeCalc(ex); return; }
-        if (path.equals("/api/fees/pay")) { requireWrite(s); feePay(ex); return; }
-        if (path.equals("/api/charges/receive")) { requireWrite(s); chargeReceive(ex); return; }
-        if (path.equals("/api/teachers/checkout")) { requireWrite(s); teacherOut(ex, "出库"); return; }
-        if (path.equals("/api/teachers/checkin")) { requireWrite(s); teacherOut(ex, "在库"); return; }
+        if (path.equals("/api/bids/win")) { requireMethod(ex, "POST"); requireWrite(s); bidWin(ex); return; }
+        if (path.equals("/api/projects/check")) { requireMethod(ex, "GET", "HEAD"); projectTransitionCheck(ex); return; }
+        if (path.equals("/api/projects/start")) { requireMethod(ex, "POST"); requireWrite(s); projectStart(ex); return; }
+        if (path.equals("/api/projects/complete")) { requireMethod(ex, "POST"); requireWrite(s); projectTransition(ex, "complete"); return; }
+        if (path.equals("/api/projects/archive")) { requireMethod(ex, "POST"); requireWrite(s); projectTransition(ex, "archive"); return; }
+        if (path.equals("/api/dispatches/send")) { requireMethod(ex, "POST"); requireWrite(s); dispatchSend(ex); return; }
+        if (path.equals("/api/dispatches/confirm")) { requireMethod(ex, "POST"); requireWrite(s); dispatchConfirm(ex); return; }
+        if (path.equals("/api/dispatches/complete")) { requireMethod(ex, "POST"); requireWrite(s); dispatchComplete(ex); return; }
+        if (path.equals("/api/q/publish")) { requireMethod(ex, "POST"); requireWrite(s); qStatus(ex, "已发布"); return; }
+        if (path.equals("/api/q/close")) { requireMethod(ex, "POST"); requireWrite(s); qStatus(ex, "已关闭"); return; }
+        if (path.equals("/api/q/send")) { requireMethod(ex, "POST"); requireWrite(s); qSend(ex); return; }
+        if (path.equals("/api/fees/calc")) { requireMethod(ex, "POST"); requireWrite(s); feeCalc(ex); return; }
+        if (path.equals("/api/fees/pay")) { requireMethod(ex, "POST"); requireWrite(s); feePay(ex); return; }
+        if (path.equals("/api/charges/receive")) { requireMethod(ex, "POST"); requireWrite(s); chargeReceive(ex); return; }
+        if (path.equals("/api/teachers/checkout")) { requireMethod(ex, "POST"); requireWrite(s); teacherOut(ex, "出库"); return; }
+        if (path.equals("/api/teachers/checkin")) { requireMethod(ex, "POST"); requireWrite(s); teacherOut(ex, "在库"); return; }
 
         // 通用模块 CRUD：/api/{module}  /api/{module}/delete
         if (path.startsWith("/api/")) {
@@ -116,10 +122,11 @@ public class Api {
             if (rest.endsWith("/delete")) { mod = rest.substring(0, rest.length() - 7); del = true; }
             if (FIELDS.containsKey(mod)) {
                 if ("users".equals(mod) && !Auth.isAdmin(s)) { err(ex, 403, "无权限"); return; }
-                if (del) { requireWrite(s); delete(ex, mod); return; }
-                if ("GET".equalsIgnoreCase(ex.getRequestMethod())) { list(ex, mod); return; }
+                if (del) { requireMethod(ex, "POST"); requireWrite(s); delete(ex, mod, s); return; }
+                if ("GET".equalsIgnoreCase(ex.getRequestMethod()) || "HEAD".equalsIgnoreCase(ex.getRequestMethod())) { list(ex, mod); return; }
+                requireMethod(ex, "POST");
                 requireWrite(s);
-                save(ex, mod); return;
+                save(ex, mod, s); return;
             }
         }
         err(ex, 404, "接口不存在: " + path);
@@ -130,7 +137,8 @@ public class Api {
     private static void login(HttpExchange ex) throws Exception {
         Map<String, Object> b = body(ex);
         String token = Auth.login(Json.str(b, "username"), Json.str(b, "password"));
-        if (token == null) { err(ex, 401, "用户名或密码错误（或账号已停用）"); return; }
+        if (token == null) { clearSessionCookie(ex); err(ex, 401, "用户名或密码错误（或账号已停用）"); return; }
+        setSessionCookie(ex, token);
         Map<String, Object> r = new LinkedHashMap<>();
         r.put("token", token);
         r.put("user", me(Auth.get(token)));
@@ -150,21 +158,24 @@ public class Api {
     private static void changePwd(HttpExchange ex, Auth.Session s) throws Exception {
         Map<String, Object> b = body(ex);
         String oldP = Json.str(b, "old"), newP = Json.str(b, "new");
-        if (newP.length() < 6) throw new ApiException(400, "新密码长度至少6位");
+        if (newP.length() < 8) throw new ApiException(400, "新密码长度至少8位");
         Map<String, Object> u = Db.one("SELECT * FROM users WHERE id=?", s.uid);
-        if (u == null || !Auth.hash(oldP).equals(String.valueOf(u.get("password"))))
+        if (u == null || !Auth.verify(oldP, String.valueOf(u.get("password"))))
             throw new ApiException(400, "原密码错误");
         Db.exec("UPDATE users SET password=? WHERE id=?", Auth.hash(newP), s.uid);
+        Auth.revokeUserSessions(s.uid);
+        clearSessionCookie(ex);
         ok(ex, "密码修改成功");
     }
 
     private static void resetPwd(HttpExchange ex) throws Exception {
         Map<String, Object> b = body(ex);
         String newP = Json.str(b, "password");
-        if (newP.length() < 6) throw new ApiException(400, "新密码长度至少6位");
+        if (newP.length() < 8) throw new ApiException(400, "新密码长度至少8位");
         long id = Json.lng(b, "id");
         if (Db.one("SELECT id FROM users WHERE id=?", id) == null) throw new ApiException(404, "用户不存在");
         Db.exec("UPDATE users SET password=? WHERE id=?", Auth.hash(newP), id);
+        Auth.revokeUserSessions(id);
         ok(ex, "密码已重置");
     }
 
@@ -185,6 +196,17 @@ public class Api {
                     "p.status AS project_status FROM questionnaires q LEFT JOIN projects p ON p.id=q.project_id";
             case "q_sends": return "SELECT s.*, q.title AS q_title, (SELECT COUNT(*) FROM q_responses r WHERE r.send_id=s.id) AS recv_count FROM q_sends s LEFT JOIN questionnaires q ON q.id=s.questionnaire_id";
             default: return "SELECT * FROM " + mod;
+        }
+    }
+
+    private static long positiveQueryId(String raw, String label) throws ApiException {
+        if (raw == null || raw.trim().isEmpty()) throw new ApiException(400, label + "不能为空");
+        try {
+            long value = Long.parseLong(raw.trim());
+            if (value <= 0) throw new NumberFormatException();
+            return value;
+        } catch (NumberFormatException e) {
+            throw new ApiException(400, label + "格式不正确");
         }
     }
 
@@ -216,16 +238,16 @@ public class Api {
             conds.add(alias + ".status=?"); args.add(q.get("status"));
         }
         if (q.get("project_id") != null && !q.get("project_id").isEmpty()) {
-            conds.add(alias + ".project_id=?"); args.add(Long.parseLong(q.get("project_id")));
+            conds.add(alias + ".project_id=?"); args.add(positiveQueryId(q.get("project_id"), "项目编号"));
         }
         if (q.get("teacher_id") != null && !q.get("teacher_id").isEmpty()) {
-            conds.add(alias + ".teacher_id=?"); args.add(Long.parseLong(q.get("teacher_id")));
+            conds.add(alias + ".teacher_id=?"); args.add(positiveQueryId(q.get("teacher_id"), "师资编号"));
         }
         if (q.get("demand_id") != null && !q.get("demand_id").isEmpty()) {
-            conds.add(alias + ".demand_id=?"); args.add(Long.parseLong(q.get("demand_id")));
+            conds.add(alias + ".demand_id=?"); args.add(positiveQueryId(q.get("demand_id"), "需求编号"));
         }
         if (q.get("questionnaire_id") != null && !q.get("questionnaire_id").isEmpty()) {
-            conds.add(alias + ".questionnaire_id=?"); args.add(Long.parseLong(q.get("questionnaire_id")));
+            conds.add(alias + ".questionnaire_id=?"); args.add(positiveQueryId(q.get("questionnaire_id"), "问卷编号"));
         }
         if (!conds.isEmpty()) sql.append(" WHERE ").append(String.join(" AND ", conds));
         sql.append(" ORDER BY ").append(alias).append(".id DESC");
@@ -269,6 +291,23 @@ public class Api {
             if (fieldChanged(existing, body, field)) throw new ApiException(400, message);
     }
 
+    /** 通用编辑只保留需求原状态；尚未立项的需求可由人工明确结束为“已流标”。 */
+    private static String demandStatusForSave(Map<String, Object> existing, Map<String, Object> body) throws Exception {
+        String requested = Json.str(body, "status").trim();
+        if (existing == null) {
+            if (requested.isEmpty() || "待处理".equals(requested)) return "待处理";
+            throw new ApiException(400, "新需求只能从待处理状态开始");
+        }
+        String current = str(existing, "status");
+        if (requested.isEmpty() || current.equals(requested)) return current;
+        if ("已流标".equals(requested) && ("待处理".equals(current) || "已投标".equals(current))) {
+            long projects = lng(Db.one("SELECT COUNT(*) c FROM projects WHERE demand_id=?", existing.get("id")), "c");
+            if (projects > 0) throw new ApiException(400, "该需求已经形成项目，不能再标记为已流标");
+            return requested;
+        }
+        throw new ApiException(400, "需求状态必须通过投标、立项、启动和完成流程推进");
+    }
+
     @SuppressWarnings("unchecked")
     private static List<Map<String, Object>> validateQuestions(String raw) throws ApiException {
         Object parsed;
@@ -310,13 +349,38 @@ public class Api {
                                      Map<String, Object> existing) throws Exception {
         if (id > 0 && existing == null) throw new ApiException(404, "要修改的记录不存在或已被删除");
 
+        if ("demands".equals(mod)) demandStatusForSave(existing, body);
+
         if ("projects".equals(mod) && existing != null) {
+            requireUnchanged(existing, body, "项目来源需求和中标记录不能通过普通编辑重新绑定",
+                    "demand_id", "bid_id");
             String status = str(existing, "status");
             if ("已归档".equals(status))
                 throw new ApiException(400, "项目已归档，业务与财务资料均为只读；如需更正请先走线下复核流程");
             if ("已完成".equals(status))
                 requireUnchanged(existing, body, "项目已完成，不能再修改计划课时、合同金额或交付日期",
-                        "demand_id", "bid_id", "hours", "amount", "start_date", "end_date");
+                        "hours", "amount", "start_date", "end_date");
+        }
+        if ("projects".equals(mod) && existing == null) {
+            long demandId = Json.lng(body, "demand_id"), bidId = Json.lng(body, "bid_id");
+            if (demandId < 0 || bidId < 0)
+                throw new ApiException(400, "项目来源需求与中标记录不能使用负数编号");
+            if ((demandId > 0) != (bidId > 0))
+                throw new ApiException(400, "项目来源需求与中标记录必须同时提供");
+            if (bidId > 0) {
+                Map<String, Object> demand = Db.one("SELECT id,status FROM demands WHERE id=?", demandId);
+                if (demand == null) throw new ApiException(400, "关联的培训需求不存在");
+                Map<String, Object> bid = Db.one("SELECT id,demand_id,status FROM bids WHERE id=?", bidId);
+                if (bid == null) throw new ApiException(400, "关联的中标记录不存在");
+                if (demandId <= 0 || lng(bid, "demand_id") != demandId)
+                    throw new ApiException(400, "中标记录与培训需求不匹配");
+                if (!"已中标".equals(str(bid, "status")))
+                    throw new ApiException(400, "只有已中标记录才能作为项目来源");
+                if (!"已立项".equals(str(demand, "status")))
+                    throw new ApiException(400, "只有已立项需求才能作为新项目来源");
+                if (Db.one("SELECT id FROM projects WHERE demand_id=? OR bid_id=?", demandId, bidId) != null)
+                    throw new ApiException(400, "该需求或中标记录已经形成项目");
+            }
         }
 
         if (PROJECT_CHILD_MODULES.contains(mod)) {
@@ -359,6 +423,11 @@ public class Api {
             throw new ApiException(400, "课时数必须大于0");
         if ("projects".equals(mod) && (Json.num(body, "hours") < 0 || Json.num(body, "amount") < 0))
             throw new ApiException(400, "计划课时和合同金额不能为负数");
+        if ("projects".equals(mod)) {
+            double participantCount = Json.num(body, "participant_count");
+            if (participantCount < 0 || participantCount > 100000 || participantCount != Math.rint(participantCount))
+                throw new ApiException(400, "参训人数必须是0到100000之间的整数");
+        }
         if ("teachers".equals(mod) && Json.num(body, "fee_rate") < 0)
             throw new ApiException(400, "课酬标准不能为负数");
         if ("teacher_evals".equals(mod) && (Json.num(body, "score") < 1 || Json.num(body, "score") > 5))
@@ -384,16 +453,35 @@ public class Api {
             if ("dispatches".equals(mod) && (existing == null || fieldChanged(existing, body, "teacher_id")) &&
                     !"在库".equals(str(teacher, "status")))
                 throw new ApiException(400, "该师资已出库，不能参与新的授课调度");
+            if ("teacher_evals".equals(mod)) {
+                long projectId = Json.lng(body, "project_id");
+                long completed = lng(Db.one("SELECT COUNT(*) c FROM dispatches WHERE project_id=? AND teacher_id=? AND status='已完成'",
+                        projectId, teacherId), "c");
+                if (completed <= 0)
+                    throw new ApiException(400, "只能评价在该项目中已有完成授课记录的师资");
+            }
         }
         if ("bids".equals(mod)) {
             long demandId = Json.lng(body, "demand_id");
             if (demandId <= 0 || Db.one("SELECT id FROM demands WHERE id=?", demandId) == null)
                 throw new ApiException(400, "关联的培训需求不存在");
+            if (Json.num(body, "amount") <= 0) throw new ApiException(400, "投标金额必须大于0");
+            if (existing != null)
+                requireUnchanged(existing, body, "投标所属需求不能通过普通编辑重新绑定", "demand_id");
+            else {
+                Map<String, Object> demand = Db.one("SELECT status FROM demands WHERE id=?", demandId);
+                if (!("待处理".equals(str(demand, "status")) || "已投标".equals(str(demand, "status"))))
+                    throw new ApiException(400, "当前需求状态不能新增投标");
+                if (Db.one("SELECT id FROM projects WHERE demand_id=?", demandId) != null)
+                    throw new ApiException(400, "该需求已经形成项目，不能再新增投标");
+            }
         }
         if ("users".equals(mod)) {
             String username = Json.str(body, "username").trim();
             String role = Json.str(body, "role");
-            int status = (int) Json.num(body, "status");
+            double rawStatus = Json.num(body, "status");
+            if (rawStatus != Math.rint(rawStatus)) throw new ApiException(400, "用户状态不正确");
+            int status = (int) rawStatus;
             if (username.isEmpty()) throw new ApiException(400, "用户名不能为空");
             if (!("admin".equals(role) || "manager".equals(role) || "viewer".equals(role)))
                 throw new ApiException(400, "用户角色不正确");
@@ -408,12 +496,23 @@ public class Api {
         }
     }
 
-    private static void save(HttpExchange ex, String mod) throws Exception {
+    private static void save(HttpExchange ex, String mod, Auth.Session actor) throws Exception {
         Map<String, Object> b = body(ex);
-        long id = Json.lng(b, "id");
+        long id = b.containsKey("id") ? Json.lng(b, "id") : 0;
+        if (b.containsKey("id") && id <= 0) throw new ApiException(400, "记录编号必须是正整数");
         String[] fields = FIELDS.get(mod);
         Map<String, Object> existing = id > 0 ? Db.one("SELECT * FROM " + mod + " WHERE id=?", id) : null;
+        String requestedPassword = "users".equals(mod) ? Json.str(b, "password") : "";
+        if ("users".equals(mod)) {
+            b.put("username", Json.str(b, "username").trim());
+            if ((existing == null || !requestedPassword.isEmpty()) && requestedPassword.length() < 8)
+                throw new ApiException(400, "密码长度至少8位");
+        }
         validateSave(mod, b, id, existing);
+        String demandTargetStatus = "demands".equals(mod) ? demandStatusForSave(existing, b) : null;
+        if ("users".equals(mod) && existing != null && actor.uid == id &&
+                (!str(existing, "role").equals(Json.str(b, "role")) || (int) Json.num(b, "status") != 1))
+            throw new ApiException(400, "不能停用当前登录账号或变更自己的角色，请由另一位管理员操作");
         // 数值字段转换
         if (id > 0) {
             StringBuilder sql = new StringBuilder("UPDATE " + mod + " SET ");
@@ -425,16 +524,41 @@ public class Api {
                 if (NUMERIC_FIELDS.contains(fields[i])) v = Json.num(b, fields[i]);
                 if ("status".equals(fields[i]) && "users".equals(mod)) v = (long) Json.num(b, fields[i]);
                 // 流程状态及其审计字段只能由专用动作推进，普通编辑不得绕过。
-                if (existing != null && protectedWorkflowField(mod, fields[i])) v = existing.get(fields[i]);
+                if ("demands".equals(mod) && "status".equals(fields[i])) v = demandTargetStatus;
+                else if (existing != null && protectedWorkflowField(mod, fields[i])) v = existing.get(fields[i]);
                 args.add(v == null ? "" : v);
             }
             sql.append(" WHERE id=?");
             args.add(id);
-            Db.exec(sql.toString(), args.toArray());
-            // 用户改密码（可选）
-            if ("users".equals(mod) && !Json.str(b, "password").isEmpty()) {
-                if (Json.str(b, "password").length() < 6) throw new ApiException(400, "密码长度至少6位");
-                Db.exec("UPDATE users SET password=? WHERE id=?", Auth.hash(Json.str(b, "password")), id);
+            boolean revokeSessions = "users".equals(mod) && (
+                    !str(existing, "username").equals(Json.str(b, "username")) ||
+                    !str(existing, "role").equals(Json.str(b, "role")) ||
+                    lng(existing, "status") != (long) Json.num(b, "status") ||
+                    !requestedPassword.isEmpty());
+            if ("users".equals(mod)) {
+                final String updateSql = sql.toString();
+                final Object[] updateArgs = args.toArray();
+                Db.transaction(() -> {
+                    Db.exec(updateSql, updateArgs);
+                    if (!requestedPassword.isEmpty())
+                        Db.exec("UPDATE users SET password=? WHERE id=?", Auth.hash(requestedPassword), id);
+                    return null;
+                });
+            } else if ("demands".equals(mod) && "已流标".equals(demandTargetStatus) &&
+                    !"已流标".equals(str(existing, "status"))) {
+                final String updateSql = sql.toString();
+                final Object[] updateArgs = args.toArray();
+                Db.transaction(() -> {
+                    Db.exec(updateSql, updateArgs);
+                    Db.exec("UPDATE bids SET status='未中标' WHERE demand_id=? AND status='待评审'", id);
+                    return null;
+                });
+            } else {
+                Db.exec(sql.toString(), args.toArray());
+            }
+            if (revokeSessions) {
+                Auth.revokeUserSessions(id);
+                if (actor.uid == id) clearSessionCookie(ex);
             }
             ok(ex, id);
         } else {
@@ -445,25 +569,37 @@ public class Api {
                 cols.append(fields[i]); vals.append('?');
                 Object v = b.get(fields[i]);
                 if (NUMERIC_FIELDS.contains(fields[i])) v = Json.num(b, fields[i]);
-                if (protectedWorkflowField(mod, fields[i])) v = initialWorkflowValue(mod, fields[i]);
+                if ("demands".equals(mod) && "status".equals(fields[i])) v = demandTargetStatus;
+                else if (protectedWorkflowField(mod, fields[i])) v = initialWorkflowValue(mod, fields[i]);
                 args.add(v == null ? "" : v);
             }
             if ("users".equals(mod)) {
-                String pwd = Json.str(b, "password");
-                if (pwd.length() < 6) throw new ApiException(400, "密码长度至少6位");
                 cols.append(",password"); vals.append(",?");
-                args.add(Auth.hash(pwd));
+                args.add(Auth.hash(requestedPassword));
             }
-            long nid = Db.insert("INSERT INTO " + mod + "(" + cols + ") VALUES(" + vals + ")", args.toArray());
+            final String insertSql = "INSERT INTO " + mod + "(" + cols + ") VALUES(" + vals + ")";
+            final Object[] insertArgs = args.toArray();
+            long nid;
+            if ("bids".equals(mod)) {
+                nid = Db.transaction(() -> {
+                    long insertedId = Db.insert(insertSql, insertArgs);
+                    Db.exec("UPDATE demands SET status='已投标' WHERE id=? AND status='待处理'", Json.lng(b, "demand_id"));
+                    return insertedId;
+                });
+            } else {
+                nid = Db.insert(insertSql, insertArgs);
+            }
             ok(ex, nid);
         }
     }
 
-    private static void delete(HttpExchange ex, String mod) throws Exception {
+    private static void delete(HttpExchange ex, String mod, Auth.Session actor) throws Exception {
         Map<String, Object> b = body(ex);
         long id = Json.lng(b, "id");
         Map<String, Object> row = Db.one("SELECT * FROM " + mod + " WHERE id=?", id);
         if (row == null) throw new ApiException(404, "要删除的记录不存在或已被删除");
+        if ("users".equals(mod) && actor.uid == id)
+            throw new ApiException(400, "不能删除当前登录账号，请由另一位管理员操作");
 
         if (PROJECT_CHILD_MODULES.contains(mod)) {
             Map<String, Object> project = requireProject(lng(row, "project_id"));
@@ -517,13 +653,26 @@ public class Api {
             long admins = lng(Db.one("SELECT COUNT(*) c FROM users WHERE role='admin' AND status=1"), "c");
             if (admins <= 1) throw new ApiException(400, "系统必须至少保留一个启用的管理员账号");
         }
-        Db.exec("DELETE FROM " + mod + " WHERE id=?", id);
+        if ("bids".equals(mod)) {
+            long demandId = lng(row, "demand_id");
+            Db.transaction(() -> {
+                Db.exec("DELETE FROM bids WHERE id=?", id);
+                if (Db.one("SELECT id FROM bids WHERE demand_id=?", demandId) == null &&
+                        Db.one("SELECT id FROM projects WHERE demand_id=?", demandId) == null)
+                    Db.exec("UPDATE demands SET status='待处理' WHERE id=? AND status='已投标'", demandId);
+                return null;
+            });
+        } else {
+            Db.exec("DELETE FROM " + mod + " WHERE id=?", id);
+        }
+        if ("users".equals(mod)) Auth.revokeUserSessions(id);
         ok(ex, "已删除");
     }
 
     // ================= 工作流动作 =================
 
     private static boolean protectedWorkflowField(String mod, String field) {
+        if ("demands".equals(mod)) return "status".equals(field);
         if ("bids".equals(mod)) return "status".equals(field);
         if ("projects".equals(mod)) return "status".equals(field);
         if ("teachers".equals(mod)) return "status".equals(field) || "out_date".equals(field);
@@ -536,8 +685,9 @@ public class Api {
 
     private static Object initialWorkflowValue(String mod, String field) {
         if ("status".equals(field)) {
+            if ("demands".equals(mod)) return "待处理";
             if ("bids".equals(mod)) return "待评审";
-            if ("projects".equals(mod)) return "进行中";
+            if ("projects".equals(mod)) return "待启动";
             if ("teachers".equals(mod)) return "在库";
             if ("dispatches".equals(mod)) return "待发送";
             if ("questionnaires".equals(mod)) return "草稿";
@@ -614,8 +764,8 @@ public class Api {
         String status = str(project, "status");
 
         if ("complete".equals(action)) {
-            if (!("待启动".equals(status) || "进行中".equals(status)))
-                blockers.add(projectIssue("status", "当前状态不能完成交付", "只有待启动或进行中的项目可以执行该操作。", "projects"));
+            if (!"进行中".equals(status))
+                blockers.add(projectIssue("status", "当前状态不能完成交付", "请先完成项目启动，再执行交付闭环。", "projects"));
             if (planHours <= 0)
                 blockers.add(projectIssue("plan_hours", "项目计划课时未设置", "请先补充计划课时，系统才能判断交付是否完整。", "projects"));
             if (dispatchTotal == 0)
@@ -712,6 +862,50 @@ public class Api {
         ok(ex, projectTransitionState(id, q.getOrDefault("action", "complete")));
     }
 
+    /** 兼容历史库中“项目已由中标记录形成，但需求仍停留在已投标”的窄范围脏状态。 */
+    private static boolean hasMatchingWinningBid(Map<String, Object> project, long demandId) throws Exception {
+        long bidId = lng(project, "bid_id");
+        if (demandId <= 0 || bidId <= 0) return false;
+        Map<String, Object> bid = Db.one("SELECT demand_id,status FROM bids WHERE id=?", bidId);
+        return bid != null && lng(bid, "demand_id") == demandId && "已中标".equals(str(bid, "status"));
+    }
+
+    /** 待启动项目完成基本资料检查后进入正式交付。 */
+    private static void projectStart(HttpExchange ex) throws Exception {
+        long id = Json.lng(body(ex), "id");
+        Map<String, Object> project = requireProject(id);
+        if ("进行中".equals(str(project, "status"))) { ok(ex, "项目已经启动"); return; }
+        if (!"待启动".equals(str(project, "status")))
+            throw new ApiException(400, "只有待启动项目可以执行启动操作");
+        List<String> missing = new ArrayList<>();
+        if (str(project, "owner").trim().isEmpty()) missing.add("项目负责人");
+        if (str(project, "start_date").trim().isEmpty()) missing.add("开始日期");
+        if (str(project, "end_date").trim().isEmpty()) missing.add("结束日期");
+        if (dbl(project, "hours") <= 0) missing.add("计划课时");
+        if (str(project, "delivery_mode").trim().isEmpty()) missing.add("授课方式");
+        if (dbl(project, "amount") > 0 && str(project, "contract_no").trim().isEmpty()) missing.add("合同编号");
+        if (!str(project, "start_date").isEmpty() && !str(project, "end_date").isEmpty() &&
+                str(project, "start_date").compareTo(str(project, "end_date")) > 0)
+            throw new ApiException(400, "项目结束日期不能早于开始日期");
+        if (!missing.isEmpty()) throw new ApiException(400, "启动前请补齐：" + String.join("、", missing));
+        Db.transaction(() -> {
+            long demandId = lng(project, "demand_id");
+            if (demandId > 0) {
+                Map<String, Object> demand = Db.one("SELECT id,status FROM demands WHERE id=?", demandId);
+                if (demand == null) throw new ApiException(400, "关联的培训需求不存在，请先核对项目资料");
+                String demandStatus = str(demand, "status");
+                boolean legacyWinningLink = "已投标".equals(demandStatus) && hasMatchingWinningBid(project, demandId);
+                if (!("已立项".equals(demandStatus) || "进行中".equals(demandStatus) || legacyWinningLink))
+                    throw new ApiException(400, "关联需求当前为“" + demandStatus + "”，不能启动项目，请先核对需求状态");
+                if ("已立项".equals(demandStatus) || legacyWinningLink)
+                    Db.exec("UPDATE demands SET status='进行中' WHERE id=? AND status IN ('已立项','已投标')", demandId);
+            }
+            Db.exec("UPDATE projects SET status='进行中' WHERE id=? AND status='待启动'", id);
+            return null;
+        });
+        ok(ex, "项目已启动，现已进入交付阶段");
+    }
+
     private static void projectTransition(HttpExchange ex, String action) throws Exception {
         long id = Json.lng(body(ex), "id");
         Map<String, Object> check = Db.transaction(() -> {
@@ -725,6 +919,21 @@ public class Api {
             }
             String status = "complete".equals(action) ? "已完成" : "已归档";
             Db.exec("UPDATE projects SET status=? WHERE id=?", status, id);
+            if ("complete".equals(action)) {
+                Map<String, Object> project = requireProject(id);
+                long demandId = lng(project, "demand_id");
+                if (demandId > 0) {
+                    Map<String, Object> demand = Db.one("SELECT id,status FROM demands WHERE id=?", demandId);
+                    if (demand == null) throw new ApiException(400, "关联的培训需求不存在，请先核对项目资料");
+                    String demandStatus = str(demand, "status");
+                    boolean legacyWinningLink = "已投标".equals(demandStatus) && hasMatchingWinningBid(project, demandId);
+                    if (!("已立项".equals(demandStatus) || "进行中".equals(demandStatus) ||
+                            "已完成".equals(demandStatus) || legacyWinningLink))
+                        throw new ApiException(400, "关联需求当前为“" + demandStatus + "”，不能完成项目，请先核对需求状态");
+                    if (!"已完成".equals(demandStatus))
+                        Db.exec("UPDATE demands SET status='已完成' WHERE id=? AND status IN ('已投标','已立项','进行中')", demandId);
+                }
+            }
             if ("archive".equals(action))
                 Db.exec("UPDATE questionnaires SET status='已关闭' WHERE project_id=? AND status<>'已关闭'", id);
             state.put("status", status);
@@ -752,6 +961,8 @@ public class Api {
         long demandId = Long.parseLong(bid.get("demand_id").toString());
         Map<String, Object> d = Db.one("SELECT * FROM demands WHERE id=?", demandId);
         if (d == null) throw new ApiException(400, "关联的培训需求不存在，无法立项");
+        if (!"已投标".equals(str(d, "status")))
+            throw new ApiException(400, "只有已投标需求可以执行中标立项");
         if (Db.one("SELECT id FROM projects WHERE demand_id=?", demandId) != null)
             throw new ApiException(400, "该培训需求已经形成项目，不能重复立项");
         long pid = Db.transaction(() -> {
@@ -761,7 +972,7 @@ public class Api {
             return Db.insert(
                     "INSERT INTO projects(demand_id,bid_id,title,unit,hours,amount,start_date,end_date,status) VALUES(?,?,?,?,?,?,?,?,?)",
                     demandId, id, str(d, "title"), str(d, "unit"), dbl(d, "hours"), dbl(bid, "amount"),
-                    str(d, "expect_date"), "", "进行中");
+                    str(d, "expect_date"), "", "待启动");
         });
         Map<String, Object> r = new LinkedHashMap<>();
         r.put("project_id", pid);
@@ -769,7 +980,7 @@ public class Api {
         ok(ex, r);
     }
 
-    /** 师资调度：发送培训需求/授课安排（模拟微信/短信通知） */
+    /** 师资调度：记录已通过外部渠道完成的通知，不冒充真实消息发送。 */
     private static void dispatchSend(HttpExchange ex) throws Exception {
         long id = Json.lng(body(ex), "id");
         Map<String, Object> dp = Db.one("SELECT p2.*, t.name AS tname, t.status AS teacher_status, p.title AS ptitle FROM dispatches p2 " +
@@ -778,16 +989,16 @@ public class Api {
         requireDeliveryProjectOpen(lng(dp, "project_id"));
         requireTeacherInLibrary(dp);
         if (!("待发送".equals(str(dp, "status")) || "已拒绝".equals(str(dp, "status"))))
-            throw new ApiException(400, "当前调度状态不能重复发送授课邀请");
+            throw new ApiException(400, "当前调度状态不能重复记录师资通知");
         String now = now();
         String timeRange = str(dp, "start_time").isEmpty() ? "" : " " + str(dp, "start_time") +
                 (str(dp, "end_time").isEmpty() ? "" : "—" + str(dp, "end_time"));
         String venue = str(dp, "venue").isEmpty() ? "" : "，地点：" + str(dp, "venue");
         String log = str(dp, "msg_log") + (str(dp, "msg_log").isEmpty() ? "" : "\n") +
-                "【" + now + "】已向" + str(dp, "tname") + "发送授课邀请：" + str(dp, "ptitle") +
+                "【" + now + "】已记录通知" + str(dp, "tname") + "：" + str(dp, "ptitle") +
                 "《" + str(dp, "subject") + "》" + dbl(dp, "hours") + "课时，" + str(dp, "teach_date") + timeRange + venue + "。等待确认。";
         Db.exec("UPDATE dispatches SET status='已发送', sent_at=?, msg_log=? WHERE id=?", now, log, id);
-        ok(ex, "已向师资发送授课安排（模拟微信/短信通知），等待师资确认");
+        ok(ex, "已记录师资通知，等待确认");
     }
 
     /** 师资确认/拒绝 */
@@ -799,7 +1010,7 @@ public class Api {
         if (dp == null) throw new ApiException(404, "调度记录不存在");
         requireDeliveryProjectOpen(lng(dp, "project_id"));
         requireTeacherInLibrary(dp);
-        if (!"已发送".equals(str(dp, "status"))) throw new ApiException(400, "请先发送授课邀请，再记录师资确认结果");
+        if (!"已发送".equals(str(dp, "status"))) throw new ApiException(400, "请先记录已通知师资，再登记确认结果");
         if (!accept && Json.str(b, "reason").trim().isEmpty()) throw new ApiException(400, "请填写师资拒绝原因");
         String now = now();
         String log = str(dp, "msg_log") + (str(dp, "msg_log").isEmpty() ? "" : "\n") +
@@ -940,7 +1151,7 @@ public class Api {
     @SuppressWarnings("unchecked")
     private static void qStats(HttpExchange ex) throws Exception {
         Map<String, String> qp = query(ex);
-        long qid = Long.parseLong(qp.getOrDefault("id", "0"));
+        long qid = positiveQueryId(qp.get("id"), "问卷编号");
         Map<String, Object> q = Db.one("SELECT * FROM questionnaires WHERE id=?", qid);
         if (q == null) throw new ApiException(404, "问卷不存在");
         List<Map<String, Object>> resps = Db.query("SELECT * FROM q_responses WHERE questionnaire_id=? ORDER BY id", qid);
@@ -1220,13 +1431,69 @@ public class Api {
         if (!Auth.canWrite(s)) throw new ApiException(403, "无权限：只读用户无法执行此操作");
     }
 
-    private static String token(HttpExchange ex) {
-        String t = ex.getRequestHeaders().getFirst("X-Token");
-        if (t == null) {
-            Map<String, String> q = query(ex);
-            t = q.get("token");
+    private static void requireMethod(HttpExchange ex, String... allowed) throws ApiException {
+        String actual = ex.getRequestMethod().toUpperCase(Locale.ROOT);
+        for (String method : allowed) if (method.equals(actual)) return;
+        ex.getResponseHeaders().set("Allow", String.join(", ", allowed));
+        throw new ApiException(405, "请求方法不受支持");
+    }
+
+    private static void requireJsonContentType(HttpExchange ex) throws ApiException {
+        String raw = ex.getRequestHeaders().getFirst("Content-Type");
+        String mediaType = raw == null ? "" : raw.split(";", 2)[0].trim().toLowerCase(Locale.ROOT);
+        if (!"application/json".equals(mediaType))
+            throw new ApiException(415, "写入接口只接受 application/json 请求");
+    }
+
+    static String token(HttpExchange ex) {
+        String cookieToken = null;
+        String cookie = ex.getRequestHeaders().getFirst("Cookie");
+        if (cookie != null) {
+            for (String part : cookie.split(";")) {
+                String item = part.trim();
+                String prefix = SESSION_COOKIE + "=";
+                if (item.startsWith(prefix) && item.length() > prefix.length()) {
+                    cookieToken = item.substring(prefix.length());
+                    break;
+                }
+            }
         }
-        return t;
+        if (cookieToken != null && Auth.get(cookieToken) != null) return cookieToken;
+        String headerToken = ex.getRequestHeaders().getFirst("X-Token");
+        if (headerToken != null && !headerToken.trim().isEmpty() && Auth.get(headerToken.trim()) != null)
+            return headerToken.trim();
+        return cookieToken != null ? cookieToken : (headerToken == null ? null : headerToken.trim());
+    }
+
+    private static boolean secureCookie(HttpExchange ex) {
+        String forwarded = ex.getRequestHeaders().getFirst("X-Forwarded-Proto");
+        boolean forwardedHttps = forwarded != null && Arrays.stream(forwarded.split(","))
+                .anyMatch(value -> "https".equalsIgnoreCase(value.trim()));
+        String host = String.valueOf(ex.getRequestHeaders().getFirst("Host")).trim().toLowerCase(Locale.ROOT);
+        if (host.startsWith("[")) {
+            int end = host.indexOf(']');
+            host = end > 0 ? host.substring(1, end) : host;
+        } else {
+            int colon = host.lastIndexOf(':');
+            if (colon > 0 && host.indexOf(':') == colon) host = host.substring(0, colon);
+        }
+        String[] octets = host.split("\\.");
+        boolean ipv4Loopback = octets.length == 4 && "127".equals(octets[0]);
+        boolean loopbackHost = "localhost".equals(host) || "::1".equals(host) ||
+                "0:0:0:0:0:0:0:1".equals(host) || ipv4Loopback;
+        return forwardedHttps || !loopbackHost;
+    }
+
+    private static void setSessionCookie(HttpExchange ex, String token) {
+        String value = SESSION_COOKIE + "=" + token + "; Path=/; Max-Age=43200; HttpOnly; SameSite=Lax";
+        if (secureCookie(ex)) value += "; Secure";
+        ex.getResponseHeaders().add("Set-Cookie", value);
+    }
+
+    private static void clearSessionCookie(HttpExchange ex) {
+        String value = SESSION_COOKIE + "=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax";
+        if (secureCookie(ex)) value += "; Secure";
+        ex.getResponseHeaders().add("Set-Cookie", value);
     }
 
     private static Map<String, Object> readBodyLimited(HttpExchange ex) throws IOException, ApiException {
@@ -1286,7 +1553,7 @@ public class Api {
         Map<String, Object> r = new LinkedHashMap<>();
         r.put("code", code);
         r.put("msg", msg);
-        json(ex, 200, r);
+        json(ex, code >= 400 && code <= 599 ? code : 400, r);
     }
 
     /** 锁内只生成响应；真正的网络写回在数据库锁释放后执行。 */
@@ -1301,6 +1568,12 @@ public class Api {
                 ? (ApiResponse) pending
                 : new ApiResponse(500, "{\"code\":500,\"msg\":\"服务器未生成响应\"}".getBytes(StandardCharsets.UTF_8));
         ex.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
+        ex.getResponseHeaders().set("Cache-Control", "no-store");
+        ex.getResponseHeaders().set("Pragma", "no-cache");
+        if ("HEAD".equalsIgnoreCase(ex.getRequestMethod())) {
+            ex.sendResponseHeaders(response.httpCode, -1);
+            return;
+        }
         ex.sendResponseHeaders(response.httpCode, response.body.length);
         try (OutputStream os = ex.getResponseBody()) { os.write(response.body); }
     }

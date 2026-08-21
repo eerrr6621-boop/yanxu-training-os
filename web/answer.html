@@ -1,20 +1,22 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-build="yanxu-v10">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="theme-color" content="#13231d">
+  <meta name="theme-color" content="#f6f7ff">
+  <meta name="description" content="研序培训效果评估问卷">
   <title>培训效果评估 · 研序</title>
-  <link rel="icon" href="/assets/yx-mark.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/style.css">
-  <link rel="stylesheet" href="/studio.css">
+  <link rel="icon" href="/assets/yx-mark-v10.png?v=20260813v10r3" type="image/png">
+  <link rel="stylesheet" href="/style.css?v=20260813v10r3">
+  <link rel="stylesheet" href="/studio.css?v=20260813v10r3">
+  <link rel="stylesheet" href="/answer-v10.css?v=20260813v10r3">
 </head>
 <body class="answer-page">
   <main class="answer-wrap" id="app">
-    <div class="answer-brand"><img class="brand-symbol" src="/assets/yx-mark.svg" alt=""><span>研序</span></div>
+    <div class="answer-brand" aria-label="研序培训运营中心"><span class="answer-brand-mark"><img class="brand-symbol" src="/assets/yx-mark-v10.png?v=20260813v10r3" alt=""></span><span class="answer-brand-copy"><b>研序</b><small>TRAINING EXPERIENCE</small></span></div>
     <div class="answer-card"><div class="answer-skeleton" role="status" aria-label="正在加载问卷" aria-busy="true"><span></span><span></span><span></span><span></span></div></div>
   </main>
-  <script src="/lucide.min.js"></script>
+  <script src="/lucide.min.js?v=20260813v10r3"></script>
   <script>
     const $ = (s, el) => (el || document).querySelector(s);
     const $$ = (s, el) => Array.from((el || document).querySelectorAll(s));
@@ -22,8 +24,10 @@
     const icon = (name, cls = '') => `<i data-lucide="${esc(name)}" class="${esc(cls)}" aria-hidden="true"></i>`;
     const refreshIcons = (root = document) => { if (window.lucide) window.lucide.createIcons({ root, attrs: { 'stroke-width': 1.75 } }); };
     const token = new URLSearchParams(location.search).get('token') || '';
-    const draftKey = 'yansu-questionnaire-draft:' + token;
+    const draftKey = 'yanxu-questionnaire-draft:' + token;
+    const legacyDraftKey = 'yansu-questionnaire-draft:' + token;
     const scoreLabels = ['很差', '较差', '一般', '满意', '非常满意'];
+    const motionBehavior = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
 
     async function load() {
       if (!token) { showError('问卷链接不完整', '请向培训组织方重新获取有效链接。'); return; }
@@ -36,13 +40,14 @@
     }
 
     function brand() {
-      return `<div class="answer-brand"><img class="brand-symbol" src="/assets/yx-mark.svg" alt=""><span>研序</span></div>`;
+      return `<div class="answer-brand" aria-label="研序培训运营中心"><span class="answer-brand-mark"><img class="brand-symbol" src="/assets/yx-mark-v10.png?v=20260813v10r3" alt=""></span><span class="answer-brand-copy"><b>研序</b><small>TRAINING EXPERIENCE</small></span></div>`;
     }
 
     function showError(title, detail = '如有疑问，请联系培训组织方。') {
-      $('#app').innerHTML = `${brand()}<div class="answer-card answer-success"><span class="success-icon" style="background:var(--danger-bg);color:var(--danger)">${icon('link-2-off')}</span><h2>${esc(title)}</h2><p>${esc(detail)}</p><button type="button" class="btn gray answer-retry" id="answer-retry">${icon('refresh-cw')}重新加载</button></div>`;
+      $('#app').innerHTML = `${brand()}<div class="answer-card answer-success answer-state is-error" role="alert" tabindex="-1"><span class="answer-state-kicker">问卷访问提示</span><span class="success-icon">${icon('link-2-off')}</span><h2>${esc(title)}</h2><p>${esc(detail)}</p><button type="button" class="btn gray answer-retry" id="answer-retry">${icon('refresh-cw')}<span>重新加载</span></button></div>`;
       $('#answer-retry').onclick = () => location.reload();
       refreshIcons($('#app'));
+      requestAnimationFrame(() => $('.answer-state')?.focus({ preventScroll: true }));
     }
 
     function render(data) {
@@ -51,8 +56,8 @@
       $('#app').innerHTML = `
         ${brand()}
         <div class="answer-progress" ${requiredTotal ? '' : 'hidden'}>
-          <div><span>必答题完成度</span><span id="progress-text">0 / ${requiredTotal}</span></div>
-          <div class="progress"><i id="progress-bar" style="width:0%"></i></div>
+          <div><span>必答题完成度</span><span id="progress-text" aria-live="polite" aria-atomic="true">0 / ${requiredTotal}</span></div>
+          <div class="progress" id="answer-progress-meter" role="progressbar" aria-label="必答题完成度" aria-valuemin="0" aria-valuemax="${requiredTotal}" aria-valuenow="0" aria-valuetext="已完成 0 题，共 ${requiredTotal} 题"><i id="progress-bar" style="width:0%"></i></div>
         </div>
         <section class="answer-card answer-head">
           <span class="eyebrow">培训效果评估</span>
@@ -60,14 +65,15 @@
           <p>${data.project_title ? `本问卷用于了解“${esc(data.project_title)}”的培训效果。` : '您的反馈将帮助我们持续改进培训体验。'}所有结果仅用于培训分析与改进。</p>
           <div class="answer-meta"><span>${icon('users-round')}${esc(data.target)}</span><span>${icon('list-checks')}${data.questions.length} 道题</span><span>${icon('clock-3')}预计 ${Math.max(2, Math.ceil(data.questions.length * .45))} 分钟</span></div>
         </section>
-        <form class="answer-card" id="answer-form" novalidate>
+        <form class="answer-card" id="answer-form" aria-describedby="answer-privacy" novalidate>
           <div class="aq">
-            <label class="qt" for="respondent">您的称呼 <span style="color:var(--text-3);font-weight:400">（选填）</span></label>
-            <input class="answer-text" id="respondent" autocomplete="name" placeholder="如：张先生 / 李女士；也可匿名提交">
+            <label class="qt" for="respondent">您的称呼 <span class="answer-optional">（选填）</span></label>
+            <input class="answer-text" id="respondent" autocomplete="name" aria-describedby="respondent-hint" placeholder="如：张先生 / 李女士">
+            <span class="answer-field-hint" id="respondent-hint">留空即可匿名提交</span>
           </div>
           ${data.questions.map((q, i) => questionHtml(q, i)).join('')}
           <button type="submit" class="btn answer-submit" id="submit">${icon('send')}<span>提交问卷</span></button>
-          <p class="answer-privacy">${icon('shield-check')}回答会自动保存在当前设备，提交后仅用于本次培训的效果分析与改进。</p>
+          <p class="answer-privacy" id="answer-privacy">${icon('shield-check')}<span>回答会自动保存在当前设备，提交后仅用于本次培训的效果分析与改进。</span></p>
         </form>`;
       restoreDraft(data.questions);
       bindInteractions(data.questions);
@@ -76,16 +82,18 @@
 
     function questionHtml(q, i) {
       const required = q.type !== 'text';
-      const title = `<div class="qt">${i + 1}. ${esc(q.title)}${required ? '<span class="required-mark" aria-label="必答">*</span>' : '<span style="color:var(--text-3);font-weight:400">（选填）</span>'}</div>`;
+      const titleId = `q${i}-title`;
+      const errorId = `q${i}-error`;
+      const title = `<div class="qt" id="${titleId}">${i + 1}. ${esc(q.title)}${required ? '<span class="required-mark" aria-label="必答">*</span>' : '<span class="answer-optional">（选填）</span>'}</div>`;
       let control = '';
       if (q.type === 'score') {
-        control = `<div class="score-group" role="radiogroup" aria-label="${esc(q.title)}">${[1,2,3,4,5].map((n) => `<label class="score-option"><input type="radio" name="q${i}" value="${n}" ${required ? 'required' : ''}><b>${n}</b><small>${scoreLabels[n - 1]}</small></label>`).join('')}</div>`;
+        control = `<div class="score-group" role="radiogroup" aria-labelledby="${titleId}" aria-describedby="${errorId}" aria-required="${required}">${[1,2,3,4,5].map((n) => `<label class="score-option"><input type="radio" name="q${i}" value="${n}" ${required ? 'required' : ''}><b>${n}</b><small>${scoreLabels[n - 1]}</small></label>`).join('')}</div>`;
       } else if (q.type === 'single') {
-        control = `<div class="radio-list" role="radiogroup" aria-label="${esc(q.title)}">${(q.options || []).map((o) => `<label class="radio-option"><input type="radio" name="q${i}" value="${esc(o)}" ${required ? 'required' : ''}><span>${esc(o)}</span></label>`).join('')}</div>`;
+        control = `<div class="radio-list" role="radiogroup" aria-labelledby="${titleId}" aria-describedby="${errorId}" aria-required="${required}">${(q.options || []).map((o) => `<label class="radio-option"><input type="radio" name="q${i}" value="${esc(o)}" ${required ? 'required' : ''}><span>${esc(o)}</span></label>`).join('')}</div>`;
       } else {
-        control = `<textarea name="q${i}" placeholder="请输入您的意见或建议…" aria-label="${esc(q.title)}"></textarea>`;
+        control = `<textarea id="q${i}-input" name="q${i}" placeholder="请输入您的意见或建议…" aria-labelledby="${titleId}" aria-describedby="${errorId}"></textarea>`;
       }
-      return `<section class="aq" data-i="${i}" data-type="${esc(q.type)}">${title}${control}<div class="question-error" aria-live="polite"></div></section>`;
+      return `<section class="aq" data-i="${i}" data-type="${esc(q.type)}" aria-labelledby="${titleId}">${title}${control}<div class="question-error" id="${errorId}" role="alert" aria-live="polite"></div></section>`;
     }
 
     function bindInteractions(questions) {
@@ -94,6 +102,9 @@
           const aq = input.closest('.aq');
           $$('.score-option, .radio-option', aq).forEach((label) => label.classList.toggle('on', $('input', label).checked));
           $('.question-error', aq).textContent = '';
+          aq.classList.remove('has-error');
+          const group = $('[role="radiogroup"]', aq);
+          if (group) group.setAttribute('aria-invalid', 'false');
           updateProgress(questions);
           saveDraft(questions);
         };
@@ -105,7 +116,7 @@
 
     function restoreDraft(questions) {
       try {
-        const draft = JSON.parse(localStorage.getItem(draftKey) || 'null');
+        const draft = JSON.parse(localStorage.getItem(draftKey) || localStorage.getItem(legacyDraftKey) || 'null');
         if (!draft) return;
         $('#respondent').value = draft.respondent || '';
         questions.forEach((q, i) => {
@@ -136,6 +147,9 @@
       if (!required.length) return;
       $('#progress-text').textContent = `${done} / ${required.length}`;
       $('#progress-bar').style.width = pct + '%';
+      const meter = $('#answer-progress-meter');
+      meter.setAttribute('aria-valuenow', String(done));
+      meter.setAttribute('aria-valuetext', `已完成 ${done} 题，共 ${required.length} 题`);
     }
 
     async function submit(questions) {
@@ -145,6 +159,9 @@
         const aq = $(`.aq[data-i="${i}"]`);
         const error = $('.question-error', aq);
         error.textContent = '';
+        aq.classList.remove('has-error');
+        const group = $('[role="radiogroup"]', aq);
+        if (group) group.setAttribute('aria-invalid', 'false');
         if (q.type === 'text') {
           answers.push({ value: $('textarea', aq).value.trim() });
           return;
@@ -152,6 +169,8 @@
         const checked = $(`input[name="q${i}"]:checked`, aq);
         if (!checked) {
           error.textContent = '这道题需要作答';
+          aq.classList.add('has-error');
+          if (group) group.setAttribute('aria-invalid', 'true');
           if (!firstInvalid) firstInvalid = $('input', aq) || aq;
           answers.push({ value: q.type === 'score' ? 0 : '' });
         } else {
@@ -160,10 +179,12 @@
       });
       if (firstInvalid) {
         firstInvalid.focus({ preventScroll: true });
-        firstInvalid.closest('.aq').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        firstInvalid.closest('.aq').scrollIntoView({ behavior: motionBehavior(), block: 'center' });
         return;
       }
       const btn = $('#submit');
+      const form = $('#answer-form');
+      form.setAttribute('aria-busy', 'true');
       btn.disabled = true;
       btn.innerHTML = `${icon('loader-circle', 'spin')}<span>正在提交</span>`;
       refreshIcons(btn);
@@ -174,17 +195,20 @@
         });
         const data = await res.json();
         if (data.code !== 0) throw new Error(data.msg || '提交失败');
-        try { localStorage.removeItem(draftKey); } catch (e) {}
-        $('#app').innerHTML = `${brand()}<div class="answer-card answer-success"><span class="success-icon">${icon('circle-check-big')}</span><h2>感谢您的反馈</h2><p>问卷已成功提交，您的意见将帮助我们做得更好。</p></div>`;
+        try { localStorage.removeItem(draftKey); localStorage.removeItem(legacyDraftKey); } catch (e) {}
+        $('#app').innerHTML = `${brand()}<div class="answer-card answer-success answer-state is-success" role="status" aria-live="polite" tabindex="-1"><span class="answer-state-kicker">提交成功</span><span class="success-icon">${icon('circle-check-big')}</span><h2>感谢您的反馈</h2><p>问卷已成功提交，您的意见将帮助我们做得更好。</p></div>`;
         refreshIcons($('#app'));
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        window.scrollTo({ top: 0, behavior: motionBehavior() });
+        requestAnimationFrame(() => $('.answer-state')?.focus({ preventScroll: true }));
       } catch (e) {
+        form.setAttribute('aria-busy', 'false');
         btn.disabled = false;
         btn.innerHTML = `${icon('send')}<span>重新提交</span>`;
         refreshIcons(btn);
         const old = $('.submit-error');
         if (old) old.remove();
-        btn.insertAdjacentHTML('beforebegin', `<p class="submit-error" role="alert">${esc(e.message || '提交失败，请稍后重试')}</p>`);
+        btn.insertAdjacentHTML('beforebegin', `<p class="submit-error" role="alert" tabindex="-1">${esc(e.message || '提交失败，请稍后重试')}</p>`);
+        $('.submit-error')?.focus({ preventScroll: true });
       }
     }
 

@@ -1,21 +1,33 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
   <title id="title">研序标识</title>
-  <desc id="desc">一条穿过四个节点并持续向前的运营路径</desc>
+  <desc id="desc">一条连接需求、交付与成果节点的连续运营轨迹</desc>
   <defs>
-    <linearGradient id="yx-bg" x1="8" y1="7" x2="55" y2="58" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#24241f"/>
-      <stop offset="1" stop-color="#11120f"/>
+    <linearGradient id="yx-bg-v10" x1="7" y1="5" x2="58" y2="61" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#171A3E"/>
+      <stop offset=".52" stop-color="#3B2B8F"/>
+      <stop offset="1" stop-color="#17182E"/>
     </linearGradient>
-    <linearGradient id="yx-path" x1="12" y1="16" x2="52" y2="49" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#f5f0e5"/>
-      <stop offset=".55" stop-color="#d94732"/>
-      <stop offset="1" stop-color="#b79355"/>
+    <linearGradient id="yx-path-v10" x1="12" y1="15" x2="53" y2="50" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F7F8FF"/>
+      <stop offset=".34" stop-color="#8FA3FF"/>
+      <stop offset=".68" stop-color="#9A6BFF"/>
+      <stop offset="1" stop-color="#38D8F2"/>
     </linearGradient>
+    <radialGradient id="yx-glow-v10" cx="0" cy="0" r="1" gradientTransform="translate(18 13) rotate(45) scale(45)">
+      <stop stop-color="#7E8CFF" stop-opacity=".5"/>
+      <stop offset="1" stop-color="#7E8CFF" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="yx-soft-v10" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="1.7"/>
+    </filter>
   </defs>
-  <rect width="64" height="64" rx="17" fill="url(#yx-bg)"/>
-  <path d="M13 17h23c7.5 0 10 9.4 3.4 13.2L25.7 38c-5.1 2.9-3 10.8 2.9 10.8H51" fill="none" stroke="url(#yx-path)" stroke-width="4.4" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="13" cy="17" r="3.5" fill="#f5f0e5"/>
-  <circle cx="39.4" cy="30.2" r="3.5" fill="#d94732"/>
-  <circle cx="25.7" cy="38" r="3.5" fill="#f5f0e5"/>
-  <circle cx="51" cy="48.8" r="3.5" fill="#b79355"/>
+  <rect width="64" height="64" rx="17" fill="url(#yx-bg-v10)"/>
+  <rect x="1" y="1" width="62" height="62" rx="16" fill="none" stroke="#FFFFFF" stroke-opacity=".12"/>
+  <circle cx="22" cy="18" r="25" fill="url(#yx-glow-v10)"/>
+  <path d="M13 17h22.5c7.8 0 10.5 9.7 3.6 13.5l-13 7.2c-5.5 3-3.3 11.3 3 11.3H51" fill="none" stroke="#7B66FF" stroke-opacity=".48" stroke-width="8" stroke-linecap="round" filter="url(#yx-soft-v10)"/>
+  <path d="M13 17h22.5c7.8 0 10.5 9.7 3.6 13.5l-13 7.2c-5.5 3-3.3 11.3 3 11.3H51" fill="none" stroke="url(#yx-path-v10)" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="13" cy="17" r="3.4" fill="#FFFFFF"/>
+  <circle cx="39.1" cy="30.5" r="3.4" fill="#AA7BFF"/>
+  <circle cx="26.1" cy="37.7" r="3.4" fill="#8397FF"/>
+  <circle cx="51" cy="49" r="3.4" fill="#3EE0F4"/>
 </svg>

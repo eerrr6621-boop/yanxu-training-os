@@ -1,5 +1,24 @@
-/* 端到端 API 测试（临时脚本，验证后可删除） */
-const BASE = process.env.TRAINING_API_BASE || 'http://localhost:8080/api';
+/* 端到端 API 测试：只允许显式指定本机 loopback 隔离实例。 */
+function requireLoopbackApiBase() {
+  const raw = String(process.env.TRAINING_API_BASE || '').trim();
+  if (!raw) throw new Error('必须显式设置 TRAINING_API_BASE，例如 http://127.0.0.1:18081/api');
+  let url;
+  try { url = new URL(raw); } catch { throw new Error('TRAINING_API_BASE 不是有效 URL'); }
+  if (!['http:', 'https:'].includes(url.protocol)) throw new Error('TRAINING_API_BASE 仅支持 http/https');
+  if (url.username || url.password || url.search || url.hash) throw new Error('TRAINING_API_BASE 不得包含凭据、查询参数或片段');
+  const host = url.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  const ipv4 = host.split('.').map(Number);
+  const isLoopback = host === 'localhost' || host === '::1' || host === '0:0:0:0:0:0:0:1' ||
+    (ipv4.length === 4 && ipv4.every((part) => Number.isInteger(part) && part >= 0 && part <= 255) && ipv4[0] === 127);
+  if (!isLoopback) throw new Error(`拒绝非 loopback 测试目标: ${url.hostname}`);
+  const path = url.pathname.replace(/\/+$/, '') || '/';
+  if (path !== '/api') throw new Error('TRAINING_API_BASE 路径必须为 /api');
+  return url.origin + path;
+}
+
+let BASE;
+try { BASE = requireLoopbackApiBase(); }
+catch (error) { console.error('安全检查失败:', error.message); process.exit(2); }
 let token = '';
 let pass = 0, fail = 0;
 
@@ -45,7 +64,7 @@ async function call(path, body, tk) {
   ok('新建师资调度', r.code === 0 && r.data > 0);
   const dpId = r.data;
   r = await call('/dispatches/send', { id: dpId });
-  ok('发送授课安排(模拟微信)', r.code === 0);
+  ok('记录已通知师资', r.code === 0);
   r = await call('/dispatches/confirm', { id: dpId, accept: 1 });
   ok('师资确认', r.code === 0);
   r = await call('/dispatches?id=&project_id=' + projId);
@@ -133,13 +152,18 @@ async function call(path, body, tk) {
   ok('业务管理员可写业务模块', r.code === 0);
 
   // 12. 修改密码 + 重置
-  r = await call('/password', { old: 'viewer123', new: 'viewer456' }, vtoken);
+  r = await call('/password', { old: 'viewer123', new: 'viewer4567' }, vtoken);
   ok('修改本人密码', r.code === 0);
-  r = await call('/login', { username: 'viewer', password: 'viewer456' }, '');
+  r = await call('/login', { username: 'viewer', password: 'viewer4567' }, '');
   ok('新密码登录', r.code === 0);
+  const changedViewerToken = r.data.token;
   r = await call('/users/resetpwd', { id: 3, password: 'viewer123' });
   ok('管理员重置密码', r.code === 0);
-  r = await call('/password', { old: 'wrong', new: 'xxxxxx' }, vtoken);
+  r = await call('/me', undefined, changedViewerToken);
+  ok('管理员重置密码后旧会话立即失效', r.code === 401);
+  r = await call('/login', { username: 'viewer', password: 'viewer123' }, '');
+  const restoredViewerToken = r.data.token;
+  r = await call('/password', { old: 'wrong', new: 'xxxxxxxx' }, restoredViewerToken);
   ok('原密码错误被拒绝', r.code === 400);
 
   // 13. 未登录拦截
