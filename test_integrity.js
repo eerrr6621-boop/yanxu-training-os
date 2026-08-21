@@ -355,7 +355,7 @@ function closeEnough(a, b) {
   check('恢复后测试账号可正常登录', r.code === 0 && r.data && r.data.token);
   const finalManagerToken = r.data && r.data.token;
 
-  // 公开培训资料中心：访客免登录下载，只有系统管理员可以维护。
+  // 公开培训资料中心：访客免登录下载，系统管理员与业务管理员可以维护。
   let materialsHttp = await rawCall('/materials/public', { auth: '', method: 'GET' });
   check('未登录访客可读取公开资料目录', materialsHttp.status === 200 && materialsHttp.body.code === 0 && Array.isArray(materialsHttp.body.data));
 
@@ -368,13 +368,13 @@ function closeEnough(a, b) {
     auth: finalManagerToken, method: 'POST', contentType: 'application/pdf',
     headers: { 'X-Material-Meta': materialMeta }, rawBody: materialBytes,
   });
-  check('业务管理员不能上传公开资料', materialsHttp.status === 403 && materialsHttp.body.code === 403);
-
-  materialsHttp = await rawCall('/materials/upload', {
-    method: 'POST', contentType: 'application/pdf', headers: { 'X-Material-Meta': materialMeta }, rawBody: materialBytes,
-  });
-  check('系统管理员可上传公开学习包', materialsHttp.status === 200 && materialsHttp.body.code === 0 && materialsHttp.body.data.id > 0);
+  check('业务管理员可上传公开学习包', materialsHttp.status === 200 && materialsHttp.body.code === 0 && materialsHttp.body.data.id > 0);
   const materialId = materialsHttp.body.data.id;
+
+  const viewerLogin = await call('/login', { username: 'viewer', password: 'viewer123' }, '');
+  const viewerToken = viewerLogin.data && viewerLogin.data.token;
+  materialsHttp = await rawCall('/materials/manage', { auth: viewerToken, method: 'GET' });
+  check('只读用户不能进入资料维护模式', materialsHttp.status === 403 && materialsHttp.body.code === 403);
 
   const invalidMeta = Buffer.from(JSON.stringify({
     title: '伪装文件测试', category: '安全测试', status: '上架', file_name: '伪装.pdf',
@@ -406,7 +406,7 @@ function closeEnough(a, b) {
   materialsHttp = await rawCall('/materials/download?id=' + materialId, { auth: '', method: 'GET' });
   check('下架资料的原下载地址立即失效', materialsHttp.status === 404 && materialsHttp.body.code === 404);
   materialsHttp = await rawCall('/materials/manage', { auth: finalManagerToken, method: 'GET' });
-  check('业务管理员不能读取资料维护目录', materialsHttp.status === 403 && materialsHttp.body.code === 403);
+  check('业务管理员可读取资料维护目录', materialsHttp.status === 200 && materialsHttp.body.code === 0 && materialsHttp.body.data.items.some((item) => item.id === materialId));
   materialsHttp = await rawCall('/materials/update', { method: 'POST', contentType: 'text/plain', rawBody: JSON.stringify({ id: materialId }) });
   check('资料维护接口拒绝非 JSON 请求', materialsHttp.status === 415 && materialsHttp.body.code === 415);
   materialsHttp = await rawCall('/materials/upload', { method: 'HEAD' });

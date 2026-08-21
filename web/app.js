@@ -821,7 +821,7 @@
         <div class="v7-ambient" aria-hidden="true"><i class="a1"></i><i class="a2"></i><i class="a3"></i></div>
         <aside class="sidebar" id="primary-sidebar" aria-label="主导航">
           <div class="logo">${brandSymbol()}<span><b>研序</b><small>TRAINING OS</small></span></div>
-          <a class="sidebar-materials" href="/materials.html">${icon('library-big')}<span><b>培训资料中心</b><small>公开学习包下载</small></span>${icon('arrow-up-right')}</a>
+          <a class="sidebar-materials" href="/materials.html">${icon('library-big')}<span><b>${canWrite() ? '资料上传与管理' : '培训资料中心'}</b><small>${canWrite() ? '上传、上下架与下载' : '公开学习包下载'}</small></span>${icon('arrow-up-right')}</a>
           ${canWrite() ? `<button type="button" class="sidebar-create" id="sidebar-create">${icon('plus')}<span>新建培训需求</span><kbd>N</kbd></button>` : ''}
           <nav class="nav">
             ${groups.map((g) => `<div class="nav-group"><div class="nav-label">${esc(g.name)}</div>${g.items.map((n) =>

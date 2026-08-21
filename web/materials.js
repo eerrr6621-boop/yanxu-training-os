@@ -5,7 +5,7 @@
   const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
   const esc = (value) => String(value == null ? '' : value).replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
   const icon = (name) => `<i data-lucide="${esc(name)}" aria-hidden="true"></i>`;
-  const state = { items: [], admin: false, category: '全部资料', query: '', maxBytes: 100 * 1024 * 1024, extensions: ['pdf', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx', 'zip'] };
+  const state = { items: [], canManage: false, category: '全部资料', query: '', maxBytes: 100 * 1024 * 1024, extensions: ['pdf', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx', 'zip'] };
   let toastTimer = null;
 
   function refreshIcons(root = document) {
@@ -89,7 +89,7 @@
     const root = $('#material-grid');
     const items = visibleItems();
     root.setAttribute('aria-busy', 'false');
-    $('#library-summary').textContent = state.admin ? `显示 ${items.length} / ${state.items.length} 份资料（含下架内容）` : `找到 ${items.length} 份可下载资料`;
+    $('#library-summary').textContent = state.canManage ? `显示 ${items.length} / ${state.items.length} 份资料（含下架内容）` : `找到 ${items.length} 份可下载资料`;
     $('#material-count').textContent = state.items.filter((item) => item.status === undefined || item.status === '上架').length;
     $('#category-count').textContent = new Set(state.items.filter((item) => item.status === undefined || item.status === '上架').map((item) => item.category || '综合学习包')).size;
     if (!items.length) {
@@ -100,12 +100,12 @@
     root.innerHTML = items.map((item) => {
       const online = item.status === undefined || item.status === '上架';
       const extension = extensionOf(item.file_name).toUpperCase() || 'FILE';
-      const actions = state.admin ? `
+      const actions = state.canManage ? `
         <button type="button" data-edit="${item.id}" title="编辑资料" aria-label="编辑 ${esc(item.title)}">${icon('pencil')}</button>
         <button type="button" data-toggle="${item.id}" title="${online ? '下架' : '上架'}" aria-label="${online ? '下架' : '上架'} ${esc(item.title)}">${icon(online ? 'archive' : 'cloud-upload')}</button>
         <button type="button" class="danger" data-delete="${item.id}" title="删除资料" aria-label="删除 ${esc(item.title)}">${icon('trash-2')}</button>` : '';
       return `<article class="material-card ${online ? '' : 'is-offline'}" data-material-id="${item.id}">
-        <div class="material-card-top"><span class="file-icon">${icon(fileIcon(item.file_name))}</span><div class="file-badges"><span>${esc(extension)}</span>${item.version ? `<span>${esc(item.version)}</span>` : ''}${state.admin ? `<span class="status-${online ? 'online' : 'offline'}">${online ? '已上架' : '已下架'}</span>` : ''}</div></div>
+        <div class="material-card-top"><span class="file-icon">${icon(fileIcon(item.file_name))}</span><div class="file-badges"><span>${esc(extension)}</span>${item.version ? `<span>${esc(item.version)}</span>` : ''}${state.canManage ? `<span class="status-${online ? 'online' : 'offline'}">${online ? '已上架' : '已下架'}</span>` : ''}</div></div>
         <h3>${esc(item.title)}</h3>
         <p>${esc(item.summary || '该学习包暂未填写简介，可直接下载查看完整内容。')}</p>
         <div class="file-meta"><span>${icon('layers-3')}${esc(item.category || '综合学习包')}</span><span>${icon('hard-drive-download')}${sizeLabel(item.file_size)}</span><span>${icon('calendar-days')}${dateLabel(item.updated_at || item.created_at)}</span><span>${icon('download')}${Number(item.download_count || 0).toLocaleString('zh-CN')} 次</span></div>
@@ -121,7 +121,7 @@
         if (item) { item.download_count = Number(item.download_count || 0) + 1; setTimeout(renderGrid, 500); }
       };
     });
-    if (state.admin) bindAdminActions(root);
+    if (state.canManage) bindAdminActions(root);
     refreshIcons(root);
   }
 
@@ -271,18 +271,18 @@
     };
   }
 
-  async function detectAdmin() {
+  async function detectMaintainer() {
     try {
       const response = await fetch('/api/me', { credentials: 'same-origin', headers: { Accept: 'application/json' } });
       const payload = await response.json();
-      state.admin = response.ok && payload.code === 0 && payload.data?.role === 'admin';
-    } catch (error) { state.admin = false; }
-    $('#admin-actions').hidden = !state.admin;
+      state.canManage = response.ok && payload.code === 0 && ['admin', 'manager'].includes(payload.data?.role);
+    } catch (error) { state.canManage = false; }
+    $('#admin-actions').hidden = !state.canManage;
   }
 
   async function loadItems() {
     try {
-      if (state.admin) {
+      if (state.canManage) {
         const result = await request('/manage');
         state.items = result.items || [];
         state.maxBytes = Number(result.max_upload_bytes || state.maxBytes);
@@ -309,7 +309,7 @@
       }
     });
     $('#add-material').onclick = openUpload;
-    await detectAdmin();
+    await detectMaintainer();
     await loadItems();
   }
 
