@@ -70,6 +70,9 @@ The API returns real HTTP status codes (`400`, `401`, `403`, `404`, `405`,
   trailing root content, non-finite or out-of-range numeric literals and more
   than 100 nested containers. Business numeric fields are finite-checked again
   before storage, with integer/range checks where applicable.
+- The batch UI holds at most 20 files and uploads them sequentially. Each file is
+  still a separate authenticated request and independently passes the same size,
+  extension, signature, storage-name and authorization checks.
 - All API responses set `Cache-Control: no-store` and `Pragma: no-cache`.
   Unexpected server exceptions are logged server-side but return a generic
   message without stack traces, SQL or filesystem details.

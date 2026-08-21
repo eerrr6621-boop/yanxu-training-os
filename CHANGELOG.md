@@ -2,6 +2,14 @@
 
 All notable changes to Yanxu Training OS. Dates follow the production release history; the format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.7.2] — 2026-08-22 · Batch Material Upload
+
+### Added
+- Administrators can select or drag up to 20 learning-pack files into one upload
+  queue, edit each generated title, remove unwanted files and follow per-file progress.
+- Batch uploads run sequentially through the existing hardened upload endpoint;
+  successful files are kept while failed files remain in the dialog for retry.
+
 ## [1.7.1] — 2026-08-22 · Material Maintenance Access
 
 ### Changed

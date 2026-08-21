@@ -34,7 +34,7 @@ It is deliberately built with **no framework and no build step**: a single Java 
 
 - **Operations Cockpit (今日运营)** — a single continuous “command deck” that auto-ranks what to do now: overdue invitations, classes starting soon, scheduling gaps, material readiness and collection follow-ups, with severity filters (all / urgent / watch / routine), a day-grouped class timeline, per-project health bars and a finance snapshot band.
 - **V10 technology showcase** — the established purple/blue visual language now has a new ImageGen hero and transparent PNG brand mark, with a responsive presentation layer shared by login, navigation and business surfaces.
-- **Public training-material library** — a no-login download center for course packs and templates, with system-admin and business-manager upload, editing, publishing, download counts and safe file storage.
+- **Public training-material library** — a no-login download center for course packs and templates, with editable multi-file upload queues for system admins and business managers, publishing controls, download counts and safe file storage.
 - **Project workspace** — risk-first view per project: blockers and warnings are merged per business record and deep-link to the exact row that needs action; completion and archive are gated by real closure checks (hours scheduled & confirmed, collections, fees).
 - **Role-based access** — `admin` / `manager` / `viewer`, enforced server-side on every write endpoint and mirrored in the UI (read-only users get no write affordances).
 - **Evaluation surveys** — draft → publish → anonymous public answer link → live statistics (score distribution, single-choice charts, text feedback) → close.

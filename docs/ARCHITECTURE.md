@@ -143,6 +143,9 @@ questionnaire and training-material pages.
     no-login search/download surface. The same page reveals management actions
     only when the existing HttpOnly session belongs to a system administrator or
     business manager.
+  - The browser batches up to 20 selected files into an editable queue and sends
+    them sequentially through the ordinary single-file upload endpoint. This keeps
+    per-file validation, partial-success handling and targeted retry independent.
   - `web/app.js` links this page from the login header and signed-in sidebar;
     public access does not create or require a separate account.
 - **Visual assets**
