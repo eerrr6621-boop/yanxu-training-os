@@ -353,6 +353,69 @@ function closeEnough(a, b) {
   check('密码测试数据已恢复', r.code === 0);
   r = await call('/login', { username: 'manager', password: 'manager123' }, '');
   check('恢复后测试账号可正常登录', r.code === 0 && r.data && r.data.token);
+  const finalManagerToken = r.data && r.data.token;
+
+  // 公开培训资料中心：访客免登录下载，只有系统管理员可以维护。
+  let materialsHttp = await rawCall('/materials/public', { auth: '', method: 'GET' });
+  check('未登录访客可读取公开资料目录', materialsHttp.status === 200 && materialsHttp.body.code === 0 && Array.isArray(materialsHttp.body.data));
+
+  const materialMeta = Buffer.from(JSON.stringify({
+    title: '完整性测试领导力学习包', category: '管理课程', summary: '用于验证公开资料下载闭环',
+    version: '2026测试版', status: '上架', file_name: '../../领导力讲义.pdf',
+  })).toString('base64url');
+  const materialBytes = Buffer.from('%PDF-1.4\nYanxu public material integrity test\n%%EOF');
+  materialsHttp = await rawCall('/materials/upload', {
+    auth: finalManagerToken, method: 'POST', contentType: 'application/pdf',
+    headers: { 'X-Material-Meta': materialMeta }, rawBody: materialBytes,
+  });
+  check('业务管理员不能上传公开资料', materialsHttp.status === 403 && materialsHttp.body.code === 403);
+
+  materialsHttp = await rawCall('/materials/upload', {
+    method: 'POST', contentType: 'application/pdf', headers: { 'X-Material-Meta': materialMeta }, rawBody: materialBytes,
+  });
+  check('系统管理员可上传公开学习包', materialsHttp.status === 200 && materialsHttp.body.code === 0 && materialsHttp.body.data.id > 0);
+  const materialId = materialsHttp.body.data.id;
+
+  const invalidMeta = Buffer.from(JSON.stringify({
+    title: '伪装文件测试', category: '安全测试', status: '上架', file_name: '伪装.pdf',
+  })).toString('base64url');
+  materialsHttp = await rawCall('/materials/upload', {
+    method: 'POST', contentType: 'application/pdf', headers: { 'X-Material-Meta': invalidMeta }, rawBody: Buffer.from('not a pdf'),
+  });
+  check('扩展名与内容不符的上传被拒绝', materialsHttp.status === 415 && materialsHttp.body.code === 415);
+
+  materialsHttp = await rawCall('/materials/manage', { method: 'GET' });
+  const managedMaterial = materialsHttp.body.data.items.find((item) => item.id === materialId);
+  check('管理员目录记录文件校验与安全文件名', materialsHttp.status === 200 && managedMaterial && managedMaterial.sha256.length === 64 && managedMaterial.file_name === '领导力讲义.pdf');
+  check('失败上传不产生资料记录', materialsHttp.body.data.items.length === 1);
+
+  materialsHttp = await rawCall('/materials/public', { auth: '', method: 'GET' });
+  check('上架资料立即出现在公开目录', materialsHttp.body.code === 0 && materialsHttp.body.data.some((item) => item.id === materialId));
+
+  materialsHttp = await rawCall('/materials/download?id=' + materialId, { auth: '', method: 'HEAD' });
+  check('公开下载支持 HEAD 且不泄露内联执行类型', materialsHttp.status === 200 && materialsHttp.headers.get('content-type') === 'application/octet-stream' && materialsHttp.headers.get('x-content-type-options') === 'nosniff');
+  materialsHttp = await rawCall('/materials/download?id=' + materialId, { auth: '', method: 'GET', headers: { Range: 'bytes=0-7' } });
+  check('公开下载支持断点续传', materialsHttp.status === 206 && materialsHttp.text === '%PDF-1.4' && String(materialsHttp.headers.get('content-range')).startsWith('bytes 0-7/'));
+
+  r = await call('/materials/update', {
+    id: materialId, title: '领导力学习工具包', category: '管理工具', summary: '已更新简介', version: 'V2', status: '下架',
+  });
+  check('管理员可编辑并下架学习包', r.code === 0);
+  materialsHttp = await rawCall('/materials/public', { auth: '', method: 'GET' });
+  check('下架资料不再出现在公开目录', materialsHttp.body.code === 0 && !materialsHttp.body.data.some((item) => item.id === materialId));
+  materialsHttp = await rawCall('/materials/download?id=' + materialId, { auth: '', method: 'GET' });
+  check('下架资料的原下载地址立即失效', materialsHttp.status === 404 && materialsHttp.body.code === 404);
+  materialsHttp = await rawCall('/materials/manage', { auth: finalManagerToken, method: 'GET' });
+  check('业务管理员不能读取资料维护目录', materialsHttp.status === 403 && materialsHttp.body.code === 403);
+  materialsHttp = await rawCall('/materials/update', { method: 'POST', contentType: 'text/plain', rawBody: JSON.stringify({ id: materialId }) });
+  check('资料维护接口拒绝非 JSON 请求', materialsHttp.status === 415 && materialsHttp.body.code === 415);
+  materialsHttp = await rawCall('/materials/upload', { method: 'HEAD' });
+  check('资料上传接口拒绝非 POST 方法', materialsHttp.status === 405 && materialsHttp.headers.get('allow') === 'POST');
+
+  r = await call('/materials/delete', { id: materialId });
+  check('管理员可删除学习包', r.code === 0);
+  materialsHttp = await rawCall('/materials/manage', { method: 'GET' });
+  check('删除后资料记录与公开链接均失效', materialsHttp.body.code === 0 && !materialsHttp.body.data.items.some((item) => item.id === materialId));
 
   const oversized = await fetch(BASE + '/login', {
     method: 'POST',

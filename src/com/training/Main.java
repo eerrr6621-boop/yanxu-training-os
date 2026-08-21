@@ -49,7 +49,9 @@ public class Main {
         server.createContext("/", ex -> {
             try {
                 String path = ex.getRequestURI().getPath();
-                if (path.startsWith("/api/")) {
+                if (path.startsWith("/api/materials")) {
+                    Materials.handle(ex);
+                } else if (path.startsWith("/api/")) {
                     Api.handle(ex);
                 } else {
                     serveStatic(ex, path);

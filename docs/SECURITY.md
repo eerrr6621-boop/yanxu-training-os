@@ -1,6 +1,6 @@
 # Security model
 
-This document describes the security posture of the public V10 R1 release.
+This document describes the security posture of the public v1.7 release.
 
 ## Authentication and password storage
 
@@ -53,11 +53,19 @@ The API returns real HTTP status codes (`400`, `401`, `403`, `404`, `405`,
 | Lists, current user, statistics and project transition checks | `GET`, `HEAD` |
 | Public questionnaire read | `GET`, `HEAD` |
 | Public questionnaire answer | `POST` |
+| Public material list and download | `GET`, `HEAD` |
+| Admin material upload | `POST` streamed file body + `X-Material-Meta` |
+| Admin material metadata update/delete | `POST` JSON |
 
-- Every `POST` must use `Content-Type: application/json` (an optional charset is
-  accepted); unsupported methods return `405` with `Allow`, and unsupported
+- Every ordinary `POST` must use `Content-Type: application/json` (an optional
+  charset is accepted). The only exception is `/api/materials/upload`: it accepts
+  the original file stream, requires a base64url-encoded UTF-8 JSON
+  `X-Material-Meta` header, and is available only to an authenticated system
+  administrator. Unsupported methods return `405` with `Allow`, and unsupported
   media types return `415`.
-- Request bodies are capped at 1 MiB. The in-repository JSON parser rejects
+- JSON request bodies are capped at 1 MiB; material upload bodies default to a
+  100 MiB cap (`materials.max.bytes`) and the reverse proxy must use a matching
+  upper bound. The in-repository JSON parser rejects
   malformed literals, duplicate keys, missing delimiters, trailing commas,
   trailing root content, non-finite or out-of-range numeric literals and more
   than 100 nested containers. Business numeric fields are finite-checked again
@@ -85,10 +93,18 @@ The API returns real HTTP status codes (`400`, `401`, `403`, `404`, `405`,
 ## Public surface
 
 Unauthenticated endpoints are limited to login, public questionnaire read and
-questionnaire answering. Public answers are validated against the published
-question set; invalid scores/options, closed questionnaires and submissions
-beyond the batch cap are rejected. Login and API traffic are rate-limited by
-nginx.
+answering, plus published-material listing and download. Public answers are
+validated against the published question set; invalid scores/options, closed
+questionnaires and submissions beyond the batch cap are rejected.
+
+Material records keep only metadata in H2. File bytes live under
+`<data.dir>/materials` with UUID-based server-generated storage names. User file
+names never become paths. The server accepts only PDF, Word, PowerPoint, Excel
+and ZIP extensions, verifies their leading file signatures, hashes every upload,
+and returns downloads as `attachment` + `application/octet-stream` with
+`X-Content-Type-Options: nosniff`. Unpublished/deleted IDs return `404`; range
+requests support resumable downloads without enabling inline execution. Login
+and API traffic are rate-limited by nginx.
 
 ## Browser and static-content protections
 
@@ -105,8 +121,9 @@ nginx.
 
 ## Production data and release hygiene
 
-- The production H2 file is owned by a dedicated unprivileged user with `0600`
-  permissions. The systemd unit uses `ProtectSystem=strict`, `ProtectHome=true`,
+- The production H2 file and material directory are owned by a dedicated
+  unprivileged user; the service umask keeps newly uploaded files private. The
+  systemd unit uses `ProtectSystem=strict`, `ProtectHome=true`,
   `PrivateTmp=true`, `NoNewPrivileges=true` and can write only the data path.
 - `test.js`, `test_integrity.js` and security-vector tests mutate data and must
   run only against isolated loopback instances with throwaway databases.

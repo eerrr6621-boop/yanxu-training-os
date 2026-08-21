@@ -1,6 +1,6 @@
 # Architecture
 
-This document describes the public V10 R1 architecture.
+This document describes the public v1.7 architecture.
 
 ## System topology
 
@@ -16,8 +16,8 @@ browser ──────────────────────┤
                  │ CSP · gzip · cache      │ auth · validation · workflow
                  └─────────────┬───────────┘
                                ▼
-                    embedded H2 database
-                  one file · one connection
+                 embedded H2 + material files
+              one database · private data directory
 ```
 
 One Java process serves the versioned static application and JSON API. The
@@ -39,6 +39,13 @@ original host and `X-Forwarded-Proto`.
   - Responses remain `{code: 0, data}` / `{code, msg}` but use real HTTP status
     codes. API output is `no-store`; network writes occur outside the shared
     business lock.
+- **Public materials — `src/com/training/Materials.java`**
+  - Public published-material listing and streamed GET/HEAD downloads with range
+    support; admin-only upload, metadata edit, publish/unpublish and delete.
+  - Upload metadata is UTF-8 JSON carried in a base64url `X-Material-Meta`
+    header while the body remains the original file stream. Server-generated
+    storage names, size limits, extension/signature checks and attachment-only
+    responses keep user filenames out of filesystem paths and browser execution.
 - **Authentication — `src/com/training/Auth.java`**
   - `PBKDF2WithHmacSHA256`, 210,000 iterations, 16-byte random salt and 32-byte
     derived key.
@@ -63,7 +70,8 @@ original host and `X-Forwarded-Proto`.
 ### Business objects
 
 `demands`, `bids`, `projects`, `dispatches`, `questionnaires`, `q_sends`,
-`q_responses`, `teachers`, `teacher_evals`, `charges`, `fees`, `costs`, `users`.
+`q_responses`, `teachers`, `teacher_evals`, `charges`, `fees`, `costs`, `users`,
+`materials`.
 
 ### API method and trust boundaries
 
@@ -72,13 +80,19 @@ original host and `X-Forwarded-Proto`.
 | `/api/login` | `POST` | public |
 | `/api/q/pub` | `GET`, `HEAD` | public capability link |
 | `/api/q/answer` | `POST` | public capability link |
+| `/api/materials/public`, `/download` | `GET`, `HEAD` | public; published files only |
+| `/api/materials/manage` | `GET`, `HEAD` | admin session required |
+| `/api/materials/upload` | `POST` binary stream | admin session required |
+| `/api/materials/update`, `/delete` | `POST` JSON | admin session required |
 | `/api/me`, lists, statistics, transition checks | `GET`, `HEAD` | session required |
 | Generic create/edit/delete | `POST` | writer role required |
 | Logout, password and workflow actions | `POST` | session; writer/admin as applicable |
 
-Every POST must be JSON. The browser uses same-origin credentials; authentication
-tokens are not encoded into application URLs. Questionnaire links use a distinct
-random survey token and are not login sessions.
+Every ordinary POST must be JSON. The only exception is the admin-only material
+upload endpoint, whose file body is streamed with a custom same-origin metadata
+header and a configurable 100 MiB default cap. The browser uses same-origin
+credentials; authentication tokens are not encoded into application URLs.
+Questionnaire links use a distinct random survey token and are not login sessions.
 
 ### Generic CRUD and workflow endpoints
 
@@ -102,8 +116,8 @@ zero or a validated positive demand/winning-bid pair; negative IDs are rejected.
 
 ## Frontend
 
-The production frontend is a build-free same-origin SPA plus a standalone public
-questionnaire page.
+The production frontend is a build-free same-origin SPA plus standalone public
+questionnaire and training-material pages.
 
 - **Application — `web/app.js`**
   - Login/session bootstrap, hash routing and history, route cancellation,
@@ -124,6 +138,12 @@ questionnaire page.
 - **Public questionnaire**
   - `web/answer.html` retains the public rendering/submission logic.
   - `web/answer-v10.css` is its V10 responsive and accessible presentation layer.
+- **Public training materials**
+  - `web/materials.html`, `materials.js` and `materials.css` provide a shareable,
+    no-login search/download surface. The same page reveals management actions
+    only when the existing HttpOnly session belongs to a system administrator.
+  - `web/app.js` links this page from the login header and signed-in sidebar;
+    public access does not create or require a separate account.
 - **Visual assets**
   - `web/assets/yx-tech-orbit-v10.jpg` — ImageGen-created premium technology hero
     used by the login composition.
@@ -158,7 +178,7 @@ pool, narrower transaction/locking boundaries and a shared session strategy.
 
 ## Release and rollback model
 
-V10 changes both Java and static assets, so it is a coordinated backend/frontend
+This release changes both Java and static assets, so it is a coordinated backend/frontend
 release rather than a static-only swap:
 
 1. compile into isolated output and run business, integrity and security-vector

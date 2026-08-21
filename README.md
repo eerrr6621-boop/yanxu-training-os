@@ -6,8 +6,7 @@ A full-lifecycle training-operations platform: from client demand to bid, projec
 [![java](https://img.shields.io/badge/Java-17-orange.svg)](src/com/training/Main.java)
 [![no-build](https://img.shields.io/badge/frontend-no--build-brightgreen.svg)](web/)
 [![db](https://img.shields.io/badge/db-embedded%20H2-lightgrey.svg)](src/com/training/Db.java)
-[![tests](https://img.shields.io/badge/regression-128%20checks-success.svg)](test.js)
-[![CI](https://github.com/eerrr6621-boop/yanxu-training-os/actions/workflows/ci.yml/badge.svg)](https://github.com/eerrr6621-boop/yanxu-training-os/actions/workflows/ci.yml)
+[![tests](https://img.shields.io/badge/regression-145%20checks-success.svg)](test.js)
 
 > 中文文档见 [README_zh.md](README_zh.md)
 
@@ -35,12 +34,13 @@ It is deliberately built with **no framework and no build step**: a single Java 
 
 - **Operations Cockpit (今日运营)** — a single continuous “command deck” that auto-ranks what to do now: overdue invitations, classes starting soon, scheduling gaps, material readiness and collection follow-ups, with severity filters (all / urgent / watch / routine), a day-grouped class timeline, per-project health bars and a finance snapshot band.
 - **V10 technology showcase** — the established purple/blue visual language now has a new ImageGen hero and transparent PNG brand mark, with a responsive presentation layer shared by login, navigation and business surfaces.
+- **Public training-material library** — a no-login download center for course packs and templates, with admin-only upload, editing, publishing, download counts and safe file storage.
 - **Project workspace** — risk-first view per project: blockers and warnings are merged per business record and deep-link to the exact row that needs action; completion and archive are gated by real closure checks (hours scheduled & confirmed, collections, fees).
 - **Role-based access** — `admin` / `manager` / `viewer`, enforced server-side on every write endpoint and mirrored in the UI (read-only users get no write affordances).
 - **Evaluation surveys** — draft → publish → anonymous public answer link → live statistics (score distribution, single-choice charts, text feedback) → close.
 - **Money that adds up** — instructor fees auto-computed from confirmed hours × rate with duplicate-generation protection; collections support partial payments and settlement; costs roll into an estimated balance.
 - **Responsive & accessible** — desktop / tablet / phone layouts, keyboard navigation, focus management, `prefers-reduced-motion` respected everywhere.
-- **Regression suite** — 52 end-to-end API checks + 76 business-integrity and security checks, runnable only against an isolated loopback instance.
+- **Regression suite** — 52 end-to-end API checks + 93 business-integrity and security checks, runnable only against an isolated loopback instance.
 
 ## Quick start
 
@@ -65,7 +65,7 @@ Then open <http://localhost:8080>. Demo mode seeds a **fresh, isolated** databas
 
 | Layer | Choice | Notes |
 |---|---|---|
-| Backend | Java 17, JDK `com.sun.net.httpserver` | No Spring; single process, explicit routing in `Api.java` |
+| Backend | Java 17, JDK `com.sun.net.httpserver` | No Spring; single process, explicit routing in `Api.java` / `Materials.java` |
 | Database | Embedded H2 | Schema + compatible migrations in `Db.java` |
 | Auth | Salted PBKDF2 + in-memory sliding sessions (12 h) | HttpOnly cookie; legacy hash/token compatibility migration |
 | Frontend | Vanilla JS SPA, no build step | `web/app.js`; CSS layers `style → studio → ledger → v10` |
@@ -73,8 +73,8 @@ Then open <http://localhost:8080>. Demo mode seeds a **fresh, isolated** databas
 | Icons | Lucide (vendored) + hand-drawn SVG set | Custom gradient job-icon set on the landing page |
 
 ```
-src/com/training/   Main.java  Api.java  Db.java  Auth.java  Json.java
-web/                index.html app.js    v10.css ledger.css style.css studio.css
+src/com/training/   Main.java  Api.java  Materials.java  Db.java  Auth.java  Json.java
+web/                index.html app.js materials.html materials.js materials.css v10.css …
 lib/                h2.jar     ecj.jar
 test.js             end-to-end API regression (writes data — use isolated DB)
 test_integrity.js   business-invariant regression (writes data — use isolated DB)
@@ -94,14 +94,13 @@ TRAINING_API_BASE=http://127.0.0.1:18081/api node test.js
 TRAINING_API_BASE=http://127.0.0.1:18081/api node test_integrity.js
 ```
 
-Expected: `52 通过, 0 失败` and `76 通过, 0 失败`.
+Expected: `52 通过, 0 失败` and `93 通过, 0 失败`.
 
 ## Maintenance
 
-GitHub Actions compiles the Java 17 backend and runs all 128 checks against two
-separate throwaway, loopback-only databases on every push and pull request, on a
-weekly schedule, and on manual dispatch. Production data and credentials are
-never part of this workflow. Security-sensitive changes should also update
+Every release must compile the Java 17 backend and run all 145 checks against two
+separate throwaway, loopback-only databases. Production data and credentials are
+never part of this quality gate. Security-sensitive changes should also update
 [docs/SECURITY.md](docs/SECURITY.md) and the release notes in
 [CHANGELOG.md](CHANGELOG.md).
 

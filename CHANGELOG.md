@@ -2,6 +2,25 @@
 
 All notable changes to Yanxu Training OS. Dates follow the production release history; the format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.7.0] — 2026-08-22 · Public Training Materials
+
+### Added
+- Added a no-login training-material center at `materials.html`, linked from the
+  upper-left area of the public home page and from the signed-in sidebar.
+- System administrators can upload, edit, publish/unpublish and delete learning
+  packs. Visitors can search, filter and download published files without an account.
+- Added byte-range downloads, download counters, version/category metadata and a
+  dedicated file store under the configured data directory.
+
+### Security
+- Material maintenance is restricted to the `admin` role. Uploads are capped at
+  100 MiB by default, stored under random server-generated names and limited to
+  PDF, Word, PowerPoint, Excel and ZIP formats with file-signature checks.
+- Public downloads always use attachment disposition, `application/octet-stream`,
+  `nosniff` and safe UTF-8 filenames; unpublished and deleted files are unavailable.
+- Regression baseline increased to 52 end-to-end checks plus 93 integrity/security
+  checks (145 total), including 17 public-material authorization and lifecycle cases.
+
 ## [1.6.0] — 2026-08-13 · Technology Showcase V10 R1
 
 ### Added
@@ -11,8 +30,8 @@ All notable changes to Yanxu Training OS. Dates follow the production release hi
   system without removing the existing business cockpit.
 - Browser acceptance now walks every role-visible page: 22 local admin pages, 21
   production manager pages and 20 production viewer pages.
-- GitHub Actions now compiles Java 17 and runs all 128 checks against two fresh,
-  loopback-only databases on pushes, pull requests, a weekly schedule and manual dispatch.
+- Established a 128-check release gate against two fresh, loopback-only
+  databases; production data and credentials are excluded from regression runs.
 - Redistributed dependency licenses and notices are collected under
   `third_party_licenses/`.
 

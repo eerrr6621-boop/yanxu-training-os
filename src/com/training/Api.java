@@ -17,7 +17,7 @@ public class Api {
      * 业务处理共享同一把数据库锁，保证状态校验与更新原子化，并保护单一 H2 连接。
      * 请求体会在进入这把锁之前限量读取，慢客户端不会占住整个系统的业务锁。
      */
-    private static final Object MUTATION_LOCK = new Object();
+    static final Object MUTATION_LOCK = new Object();
     private static final String BODY_ATTRIBUTE = Api.class.getName() + ".body";
     private static final String RESPONSE_ATTRIBUTE = Api.class.getName() + ".response";
     private static final String SESSION_COOKIE = "yx_session";
@@ -1445,7 +1445,7 @@ public class Api {
             throw new ApiException(415, "写入接口只接受 application/json 请求");
     }
 
-    private static String token(HttpExchange ex) {
+    static String token(HttpExchange ex) {
         String cookieToken = null;
         String cookie = ex.getRequestHeaders().getFirst("Cookie");
         if (cookie != null) {

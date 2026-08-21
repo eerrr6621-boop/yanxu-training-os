@@ -166,6 +166,28 @@ html[data-visual="ledger"] .brand-symbol,
   padding: 18px clamp(20px, 4vw, 52px);
 }
 
+.v10-top-left { display: flex; align-items: center; gap: 18px; min-width: 0; }
+.v10-material-entry {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 10px 6px 12px;
+  border: 1px solid rgba(91, 92, 246, .15);
+  border-radius: 13px;
+  background: rgba(255, 255, 255, .72);
+  color: #4f46d8;
+  box-shadow: 0 8px 25px rgba(44, 39, 124, .055);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+.v10-material-entry:hover { transform: translateY(-1px); border-color: rgba(91, 92, 246, .3); box-shadow: 0 12px 30px rgba(44, 39, 124, .1); }
+.v10-material-entry > svg { width: 17px; height: 17px; flex: 0 0 auto; }
+.v10-material-entry > svg:last-child { width: 14px; height: 14px; color: #8b84bd; }
+.v10-material-entry > span { display: flex; flex-direction: column; min-width: 0; }
+.v10-material-entry b { color: #30354e; font-size: 12px; }
+.v10-material-entry small { margin-top: 2px; color: #81889e; font-size: 9px; }
+
 .v6-brand .brand-symbol {
   width: 42px;
   height: 42px;
@@ -362,6 +384,26 @@ html[data-visual="ledger"] .logo .brand-symbol {
 }
 html[data-visual="ledger"] .logo > span:last-child { border-left-color: rgba(255, 255, 255, .14); }
 html[data-visual="ledger"] .logo b { color: #fff; font-size: 18px; letter-spacing: .16em; }
+
+html[data-visual="ledger"] .sidebar-materials {
+  min-height: 54px;
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) 16px;
+  align-items: center;
+  gap: 9px;
+  margin: 12px 12px 4px;
+  padding: 7px 10px;
+  border: 1px solid rgba(128, 226, 245, .15);
+  border-radius: 12px;
+  color: #fff;
+  background: linear-gradient(120deg, rgba(105, 103, 255, .2), rgba(34, 211, 238, .09));
+}
+html[data-visual="ledger"] .sidebar-materials:hover { border-color: rgba(128, 226, 245, .3); background: linear-gradient(120deg, rgba(105, 103, 255, .3), rgba(34, 211, 238, .14)); }
+html[data-visual="ledger"] .sidebar-materials > svg:first-child { width: 18px; height: 18px; justify-self: center; color: #7fe9f7; }
+html[data-visual="ledger"] .sidebar-materials > svg:last-child { width: 14px; height: 14px; color: #aeb4d5; }
+html[data-visual="ledger"] .sidebar-materials span { min-width: 0; display: flex; flex-direction: column; }
+html[data-visual="ledger"] .sidebar-materials b { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+html[data-visual="ledger"] .sidebar-materials small { overflow: hidden; margin-top: 2px; color: #aeb4d5; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 
 html[data-visual="ledger"] .sidebar-create {
   min-height: 46px;
@@ -1368,6 +1410,19 @@ html[data-visual="ledger"] .report-box {
   .v6-brand small { display: none; }
   .v6-hero-copy h1 { font-size: 34px; }
   .v6-card { padding-inline: 17px; }
+}
+
+@media (max-width: 760px) {
+  .v10-top-left { width: 100%; justify-content: space-between; gap: 10px; }
+  .v10-material-entry { flex: 0 0 auto; padding-inline: 11px; }
+  .v10-material-entry small,
+  .v10-material-entry > svg:last-child { display: none; }
+  .v10-material-entry b { font-size: 11px; }
+}
+
+@media (max-width: 360px) {
+  .v10-material-entry span { display: none; }
+  .v10-material-entry { width: 44px; justify-content: center; padding: 0; }
 }
 
 /* ---------- 输入方式、动效保护、打印 ---------- */

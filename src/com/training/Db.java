@@ -72,6 +72,13 @@ public class Db {
             st.execute("CREATE TABLE IF NOT EXISTS costs(" +
                     "id IDENTITY PRIMARY KEY, project_id BIGINT, type VARCHAR(32), amount DOUBLE, cost_date VARCHAR(32)," +
                     "note CLOB, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
+            st.execute("CREATE TABLE IF NOT EXISTS materials(" +
+                    "id IDENTITY PRIMARY KEY, title VARCHAR(200) NOT NULL, category VARCHAR(64), summary CLOB," +
+                    "version VARCHAR(32), file_name VARCHAR(255) NOT NULL, storage_name VARCHAR(64) UNIQUE NOT NULL," +
+                    "content_type VARCHAR(128), file_size BIGINT NOT NULL, sha256 VARCHAR(64) NOT NULL," +
+                    "status VARCHAR(16) DEFAULT '上架', download_count BIGINT DEFAULT 0, created_by BIGINT," +
+                    "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
+            st.execute("CREATE INDEX IF NOT EXISTS idx_materials_status_created ON materials(status, created_at)");
             // 兼容已有本地数据库：以非破坏方式补齐运营字段。
             st.execute("ALTER TABLE projects ADD COLUMN IF NOT EXISTS owner VARCHAR(64)");
             st.execute("ALTER TABLE projects ADD COLUMN IF NOT EXISTS participant_count INT DEFAULT 0");

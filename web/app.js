@@ -568,7 +568,7 @@
       <main class="v6-login" aria-label="研序登录">
         <div class="v6-bg" aria-hidden="true"><i class="v6-aurora a1"></i><i class="v6-aurora a2"></i><i class="v6-aurora a3"></i><span class="v6-gridlines"></span><span class="v6-glow"></span></div>
         <header class="v6-top">
-          <div class="v6-brand">${brandSymbol()}<span><b>研序</b><small>TRAINING OPERATIONS</small></span></div>
+          <div class="v10-top-left"><div class="v6-brand">${brandSymbol()}<span><b>研序</b><small>TRAINING OPERATIONS</small></span></div><a class="v10-material-entry" href="/materials.html">${icon('library-big')}<span><b>培训资料下载</b><small>无需登录 · 公开获取</small></span>${icon('arrow-up-right')}</a></div>
           <span class="v6-top-mini"><i aria-hidden="true"></i>培训运营中枢</span>
         </header>
         <section class="v6-hero">
@@ -821,6 +821,7 @@
         <div class="v7-ambient" aria-hidden="true"><i class="a1"></i><i class="a2"></i><i class="a3"></i></div>
         <aside class="sidebar" id="primary-sidebar" aria-label="主导航">
           <div class="logo">${brandSymbol()}<span><b>研序</b><small>TRAINING OS</small></span></div>
+          <a class="sidebar-materials" href="/materials.html">${icon('library-big')}<span><b>培训资料中心</b><small>公开学习包下载</small></span>${icon('arrow-up-right')}</a>
           ${canWrite() ? `<button type="button" class="sidebar-create" id="sidebar-create">${icon('plus')}<span>新建培训需求</span><kbd>N</kbd></button>` : ''}
           <nav class="nav">
             ${groups.map((g) => `<div class="nav-group"><div class="nav-label">${esc(g.name)}</div>${g.items.map((n) =>
