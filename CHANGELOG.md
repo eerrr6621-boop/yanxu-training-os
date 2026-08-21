@@ -2,6 +2,14 @@
 
 All notable changes to Yanxu Training OS. Dates follow the production release history; the format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.7.1] — 2026-08-22 · Material Maintenance Access
+
+### Changed
+- Business managers can now upload, edit, publish/unpublish and delete training
+  materials alongside system administrators; read-only users remain blocked.
+- The signed-in sidebar now labels the entry as “资料上传与管理” for writable roles,
+  and the public page exposes an explicit “上传学习包” action in maintenance mode.
+
 ## [1.7.0] — 2026-08-22 · Public Training Materials
 
 ### Added

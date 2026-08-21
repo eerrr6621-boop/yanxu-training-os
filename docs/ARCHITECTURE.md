@@ -41,7 +41,7 @@ original host and `X-Forwarded-Proto`.
     business lock.
 - **Public materials — `src/com/training/Materials.java`**
   - Public published-material listing and streamed GET/HEAD downloads with range
-    support; admin-only upload, metadata edit, publish/unpublish and delete.
+    support; administrator/manager upload, metadata edit, publish/unpublish and delete.
   - Upload metadata is UTF-8 JSON carried in a base64url `X-Material-Meta`
     header while the body remains the original file stream. Server-generated
     storage names, size limits, extension/signature checks and attachment-only
@@ -81,14 +81,14 @@ original host and `X-Forwarded-Proto`.
 | `/api/q/pub` | `GET`, `HEAD` | public capability link |
 | `/api/q/answer` | `POST` | public capability link |
 | `/api/materials/public`, `/download` | `GET`, `HEAD` | public; published files only |
-| `/api/materials/manage` | `GET`, `HEAD` | admin session required |
-| `/api/materials/upload` | `POST` binary stream | admin session required |
-| `/api/materials/update`, `/delete` | `POST` JSON | admin session required |
+| `/api/materials/manage` | `GET`, `HEAD` | admin or manager session required |
+| `/api/materials/upload` | `POST` binary stream | admin or manager session required |
+| `/api/materials/update`, `/delete` | `POST` JSON | admin or manager session required |
 | `/api/me`, lists, statistics, transition checks | `GET`, `HEAD` | session required |
 | Generic create/edit/delete | `POST` | writer role required |
 | Logout, password and workflow actions | `POST` | session; writer/admin as applicable |
 
-Every ordinary POST must be JSON. The only exception is the admin-only material
+Every ordinary POST must be JSON. The only exception is the material-maintenance
 upload endpoint, whose file body is streamed with a custom same-origin metadata
 header and a configurable 100 MiB default cap. The browser uses same-origin
 credentials; authentication tokens are not encoded into application URLs.
@@ -141,7 +141,8 @@ questionnaire and training-material pages.
 - **Public training materials**
   - `web/materials.html`, `materials.js` and `materials.css` provide a shareable,
     no-login search/download surface. The same page reveals management actions
-    only when the existing HttpOnly session belongs to a system administrator.
+    only when the existing HttpOnly session belongs to a system administrator or
+    business manager.
   - `web/app.js` links this page from the login header and signed-in sidebar;
     public access does not create or require a separate account.
 - **Visual assets**

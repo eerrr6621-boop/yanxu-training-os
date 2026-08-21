@@ -54,14 +54,14 @@ The API returns real HTTP status codes (`400`, `401`, `403`, `404`, `405`,
 | Public questionnaire read | `GET`, `HEAD` |
 | Public questionnaire answer | `POST` |
 | Public material list and download | `GET`, `HEAD` |
-| Admin material upload | `POST` streamed file body + `X-Material-Meta` |
-| Admin material metadata update/delete | `POST` JSON |
+| Material maintenance upload | `POST` streamed file body + `X-Material-Meta` |
+| Material maintenance metadata update/delete | `POST` JSON |
 
 - Every ordinary `POST` must use `Content-Type: application/json` (an optional
   charset is accepted). The only exception is `/api/materials/upload`: it accepts
   the original file stream, requires a base64url-encoded UTF-8 JSON
   `X-Material-Meta` header, and is available only to an authenticated system
-  administrator. Unsupported methods return `405` with `Allow`, and unsupported
+  administrator or business manager. Unsupported methods return `405` with `Allow`, and unsupported
   media types return `415`.
 - JSON request bodies are capped at 1 MiB; material upload bodies default to a
   100 MiB cap (`materials.max.bytes`) and the reverse proxy must use a matching

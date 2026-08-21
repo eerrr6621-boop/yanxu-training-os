@@ -10,7 +10,7 @@ import java.security.MessageDigest;
 import java.text.Normalizer;
 import java.util.*;
 
-/** 公开培训资料中心：管理员维护资料包，访客无需登录即可下载已上架文件。 */
+/** 公开培训资料中心：系统/业务管理员维护资料包，访客无需登录即可下载已上架文件。 */
 public final class Materials {
     private static final long DEFAULT_MAX_UPLOAD_BYTES = 100L * 1024 * 1024;
     private static final long MAX_UPLOAD_BYTES = Math.max(1024, Long.getLong("materials.max.bytes", DEFAULT_MAX_UPLOAD_BYTES));
@@ -48,7 +48,7 @@ public final class Materials {
 
             Auth.Session session = Auth.get(Api.token(ex));
             if (session == null) throw new MaterialException(401, "未登录或会话已过期，请重新登录");
-            if (!Auth.isAdmin(session)) throw new MaterialException(403, "仅系统管理员可维护培训资料");
+            if (!Auth.canWrite(session)) throw new MaterialException(403, "仅系统管理员或业务管理员可维护培训资料");
 
             if ("/api/materials/manage".equals(path)) {
                 requireMethod(ex, "GET", "HEAD");
