@@ -6,6 +6,7 @@
   const esc = (value) => String(value == null ? '' : value).replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
   const icon = (name) => `<i data-lucide="${esc(name)}" aria-hidden="true"></i>`;
   const state = { items: [], canManage: false, category: '全部资料', query: '', maxBytes: 100 * 1024 * 1024, extensions: ['pdf', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx', 'zip'] };
+  const MAX_BATCH_FILES = 20;
   let toastTimer = null;
 
   function refreshIcons(root = document) {
@@ -150,7 +151,12 @@
       <header class="material-dialog-head"><div><span>${esc(kicker)}</span><h2 id="material-dialog-title">${esc(title)}</h2></div><button type="button" data-close aria-label="关闭">${icon('x')}</button></header>${body}</section></div>`;
     const mask = $('.material-mask', root);
     const previous = document.activeElement;
-    const close = () => { root.innerHTML = ''; document.body.style.overflow = ''; if (previous && document.contains(previous)) previous.focus(); };
+    const close = () => {
+      if (mask.dataset.locked === 'true') return;
+      root.innerHTML = '';
+      document.body.style.overflow = '';
+      if (previous && document.contains(previous)) previous.focus();
+    };
     document.body.style.overflow = 'hidden';
     $$('[data-close]', mask).forEach((button) => button.onclick = close);
     mask.onclick = (event) => { if (event.target === mask) $('.material-dialog', mask).focus(); };
@@ -171,13 +177,13 @@
 
   function formHtml(item, withFile) {
     return `<form class="material-form" id="material-form">
-      <div class="material-field wide"><label for="material-name">学习包名称 <em>*</em></label><input id="material-name" name="title" maxlength="120" required value="${esc(item?.title || '')}" placeholder="例如：客户服务沟通技巧工具包"></div>
+      ${withFile ? '' : `<div class="material-field wide"><label for="material-name">学习包名称 <em>*</em></label><input id="material-name" name="title" maxlength="120" required value="${esc(item?.title || '')}" placeholder="例如：客户服务沟通技巧工具包"></div>`}
       <div class="material-field"><label for="material-category">资料分类 <em>*</em></label><input id="material-category" name="category" maxlength="40" required value="${esc(item?.category || '综合学习包')}" placeholder="课程讲义 / 工具模板"></div>
       <div class="material-field"><label for="material-version">版本信息</label><input id="material-version" name="version" maxlength="32" value="${esc(item?.version || '')}" placeholder="例如：2026 版 / V2.1"></div>
       <div class="material-field wide"><label for="material-summary">资料简介</label><textarea id="material-summary" name="summary" maxlength="500" placeholder="简要说明内容、适用对象和使用方式">${esc(item?.summary || '')}</textarea><small>最多 500 个字符，访客会在资料卡片中看到前两行。</small></div>
       <div class="material-field"><label for="material-status">发布状态</label><select id="material-status" name="status"><option value="上架" ${!item || item.status === '上架' ? 'selected' : ''}>立即上架</option><option value="下架" ${item?.status === '下架' ? 'selected' : ''}>暂存为下架</option></select></div>
-      ${withFile ? `<div class="material-field wide"><label>学习包文件 <em>*</em></label><label class="file-drop" id="file-drop">${icon('cloud-upload')}<b id="file-name">点击选择，或将文件拖到这里</b><span>支持 PDF、Word、PPT、Excel、ZIP · 单个不超过 ${sizeLabel(state.maxBytes)}</span><input id="material-file" type="file" required accept="${state.extensions.map((extension) => '.' + extension).join(',')}"></label></div>` : ''}
-      <div class="material-dialog-foot"><button type="button" class="dialog-cancel" data-close>取消</button><button type="submit" class="dialog-submit">${icon(withFile ? 'cloud-upload' : 'save')}<span>${withFile ? '上传并保存' : '保存修改'}</span></button></div>
+      ${withFile ? `<div class="material-field wide"><label>学习包文件 <em>*</em></label><label class="file-drop" id="file-drop">${icon('files')}<b>批量选择，或将多份文件拖到这里</b><span>支持 PDF、Word、PPT、Excel、ZIP · 单个不超过 ${sizeLabel(state.maxBytes)} · 每批最多 ${MAX_BATCH_FILES} 份</span><input id="material-file" type="file" multiple accept="${state.extensions.map((extension) => '.' + extension).join(',')}"></label><div class="batch-file-list" id="batch-file-list" hidden></div><small>资料标题会根据文件名自动生成，可在上传前逐份修改；分类、版本、简介和发布状态会应用到本批全部文件。</small></div>` : ''}
+      <div class="material-dialog-foot"><button type="button" class="dialog-cancel" data-close>取消</button><button type="submit" class="dialog-submit">${icon(withFile ? 'cloud-upload' : 'save')}<span>${withFile ? '选择文件后上传' : '保存修改'}</span></button></div>
     </form>`;
   }
 
@@ -194,50 +200,149 @@
     return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   }
 
+  function defaultMaterialTitle(fileName) {
+    return String(fileName || '')
+      .replace(/\.[^.]+$/, '')
+      .replace(/[_-]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 120) || '未命名学习包';
+  }
+
+  function batchFileKey(file) {
+    return `${file.name}\u0000${file.size}\u0000${file.lastModified}`;
+  }
+
+  function batchFileProblem(file) {
+    if (!file || file.size <= 0) return '文件内容为空';
+    if (file.size > state.maxBytes) return `超过 ${sizeLabel(state.maxBytes)}`;
+    if (!state.extensions.includes(extensionOf(file.name))) return '文件格式不受支持';
+    return '';
+  }
+
   function openUpload() {
-    const mask = modalShell('添加学习包', '公开资料管理', formHtml(null, true));
+    const mask = modalShell('批量上传学习包', '公开资料管理', formHtml(null, true), 'batch-dialog');
     const form = $('#material-form', mask);
     const fileInput = $('#material-file', mask);
     const drop = $('#file-drop', mask);
-    const fileName = $('#file-name', mask);
-    const showFile = () => {
-      const file = fileInput.files[0];
-      fileName.textContent = file ? `${file.name} · ${sizeLabel(file.size)}` : '点击选择，或将文件拖到这里';
+    const list = $('#batch-file-list', mask);
+    const dropTitle = $('b', drop);
+    const submit = $('.dialog-submit', form);
+    let queue = [];
+    let uploading = false;
+    let progressText = '';
+
+    const setBusy = (busy) => {
+      uploading = busy;
+      mask.dataset.locked = busy ? 'true' : 'false';
+      $$('input, select, textarea, button', mask).forEach((control) => { control.disabled = busy; });
     };
-    fileInput.onchange = showFile;
+
+    const renderQueue = () => {
+      list.hidden = !queue.length;
+      dropTitle.textContent = queue.length ? `已加入 ${queue.length} 份，可继续选择` : '批量选择，或将多份文件拖到这里';
+      const hasErrors = queue.some((item) => item.status === 'error');
+      submit.disabled = uploading || !queue.length;
+      submit.innerHTML = uploading
+        ? `${icon('loader-circle')}<span>${esc(progressText || '准备上传…')}</span>`
+        : `${icon('cloud-upload')}<span>${queue.length ? `${hasErrors ? '重试未完成的' : '开始上传'} ${queue.length} 份` : '选择文件后上传'}</span>`;
+      if (!queue.length) {
+        list.innerHTML = '';
+        refreshIcons(submit);
+        return;
+      }
+      list.innerHTML = `<div class="batch-queue-head"><b>上传队列 <span>${queue.length}</span></b><button type="button" data-clear-batch ${uploading ? 'disabled' : ''}>清空队列</button></div><div class="batch-queue-items">${queue.map((item, index) => {
+        const status = item.status || 'pending';
+        const statusText = status === 'uploading' ? '正在上传' : status === 'success' ? '上传完成' : status === 'error' ? item.error : '等待上传';
+        const statusIcon = status === 'uploading' ? 'loader-circle' : status === 'success' ? 'circle-check' : status === 'error' ? 'circle-alert' : 'clock-3';
+        return `<div class="batch-file-row is-${status}">
+          <span class="batch-file-icon">${icon(fileIcon(item.file.name))}</span>
+          <div class="batch-file-main"><input type="text" maxlength="120" required data-batch-title="${index}" value="${esc(item.title)}" aria-label="${esc(item.file.name)} 的资料标题" ${uploading ? 'disabled' : ''}><small>${esc(item.file.name)} · ${sizeLabel(item.file.size)}</small><em>${icon(statusIcon)}${esc(statusText)}</em></div>
+          <button type="button" class="batch-remove" data-remove-batch="${index}" aria-label="移除 ${esc(item.file.name)}" ${uploading ? 'disabled' : ''}>${icon('x')}</button>
+        </div>`;
+      }).join('')}</div>`;
+      $$('[data-batch-title]', list).forEach((input) => {
+        input.oninput = () => { queue[Number(input.dataset.batchTitle)].title = input.value; };
+      });
+      $$('[data-remove-batch]', list).forEach((button) => {
+        button.onclick = () => { queue.splice(Number(button.dataset.removeBatch), 1); renderQueue(); };
+      });
+      const clear = $('[data-clear-batch]', list);
+      if (clear) clear.onclick = () => { queue = []; renderQueue(); };
+      refreshIcons(list);
+      refreshIcons(submit);
+    };
+
+    const addFiles = (files) => {
+      if (uploading) return;
+      const existing = new Set(queue.map((item) => batchFileKey(item.file)));
+      let duplicates = 0;
+      const rejected = [];
+      Array.from(files || []).forEach((file) => {
+        if (queue.length >= MAX_BATCH_FILES) { rejected.push(`${file.name}（超过每批 ${MAX_BATCH_FILES} 份限制）`); return; }
+        const key = batchFileKey(file);
+        if (existing.has(key)) { duplicates += 1; return; }
+        const problem = batchFileProblem(file);
+        if (problem) { rejected.push(`${file.name}（${problem}）`); return; }
+        existing.add(key);
+        queue.push({ file, title: defaultMaterialTitle(file.name), status: 'pending', error: '' });
+      });
+      fileInput.value = '';
+      renderQueue();
+      if (rejected.length) toast(`${rejected[0]}${rejected.length > 1 ? `，另有 ${rejected.length - 1} 份未加入` : ''}`, true);
+      else if (duplicates) toast(`已忽略 ${duplicates} 份重复文件`);
+    };
+
+    fileInput.onchange = () => addFiles(fileInput.files);
     ['dragenter', 'dragover'].forEach((type) => drop.addEventListener(type, (event) => { event.preventDefault(); drop.classList.add('dragging'); }));
     ['dragleave', 'drop'].forEach((type) => drop.addEventListener(type, (event) => { event.preventDefault(); drop.classList.remove('dragging'); }));
     drop.addEventListener('drop', (event) => {
       if (!event.dataTransfer?.files?.length) return;
-      const transfer = new DataTransfer();
-      transfer.items.add(event.dataTransfer.files[0]);
-      fileInput.files = transfer.files;
-      showFile();
+      addFiles(event.dataTransfer.files);
     });
     form.onsubmit = async (event) => {
       event.preventDefault();
-      const file = fileInput.files[0];
-      if (!file) { toast('请选择需要上传的学习包文件', true); return; }
-      if (file.size > state.maxBytes) { toast(`单个学习包不能超过 ${sizeLabel(state.maxBytes)}`, true); return; }
-      const extension = extensionOf(file.name);
-      if (!state.extensions.includes(extension)) { toast('文件格式不受支持', true); return; }
-      const submit = $('.dialog-submit', form);
-      submit.disabled = true;
-      submit.innerHTML = `${icon('loader-circle')}<span>正在上传…</span>`;
-      refreshIcons(submit);
-      try {
-        const metadata = { ...formValues(form), file_name: file.name };
-        await request('/upload', { method: 'POST', headers: { 'Content-Type': file.type || 'application/octet-stream', 'X-Material-Meta': base64Url(JSON.stringify(metadata)) }, body: file });
-        mask._close();
-        toast('学习包已添加');
-        await loadItems();
-      } catch (error) {
-        toast(error.message, true);
-        submit.disabled = false;
-        submit.innerHTML = `${icon('cloud-upload')}<span>上传并保存</span>`;
-        refreshIcons(submit);
+      if (!queue.length) { toast('请先选择需要上传的学习包文件', true); return; }
+      if (!form.reportValidity()) return;
+      const invalidTitle = queue.find((item) => !item.title.trim());
+      if (invalidTitle) { toast(`请填写“${invalidTitle.file.name}”的资料标题`, true); return; }
+      const common = formValues(form);
+      const total = queue.length;
+      let completed = 0;
+      setBusy(true);
+      for (let index = 0; index < queue.length; index += 1) {
+        const item = queue[index];
+        item.status = 'uploading';
+        item.error = '';
+        progressText = `正在上传 ${index + 1} / ${total}`;
+        renderQueue();
+        try {
+          const metadata = { ...common, title: item.title.trim(), file_name: item.file.name };
+          await request('/upload', { method: 'POST', headers: { 'Content-Type': item.file.type || 'application/octet-stream', 'X-Material-Meta': base64Url(JSON.stringify(metadata)) }, body: item.file });
+          item.status = 'success';
+          completed += 1;
+        } catch (error) {
+          item.status = 'error';
+          item.error = error.message || '上传失败';
+        }
+        renderQueue();
       }
+      const failures = queue.filter((item) => item.status === 'error');
+      if (!failures.length) {
+        mask.dataset.locked = 'false';
+        mask._close();
+        toast(`已成功上传 ${completed} 份学习包`);
+        await loadItems();
+        return;
+      }
+      queue = failures;
+      progressText = '';
+      setBusy(false);
+      renderQueue();
+      toast(`已上传 ${completed} 份，${failures.length} 份失败；可修改后重试`, true);
+      await loadItems();
     };
+    renderQueue();
   }
 
   function openEdit(item) {
