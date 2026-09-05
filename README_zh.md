@@ -18,7 +18,7 @@
 - **算得清的账**：课酬按已确认课时 × 标准自动核算并防重复生成；回款支持部分收款与结清；成本汇入估算余额。
 - **响应式与可访问性**：桌面 / 平板 / 手机三套布局，键盘导航、焦点管理、尊重 `prefers-reduced-motion`。
 - **现代认证与接口边界**：HttpOnly Cookie 会话、PBKDF2 密码散列及旧哈希兼容迁移；写接口严格限制方法、JSON 类型、有限数值与业务状态机。
-- **回归套件**：52 项 API 端到端 + 136 项业务完整性与安全检查 + 32 项师资推荐专项，共 220 项，使用三套全新 loopback 隔离库运行。
+- **回归套件**：52 项 API 端到端 + 137 项业务完整性与安全检查 + 32 项师资推荐专项，共 221 项，使用三套全新 loopback 隔离库运行。
 
 ## 快速开始
 
@@ -40,9 +40,9 @@
 
 ## 持续维护
 
-每次发布都必须重新编译 Java 17 后端，并在三套相互隔离、仅绑定 loopback 的临时数据库上执行全部回归。运行 `bash scripts/check.sh` 会先检查前端资源、脚本、图标与版本，并执行 75 项财务显示断言，再完成编译与三套 API 测试，结束后会停止临时服务。正式数据和正式凭据不会进入质量门禁。涉及安全边界的改动还应同步更新 `docs/SECURITY.md` 与 `CHANGELOG.md`。
+每次发布都必须重新编译 Java 17 后端，并在三套相互隔离、仅绑定 loopback 的临时数据库上执行全部回归。运行 `bash scripts/check.sh` 会先检查前端资源、脚本、图标与版本，执行 95 项财务/业务图标/阶段状态断言，并完整解码核验 14 枚透明图标，再完成编译与三套 API 测试，结束后会停止临时服务。正式数据和正式凭据不会进入质量门禁。涉及安全边界的改动还应同步更新 `docs/SECURITY.md` 与 `CHANGELOG.md`。
 
-没有 Java 时，可单独运行 `node scripts/check_frontend.cjs` 和 `node scripts/test_frontend.cjs`，默认不联网。给第一条命令增加 `--base-url http://127.0.0.1:8080` 可只读核验页面资源的状态、类型及哈希。
+没有 Java 时，可单独运行 `node scripts/check_frontend.cjs`、`node scripts/test_frontend.cjs` 和 `node scripts/check_business_art.cjs`，默认不联网。给第一条命令增加 `--base-url http://127.0.0.1:8080` 可只读核验页面资源的状态、类型及哈希。
 
 ## 界面一览
 

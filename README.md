@@ -6,7 +6,7 @@ A full-lifecycle training-operations platform: from client demand to bid, projec
 [![java](https://img.shields.io/badge/Java-17-orange.svg)](src/com/training/Main.java)
 [![no-build](https://img.shields.io/badge/frontend-no--build-brightgreen.svg)](web/)
 [![db](https://img.shields.io/badge/db-embedded%20H2-lightgrey.svg)](src/com/training/Db.java)
-[![tests](https://img.shields.io/badge/regression-220%20checks-success.svg)](scripts/check.sh)
+[![tests](https://img.shields.io/badge/regression-221%20checks-success.svg)](scripts/check.sh)
 
 > 中文文档见 [README_zh.md](README_zh.md)
 
@@ -37,7 +37,7 @@ It is deliberately built with **no framework and no build step**: a single Java 
 - **Evaluation surveys** — draft → publish → anonymous public answer link → live statistics (score distribution, single-choice charts, text feedback) → close.
 - **Money that adds up** — instructor fees auto-computed from confirmed hours × rate with duplicate-generation protection; collections support partial payments and settlement; costs roll into an estimated balance.
 - **Responsive & accessible** — desktop / tablet / phone layouts, keyboard navigation, focus management, `prefers-reduced-motion` respected everywhere.
-- **Regression suite** — 52 end-to-end API checks, 136 business-integrity/security checks and 32 faculty-matching checks; three fresh isolated loopback instances, 220 checks in total.
+- **Regression suite** — 52 end-to-end API checks, 137 business-integrity/security checks and 32 faculty-matching checks; three fresh isolated loopback instances, 221 checks in total.
 
 ## Quick start
 
@@ -93,13 +93,15 @@ loopback-only database for each suite, and stops every instance afterward:
 bash scripts/check.sh
 ```
 
-Offline frontend checks and 75 financial-display assertions run first. All three
+Offline frontend checks, 95 financial/icon-mapping/stage assertions and a 14-asset
+mapping/renderer/PNG-decode gate run first. All three
 API suites (`test.js`, `test_integrity.js`, `test_faculty.js`) must also pass.
 The third covers recommendation relevance, manual-profile retention, claims,
 budget and schedule constraints.
 
 For frontend-only diagnostics without Java or a database, run
-`node scripts/check_frontend.cjs` and `node scripts/test_frontend.cjs`.
+`node scripts/check_frontend.cjs`, `node scripts/test_frontend.cjs` and
+`node scripts/check_business_art.cjs`.
 Optionally add `--base-url http://127.0.0.1:8080` to the first command to verify
 served static resource status, MIME and hashes using read-only HTTP requests.
 

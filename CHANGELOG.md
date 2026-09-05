@@ -17,6 +17,14 @@ All notable changes to Yanxu Training OS. Dates follow the production release hi
   account popover. Mobile search remains available with 44-pixel touch targets.
 - Unified materials, public questionnaires, forms, dialogs and faculty matching
   surfaces without changing upload, download, privacy or recommendation behavior.
+- Compressed faculty statistics and mode tabs into one toolbar. Replaced the
+  narrow-input/empty-output split with a centered writing surface and expandable
+  filters. Results appear below only after submission; cached, empty and failure
+  states retain their context without a permanent blank results panel.
+- Replaced primary navigation, faculty modes, project stages and task markers
+  with 14 original flat ImageGen pictograms in restrained slate tones. Discarded
+  the earlier 3D direction. Kept high-resolution originals outside the web root;
+  approved uniform resizing produces transparent 160-pixel web assets.
 
 ### Fixed
 - Added the missing screen-reader-only utility that caused accessible search
@@ -29,10 +37,19 @@ All notable changes to Yanxu Training OS. Dates follow the production release hi
   and rounds monetary remainders to cents to suppress floating-point ghost debt.
 - Archived projects no longer show actionable delivery or evaluation reminders
   from historical records; archived questionnaire results use historical wording.
+- Customer collection stages no longer depend on unpaid instructor fees.
+- Importing a demand clears obsolete required-field errors; invalid hidden
+  budget settings expand and focus the offending field.
 
 ### Quality
+- Split oversized-resume regression into declared-length early rejection and
+  actual chunked-stream rejection. Both require a real HTTP/JSON 413 and retain
+  the original-file preservation check; connection resets do not count as a pass.
+  The backend suite now contains 221 checks (52 + 137 + 32).
 - Added offline frontend resource, JavaScript syntax, icon and cache-version
-  checks, plus 75 pure-function financial-display assertions to the release gate.
+  checks, plus 95 pure-function assertions (75 financial, 14 task mappings and
+  6 independent collection-stage checks)
+  and an offline 14-asset mapping, renderer and PNG-decode integrity gate.
 - Added optional read-only HTTP verification of resource status, MIME and SHA-256.
 - Documented the visual rules, original brand-generation prompt and manual UI
   regression checklist in `docs/DESIGN_V13.md`.

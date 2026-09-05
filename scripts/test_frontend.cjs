@@ -70,15 +70,15 @@ function extractNamedFunction(source, name) {
   throw new Error('Function body is incomplete in app.js: ' + name);
 }
 
-function loadCollectionProgress(appPath) {
+function loadPureFunction(appPath, functionName) {
   const source = fs.readFileSync(appPath, 'utf8');
-  const functionSource = extractNamedFunction(source, 'collectionProgress');
+  const functionSource = extractNamedFunction(source, functionName);
   const sandbox = Object.create(null);
-  vm.runInNewContext(functionSource + '\nglobalThis.__tested = collectionProgress;', sandbox, {
-    filename: 'app.js#collectionProgress',
+  vm.runInNewContext(functionSource + '\nglobalThis.__tested = ' + functionName + ';', sandbox, {
+    filename: 'app.js#' + functionName,
     timeout: 1000,
   });
-  if (typeof sandbox.__tested !== 'function') throw new Error('Extracted collectionProgress is not callable');
+  if (typeof sandbox.__tested !== 'function') throw new Error('Extracted function is not callable: ' + functionName);
   return sandbox.__tested;
 }
 
@@ -105,7 +105,7 @@ function assertProgress(fn, label, input, expected) {
 function main() {
   const projectRoot = parseProjectRoot(process.argv.slice(2));
   const appPath = path.join(projectRoot, 'web', 'app.js');
-  const collectionProgress = loadCollectionProgress(appPath);
+  const collectionProgress = loadPureFunction(appPath, 'collectionProgress');
 
   // Contract is authoritative. A 50k registered/received tranche against a
   // 100k contract still leaves 50k outstanding and surfaces plan mismatch.
@@ -167,9 +167,49 @@ function main() {
   check('difference beyond half a cent creates a mismatch', outsideTolerance.mismatch === true, String(outsideTolerance.mismatch));
   check('result objects are independent', collectionProgress(1, 1, 0) !== collectionProgress(1, 1, 0));
 
+  const financialAssertions = passed + failures.length;
+  const taskArtKind = loadPureFunction(appPath, 'taskArtKind');
+  const artCases = [
+    [{ page: 'dispatches', type: '紧急交付' }, 'faculty'],
+    [{ page: 'dispatches', type: '师资确认' }, 'faculty'],
+    [{ page: 'dispatches', art: 'calendar', type: '排课缺口' }, 'calendar'],
+    [{ page: 'dispatches', art: 'documents', label: '材料准备' }, 'documents'],
+    [{ page: 'charges', label: '课程排期回款' }, 'collection'],
+    [{ page: 'charges' }, 'collection'],
+    [{ page: 'questionnaires' }, 'evaluation'],
+    [{ page: 'fees' }, 'fees'],
+    [{ page: 'costs' }, 'costs'],
+    [{ page: 'demands' }, 'documents'],
+    [{ page: 'projects' }, 'documents'],
+    [{ page: 'bids' }, 'documents'],
+    [{ page: 'constructor' }, 'documents'],
+    [undefined, 'documents'],
+  ];
+  artCases.forEach(([input, expected], index) => {
+    const actual = taskArtKind(input);
+    check('business icon semantic mapping ' + (index + 1), actual === expected, `expected ${expected}, received ${actual}`);
+  });
+
+  const collectionStageStatus = loadPureFunction(appPath, 'collectionStageStatus');
+  const stageCases = [
+    [{ outstanding: 0, mismatch: false, feePending: 1000 }, 100, 'done'],
+    [{ outstanding: 0, mismatch: false, feePending: 1000 }, 0, 'done'],
+    [{ outstanding: 0, mismatch: true }, 100, 'current'],
+    [{ outstanding: 10, mismatch: false }, 90, 'current'],
+    [{ outstanding: 100, mismatch: false }, 0, 'todo'],
+    [{ outstanding: 0, mismatch: true }, 0, 'todo'],
+  ];
+  stageCases.forEach(([progress, received, expected], index) => {
+    const actual = collectionStageStatus(progress, received);
+    check('collection stage independent of instructor fees ' + (index + 1), actual === expected, `expected ${expected}, received ${actual}`);
+  });
+
   const report = {
     ok: failures.length === 0,
-    suite: 'collectionProgress pure-function regression',
+    suite: 'frontend pure-function regression',
+    financial_assertions: financialAssertions,
+    icon_mapping_assertions: artCases.length,
+    collection_stage_assertions: stageCases.length,
     source: path.relative(projectRoot, appPath),
     assertions: passed + failures.length,
     passed,
@@ -182,6 +222,6 @@ function main() {
 
 try { process.exitCode = main(); }
 catch (error) {
-  console.error(JSON.stringify({ ok: false, suite: 'collectionProgress pure-function regression', error: String(error.message || error).slice(0, 800) }, null, 2));
+  console.error(JSON.stringify({ ok: false, suite: 'frontend pure-function regression', error: String(error.message || error).slice(0, 800) }, null, 2));
   process.exitCode = 2;
 }

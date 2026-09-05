@@ -53,6 +53,109 @@ async function rawCall(path, options = {}) {
   return { status: response.status, headers: response.headers, text, body };
 }
 
+/**
+ * Execute a deliberately shaped HTTP request and accept only a complete final
+ * response. Request/response errors (including ECONNRESET) always reject.
+ */
+function boundedNodeRawCall(path, options, beginRequest) {
+  const target = new URL(BASE + path);
+  if (!['http:', 'https:'].includes(target.protocol))
+    return Promise.reject(new Error('Boundary request only supports HTTP(S)'));
+
+  const transport = target.protocol === 'https:' ? require('node:https') : require('node:http');
+  const headers = { ...(options.headers || {}) };
+  const auth = options.auth === undefined ? token : options.auth;
+  if (auth) headers['X-Token'] = auth;
+  if (options.cookie) headers.Cookie = options.cookie;
+  if (options.contentType !== null) headers['Content-Type'] = options.contentType || 'application/octet-stream';
+  const timeoutMs = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : 20_000;
+  const maxResponseBytes = 64 * 1024;
+
+  return new Promise((resolve, reject) => {
+    let request;
+    let deadline;
+    let settled = false;
+    const finish = (error, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(deadline);
+      if (error) {
+        request?.destroy();
+        reject(error);
+      } else {
+        if (!request.writableEnded) request.destroy();
+        resolve(value);
+      }
+    };
+
+    try {
+      request = transport.request(target, {
+        method: options.method || 'POST',
+        headers,
+        agent: false,
+      });
+    } catch (error) {
+      finish(error);
+      return;
+    }
+
+    request.once('response', (response) => {
+      const chunks = [];
+      let received = 0;
+      response.on('data', (chunk) => {
+        if (settled) return;
+        received += chunk.length;
+        if (received > maxResponseBytes) {
+          response.destroy();
+          finish(new Error(`Boundary response exceeded ${maxResponseBytes} bytes`));
+          return;
+        }
+        chunks.push(chunk);
+      });
+      response.once('error', (error) => finish(error));
+      response.once('end', () => {
+        if (settled) return;
+        const text = Buffer.concat(chunks, received).toString('utf8');
+        let body = null;
+        try { body = text ? JSON.parse(text) : null; } catch { body = null; }
+        finish(null, { status: response.statusCode || 0, headers: response.headers, text, body });
+      });
+    });
+    request.once('error', (error) => finish(error));
+    deadline = setTimeout(() => finish(new Error(`Boundary request timed out after ${timeoutMs} ms`)), timeoutMs);
+    try { beginRequest(request); } catch (error) { finish(error); }
+  });
+}
+
+function declaredOversizeCall(path, options = {}) {
+  const declaredLength = Number(options.declaredLength);
+  if (!Number.isSafeInteger(declaredLength) || declaredLength <= 0)
+    return Promise.reject(new Error('Declared boundary length must be a positive safe integer'));
+  const headers = { ...(options.headers || {}) };
+  for (const name of Object.keys(headers)) {
+    if (/^(?:content-length|transfer-encoding|expect)$/i.test(name)) delete headers[name];
+  }
+  headers['Content-Length'] = String(declaredLength);
+  headers.Expect = '100-continue';
+  return boundedNodeRawCall(path, { ...options, headers }, (request) => {
+    // JDK HttpServer emits 100 automatically before invoking the handler. This
+    // probe intentionally ignores it: no write()/end() means zero body bytes.
+    request.on('continue', () => {});
+    request.flushHeaders();
+  });
+}
+
+function chunkedOversizeCall(path, options = {}) {
+  const rawBody = options.rawBody === undefined ? Buffer.alloc(0) : options.rawBody;
+  const requestBody = Buffer.isBuffer(rawBody) ? rawBody : Buffer.from(rawBody);
+  const headers = { ...(options.headers || {}) };
+  for (const name of Object.keys(headers)) {
+    if (/^(?:content-length|transfer-encoding|expect)$/i.test(name)) delete headers[name];
+  }
+  headers['Transfer-Encoding'] = 'chunked';
+  return boundedNodeRawCall(path, { ...options, headers }, (request) => request.end(requestBody));
+}
+
 function check(name, condition, detail = '') {
   if (condition) {
     pass++;
@@ -689,8 +792,20 @@ async function waitForResumeItem(teacherId, auth, timeoutMs = 8000) {
     leadershipPdf,
     Buffer.alloc(Math.max(1, advertisedResumeLimit + 1 - leadershipPdf.length), 0x20),
   ]);
-  resumeHttp = await uploadResume(leaderMaleId, 'oversized.pdf', oversizedResume);
-  check('讲师简历流式上传执行服务端大小上限', resumeHttp.status === 413 && resumeHttp.body && resumeHttp.body.code === 413);
+  resumeHttp = await declaredOversizeCall(`/teacher-resumes/upload?teacher_id=${leaderMaleId}`, {
+    auth: finalManagerToken,
+    contentType: 'application/pdf',
+    headers: { 'X-Resume-Name': resumeNameHeader('declared-oversized.pdf') },
+    declaredLength: oversizedResume.length,
+  });
+  check('讲师简历按声明长度在接收正文前拒绝超限上传', resumeHttp.status === 413 && resumeHttp.body && resumeHttp.body.code === 413);
+  resumeHttp = await chunkedOversizeCall(`/teacher-resumes/upload?teacher_id=${leaderMaleId}`, {
+    auth: finalManagerToken,
+    contentType: 'application/pdf',
+    headers: { 'X-Resume-Name': resumeNameHeader('streamed-oversized.pdf') },
+    rawBody: oversizedResume,
+  });
+  check('讲师简历流式读取执行服务端大小上限', resumeHttp.status === 413 && resumeHttp.body && resumeHttp.body.code === 413);
   const resumeAfterFailures = await rawCall('/teacher-resumes/manage', { auth: finalManagerToken, method: 'GET' });
   check('失败上传不会覆盖原有有效简历', resumeAfterFailures.status === 200 &&
     resumeAfterFailures.body.data.items.some((item) => String(item.teacher_id) === String(leaderMaleId)));

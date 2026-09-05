@@ -29,6 +29,10 @@
       mismatch: contract > 0 && Math.abs(due - contract) > 0.005,
     };
   }
+  function collectionStageStatus(progress, received) {
+    // 客户回款和讲师课酬是两个独立流程；课酬不会阻止回款阶段完成。
+    return progress.outstanding === 0 && !progress.mismatch ? 'done' : received > 0 ? 'current' : 'todo';
+  }
   const shiftIsoDate = (date, days) => {
     if (!date) return '';
     const parts = String(date).split('-').map(Number);
@@ -38,6 +42,34 @@
   };
   const icon = (name, cls = '') => `<i data-lucide="${esc(name)}" class="${esc(cls)}" aria-hidden="true"></i>`;
   const brandSymbol = (cls = '') => `<img class="brand-symbol ${esc(cls)}" src="/assets/yx-mark-v13.png?v=20260906v13" alt="" aria-hidden="true">`;
+  const BUSINESS_ART = Object.freeze({
+    dashboard: '/assets/icons/dashboard-v13.png',
+    projects: '/assets/icons/projects-v13.png',
+    documents: '/assets/icons/documents-v13.png',
+    contract: '/assets/icons/contract-v13.png',
+    calendar: '/assets/icons/calendar-v13.png',
+    faculty: '/assets/icons/faculty-v13.png',
+    evaluation: '/assets/icons/evaluation-v13.png',
+    collection: '/assets/icons/collection-v13.png',
+    fees: '/assets/icons/fees-v13.png',
+    costs: '/assets/icons/costs-v13.png',
+    report: '/assets/icons/report-v13.png',
+    access: '/assets/icons/access-v13.png',
+    materials: '/assets/icons/materials-v13.png',
+    recommend: '/assets/icons/recommend-v13.png',
+  });
+  const businessArt = (kind) => `<img class="business-art" src="${Object.hasOwn(BUSINESS_ART, kind) ? BUSINESS_ART[kind] : BUSINESS_ART.documents}?v=20260906v13i1" alt="" aria-hidden="true" width="48" height="48" decoding="async">`;
+  function taskArtKind(item) {
+    if (['documents', 'calendar', 'faculty', 'collection', 'evaluation', 'fees', 'costs'].includes(item?.art)) return item.art;
+    switch (item?.page) {
+      case 'dispatches': return 'faculty';
+      case 'charges': return 'collection';
+      case 'questionnaires': return 'evaluation';
+      case 'fees': return 'fees';
+      case 'costs': return 'costs';
+      default: return 'documents';
+    }
+  }
   const mergeContextLabels = (values) => {
     const unique = [...new Set(values.filter(Boolean))];
     if (unique.length < 2) return unique[0] || '';
@@ -742,7 +774,7 @@
       <main class="v6-login" aria-label="研序登录">
         <div class="v6-bg" aria-hidden="true"><i class="v6-aurora a1"></i><i class="v6-aurora a2"></i><i class="v6-aurora a3"></i><span class="v6-gridlines"></span><span class="v6-glow"></span></div>
         <header class="v6-top">
-          <div class="v10-top-left"><div class="v6-brand">${brandSymbol()}<span><b>研序</b><small>TRAINING OPERATIONS</small></span></div><a class="v10-material-entry" href="/materials.html">${icon('library-big')}<span><b>培训资料下载</b><small>无需登录 · 公开获取</small></span>${icon('arrow-up-right')}</a></div>
+          <div class="v10-top-left"><div class="v6-brand">${brandSymbol()}<span><b>研序</b><small>TRAINING OPERATIONS</small></span></div><a class="v10-material-entry" href="/materials.html">${businessArt('materials')}<span><b>培训资料下载</b><small>无需登录 · 公开获取</small></span>${icon('arrow-up-right')}</a></div>
           <span class="v6-top-mini"><i aria-hidden="true"></i>培训运营中枢</span>
         </header>
         <section class="v6-hero">
@@ -844,18 +876,18 @@
 
   // ============ 主布局 ============
   const NAV = [
-    { k: 'dashboard', l: '今日运营', ico: 'layout-dashboard', group: '工作台' },
-    { k: 'projects', l: '项目总览', ico: 'folder-kanban', group: '项目运营' },
-    { k: 'demands', l: '培训需求', ico: 'inbox', group: '项目运营' },
-    { k: 'bids', l: '投标与立项', ico: 'file-check-2', group: '项目运营' },
-    { k: 'dispatches', l: '课程与排期', ico: 'calendar-clock', group: '交付协同' },
-    { k: 'questionnaires', l: '效果评估', ico: 'clipboard-check', group: '交付协同' },
-    { k: 'teachers', l: '师资资源', ico: 'contact-round', group: '交付协同' },
-    { k: 'charges', l: '项目回款', ico: 'badge-japanese-yen', group: '财务结算' },
-    { k: 'fees', l: '课酬发放', ico: 'wallet-cards', group: '财务结算' },
-    { k: 'costs', l: '成本费用', ico: 'receipt-text', group: '财务结算' },
-    { k: 'report', l: '经营洞察', ico: 'chart-no-axes-combined', group: '分析' },
-    { k: 'users', l: '用户与权限', ico: 'shield-check', group: '系统', admin: true },
+    { k: 'dashboard', l: '今日运营', ico: 'layout-dashboard', art: 'dashboard', group: '工作台' },
+    { k: 'projects', l: '项目总览', ico: 'folder-kanban', art: 'projects', group: '项目运营' },
+    { k: 'demands', l: '培训需求', ico: 'inbox', art: 'documents', group: '项目运营' },
+    { k: 'bids', l: '投标与立项', ico: 'file-check-2', art: 'contract', group: '项目运营' },
+    { k: 'dispatches', l: '课程与排期', ico: 'calendar-clock', art: 'calendar', group: '交付协同' },
+    { k: 'questionnaires', l: '效果评估', ico: 'clipboard-check', art: 'evaluation', group: '交付协同' },
+    { k: 'teachers', l: '师资资源', ico: 'contact-round', art: 'faculty', group: '交付协同' },
+    { k: 'charges', l: '项目回款', ico: 'badge-japanese-yen', art: 'collection', group: '财务结算' },
+    { k: 'fees', l: '课酬发放', ico: 'wallet-cards', art: 'fees', group: '财务结算' },
+    { k: 'costs', l: '成本费用', ico: 'receipt-text', art: 'costs', group: '财务结算' },
+    { k: 'report', l: '经营洞察', ico: 'chart-no-axes-combined', art: 'report', group: '分析' },
+    { k: 'users', l: '用户与权限', ico: 'shield-check', art: 'access', group: '系统', admin: true },
   ];
 
   const PAGE_META = {
@@ -928,11 +960,11 @@
       const items = [];
       if (canWrite()) items.push({ label: '新建培训需求', meta: '录入客户目标、课时、师资要求与期望日期', keywords: '新建 创建 客户 需求', ico: 'plus', action: '新建', run: quickCreateDemand });
       if (canWrite()) items.push(
-        { label: '上传讲师简历', meta: '进入师资资源的简历管理', keywords: '讲师 老师 PDF PPTX 上传 解析', ico: 'file-up', action: '前往', run: () => { state.teacherTab = 'resumes'; navigateTo('teachers'); } },
-        { label: '智能推荐讲师', meta: '识别客户需求并推荐匹配师资', keywords: '老师 推荐 匹配 客户 要求', ico: 'sparkles', action: '开始', run: () => { state.teacherTab = 'recommend'; navigateTo('teachers'); } },
+        { label: '上传讲师简历', meta: '进入师资资源的简历管理', keywords: '讲师 老师 PDF PPTX 上传 解析', ico: 'file-up', art: 'documents', action: '前往', run: () => { state.teacherTab = 'resumes'; navigateTo('teachers'); } },
+        { label: '智能推荐讲师', meta: '识别客户需求并推荐匹配师资', keywords: '老师 推荐 匹配 客户 要求', ico: 'sparkles', art: 'recommend', action: '开始', run: () => { state.teacherTab = 'recommend'; navigateTo('teachers'); } },
       );
       NAV.filter((n) => !n.admin || state.user.role === 'admin').forEach((n) => items.push({
-        label: n.l, meta: (PAGE_META[n.k] || [n.l, ''])[1], keywords: `${n.l} ${n.group}`, ico: n.ico, action: '前往', run: () => navigateTo(n.k),
+        label: n.l, meta: (PAGE_META[n.k] || [n.l, ''])[1], keywords: `${n.l} ${n.group}`, ico: n.ico, art: n.art, action: '前往', run: () => navigateTo(n.k),
       }));
       projects.forEach((p) => items.push({
         label: p.title, meta: `${p.unit || '委托单位待补充'} · ${p.owner || '负责人待补充'} · ${p.status}`, keywords: `${p.title} ${p.unit || ''} ${p.owner || ''} ${p.status || ''}`, ico: 'folder-kanban', action: '打开项目', run: () => navigateTo('project_detail', { projectId: p.id }),
@@ -956,7 +988,7 @@
       const query = input.value.trim().toLowerCase();
       visible = commandItems().filter((item) => !query || `${item.label} ${item.meta} ${item.keywords}`.toLowerCase().includes(query)).slice(0, 12);
       activeIndex = Math.min(activeIndex, Math.max(0, visible.length - 1));
-      resultRoot.innerHTML = visible.length ? visible.map((item, i) => `<button type="button" id="command-option-${i}" class="command-result ${i === activeIndex ? 'active' : ''}" data-command-index="${i}" role="option" aria-selected="${i === activeIndex}"><span>${icon(item.ico)}</span><span><b>${esc(item.label)}</b><small>${esc(item.meta)}</small></span><em>${esc(item.action)}${icon('arrow-right')}</em></button>`).join('') : `<div class="command-empty">${icon('search-x')}<b>没有匹配结果</b><span>换一个项目名、单位名或功能名称试试</span></div>`;
+      resultRoot.innerHTML = visible.length ? visible.map((item, i) => `<button type="button" id="command-option-${i}" class="command-result ${i === activeIndex ? 'active' : ''}" data-command-index="${i}" role="option" aria-selected="${i === activeIndex}"><span>${item.art ? businessArt(item.art) : icon(item.ico)}</span><span><b>${esc(item.label)}</b><small>${esc(item.meta)}</small></span><em>${esc(item.action)}${icon('arrow-right')}</em></button>`).join('') : `<div class="command-empty">${icon('search-x')}<b>没有匹配结果</b><span>换一个项目名、单位名或功能名称试试</span></div>`;
       input.setAttribute('aria-activedescendant', visible.length ? `command-option-${activeIndex}` : '');
       bindResultClicks();
       requestAnimationFrame(() => $(`.command-result[data-command-index="${activeIndex}"]`, resultRoot)?.scrollIntoView({ block: 'nearest' }));
@@ -998,11 +1030,11 @@
         <div class="v7-ambient" aria-hidden="true"><i class="a1"></i><i class="a2"></i><i class="a3"></i></div>
         <aside class="sidebar" id="primary-sidebar" aria-label="主导航">
           <div class="logo">${brandSymbol()}<span><b>研序</b><small>TRAINING OS</small></span></div>
-          <a class="sidebar-materials" href="/materials.html">${icon('library-big')}<span><b>${canWrite() ? '资料上传与管理' : '培训资料中心'}</b><small>${canWrite() ? '上传、上下架与下载' : '公开学习包下载'}</small></span>${icon('arrow-up-right')}</a>
+          <a class="sidebar-materials" href="/materials.html">${businessArt('materials')}<span><b>${canWrite() ? '资料上传与管理' : '培训资料中心'}</b><small>${canWrite() ? '上传、上下架与下载' : '公开学习包下载'}</small></span>${icon('arrow-up-right')}</a>
           ${canWrite() ? `<button type="button" class="sidebar-create" id="sidebar-create">${icon('plus')}<span>新建培训需求</span><kbd>N</kbd></button>` : ''}
           <nav class="nav">
             ${groups.map((g) => `<div class="nav-group"><div class="nav-label">${esc(g.name)}</div>${g.items.map((n) =>
-              `<button type="button" class="nav-item ${selectedNavigation === n.k ? 'active' : ''}" data-nav="${n.k}" ${selectedNavigation === n.k ? 'aria-current="page"' : ''}>${icon(n.ico, 'ico')}<span>${n.l}</span></button>`).join('')}</div>`).join('')}
+              `<button type="button" class="nav-item ${selectedNavigation === n.k ? 'active' : ''}" data-nav="${n.k}" ${selectedNavigation === n.k ? 'aria-current="page"' : ''}>${businessArt(n.art)}<span>${n.l}</span></button>`).join('')}</div>`).join('')}
           </nav>
         </aside>
         <button type="button" class="sidebar-scrim" id="sidebar-scrim" aria-label="关闭导航" aria-hidden="true" tabindex="-1"></button>
@@ -1026,10 +1058,10 @@
           <main class="content" id="content"></main>
         </div>
         <nav class="mobile-dock" aria-label="移动端快捷导航">
-          <button type="button" data-mobile-nav="dashboard" class="${state.page === 'dashboard' ? 'active' : ''}" ${state.page === 'dashboard' ? 'aria-current="page"' : ''}>${icon('house')}<span>今日</span></button>
-          <button type="button" data-mobile-nav="projects" class="${['projects','project_detail'].includes(state.page) ? 'active' : ''}" ${['projects','project_detail'].includes(state.page) ? 'aria-current="page"' : ''}>${icon('folder-kanban')}<span>项目</span></button>
+          <button type="button" data-mobile-nav="dashboard" class="${state.page === 'dashboard' ? 'active' : ''}" ${state.page === 'dashboard' ? 'aria-current="page"' : ''}>${businessArt('dashboard')}<span>今日</span></button>
+          <button type="button" data-mobile-nav="projects" class="${['projects','project_detail'].includes(state.page) ? 'active' : ''}" ${['projects','project_detail'].includes(state.page) ? 'aria-current="page"' : ''}>${businessArt('projects')}<span>项目</span></button>
           ${canWrite() ? `<button type="button" class="mobile-create" id="mobile-create" aria-label="新建培训需求">${icon('plus')}<span>新建</span></button>` : ''}
-          <button type="button" data-mobile-nav="dispatches" class="${state.page === 'dispatches' ? 'active' : ''}" ${state.page === 'dispatches' ? 'aria-current="page"' : ''}>${icon('calendar-clock')}<span>排期</span></button>
+          <button type="button" data-mobile-nav="dispatches" class="${state.page === 'dispatches' ? 'active' : ''}" ${state.page === 'dispatches' ? 'aria-current="page"' : ''}>${businessArt('calendar')}<span>排期</span></button>
           <button type="button" id="mobile-more" aria-controls="primary-sidebar" aria-expanded="false">${icon('menu')}<span>更多</span></button>
         </nav>
       </div>`;
@@ -1661,9 +1693,9 @@
       issueMap.set(key, { ...winner, score: Math.max(item.score, old.score), notes, titles, actions, title: mergeContextLabels(titles), action: actions.join(' + '), detail: notes.join('；') });
     };
     urgentPending.forEach((d) => upsertIssue(`dispatch:${d.id}`, { tone: 'critical', score: dayDiff(d.teach_date) <= 1 ? 100 : 86, type: dayDiff(d.teach_date) <= 1 ? '紧急交付' : '交付风险', title: `${d.subject} · ${d.status === '已拒绝' ? '讲师已拒绝' : '通知尚未记录'}`, detail: `${d.teach_date} 开课 · ${d.teacher_name || '讲师待定'} · ${num(d.hours)} 课时`, page: 'dispatches', focusId: d.id, action: d.status === '已拒绝' ? '重新安排讲师' : '记录师资通知' }));
-    materialRisks.forEach((d) => upsertIssue(`dispatch:${d.id}`, { tone: dayDiff(d.teach_date) <= 1 ? 'critical' : 'warning', score: dayDiff(d.teach_date) <= 1 ? 88 : 68, type: '交付准备', title: `${d.subject} · 材料${d.material_status || '状态待补充'}`, detail: `${d.teach_date} 开课 · ${d.venue || '场地尚未确定'}`, page: 'dispatches', focusId: d.id, action: '补齐交付准备' }));
+    materialRisks.forEach((d) => upsertIssue(`dispatch:${d.id}`, { tone: dayDiff(d.teach_date) <= 1 ? 'critical' : 'warning', score: dayDiff(d.teach_date) <= 1 ? 88 : 68, type: '交付准备', art: 'documents', title: `${d.subject} · 材料${d.material_status || '状态待补充'}`, detail: `${d.teach_date} 开课 · ${d.venue || '场地尚未确定'}`, page: 'dispatches', focusId: d.id, action: '补齐交付准备' }));
     awaitingConfirm.forEach((d) => upsertIssue(`dispatch:${d.id}`, { tone: 'warning', score: 78, type: '师资确认', title: `${d.subject} · 等待讲师确认`, detail: `${d.teacher_name || '待定讲师'} · 确认截止 ${d.confirm_deadline || '待定'}`, page: 'dispatches', focusId: d.id, action: '记录确认结果' }));
-    if (deliveryActive && missingHours > 0) upsertIssue('schedule-gap', { tone: 'warning', score: 74, type: '排课缺口', title: `计划课时尚缺 ${num(missingHours)} 课时`, detail: `计划 ${num(project.hours)} 课时，目前已有效排课 ${num(scheduledHours)} 课时`, page: 'dispatches', action: `安排 ${num(missingHours)} 课时` });
+    if (deliveryActive && missingHours > 0) upsertIssue('schedule-gap', { tone: 'warning', score: 74, type: '排课缺口', art: 'calendar', title: `计划课时尚缺 ${num(missingHours)} 课时`, detail: `计划 ${num(project.hours)} 课时，目前已有效排课 ${num(scheduledHours)} 课时`, page: 'dispatches', action: `安排 ${num(missingHours)} 课时` });
     if (settlementNotice && project.status !== '已归档') upsertIssue('receivable-plan', { tone: 'warning', score: 54, type: '应收核对', title: charges.length ? '应收计划与合同金额不一致' : '尚未登记应收计划', detail: settlementNotice, page: 'charges', action: '核对应收计划' });
     if (outstanding > 0) upsertIssue('payment', { tone: 'neutral', score: 52, type: '回款跟进', title: `还有 ¥ ${money(outstanding)} 尚未回款`, detail: `当前回款率 ${Math.round(collection.rate)}%`, page: 'charges', action: '登记本次回款' });
     if (!questionnaires.length && project.status !== '已归档') upsertIssue('evaluation', { tone: 'neutral', score: 42, type: '评估准备', title: '本项目尚未创建效果评估', detail: '按项目需要准备培训反馈回收', page: 'questionnaires', action: '创建效果评估' });
@@ -1674,15 +1706,15 @@
     const milestone = ['已完成', '已归档'].includes(project.status) ? project.status : startIn === null ? '开课日期待定' : startIn < 0 ? (project.status === '待启动' ? '等待启动' : '项目交付中') : startIn === 0 ? '今天开课' : startIn === 1 ? '明天开课' : `距离开课 ${startIn} 天`;
     const paymentRate = collection.rate;
     const projectJourney = [
-      { label: '项目资料', value: project.contract_no && project.owner && project.start_date ? '信息已齐' : '仍需补充', page: 'projects', status: project.contract_no && project.owner && project.start_date ? 'done' : 'current', ico: 'file-check-2' },
-      { label: '课程排期', value: `${num(scheduledHours)} / ${num(project.hours)} 课时`, page: 'dispatches', status: scheduledHours >= Number(project.hours || 0) && Number(project.hours || 0) > 0 ? 'done' : scheduledHours > 0 ? 'current' : 'todo', ico: 'calendar-clock' },
-      { label: '课程交付', value: `${num(completedHours)} 已完成 · ${num(confirmedHours)} 已确认`, page: 'dispatches', status: completedHours >= Number(project.hours || 0) && Number(project.hours || 0) > 0 ? 'done' : confirmedHours > 0 ? 'current' : 'todo', ico: 'badge-check' },
-      { label: '效果评估', value: questionnaires.length ? `${questionnaires.length} 份问卷 · ${responseRate}% 回收` : '尚未创建问卷', page: 'questionnaires', status: responseRate >= 60 ? 'done' : questionnaires.length ? 'current' : 'todo', ico: 'clipboard-check' },
-      { label: '回款结算', value: collection.target > 0 ? `${paymentRate.toFixed(0)}% 已回款` : '无需回款', page: 'charges', status: outstanding === 0 && !collection.mismatch && feePending <= 0 ? 'done' : received > 0 ? 'current' : 'todo', ico: 'badge-japanese-yen' },
+      { label: '项目资料', value: project.contract_no && project.owner && project.start_date ? '信息已齐' : '仍需补充', page: 'projects', status: project.contract_no && project.owner && project.start_date ? 'done' : 'current', art: 'documents', ico: 'file-check-2' },
+      { label: '课程排期', value: `${num(scheduledHours)} / ${num(project.hours)} 课时`, page: 'dispatches', status: scheduledHours >= Number(project.hours || 0) && Number(project.hours || 0) > 0 ? 'done' : scheduledHours > 0 ? 'current' : 'todo', art: 'calendar', ico: 'calendar-clock' },
+      { label: '课程交付', value: `${num(completedHours)} 已完成 · ${num(confirmedHours)} 已确认`, page: 'dispatches', status: completedHours >= Number(project.hours || 0) && Number(project.hours || 0) > 0 ? 'done' : confirmedHours > 0 ? 'current' : 'todo', art: 'faculty', ico: 'badge-check' },
+      { label: '效果评估', value: questionnaires.length ? `${questionnaires.length} 份问卷 · ${responseRate}% 回收` : '尚未创建问卷', page: 'questionnaires', status: responseRate >= 60 ? 'done' : questionnaires.length ? 'current' : 'todo', art: 'evaluation', ico: 'clipboard-check' },
+      { label: '回款结算', value: collection.target > 0 ? `${paymentRate.toFixed(0)}% 已回款` : '无需回款', page: 'charges', status: collectionStageStatus(collection, received), art: 'collection', ico: 'badge-japanese-yen' },
     ];
 
     const writableProject = canWrite() && project.status !== '已归档';
-    const taskHtml = (item, priority = false) => `<button type="button" class="workspace-task ${item.tone} ${priority ? 'is-priority' : ''}" data-project-goto="${item.page}" ${item.focusId ? `data-focus-id="${item.focusId}"` : ''}><span class="task-signal">${icon(priority ? 'arrow-up-right' : 'circle-small')}</span><span><small>${priority ? (writableProject ? '优先处理 · ' : '优先查看 · ') : ''}${esc(item.type)}</small><b>${esc(item.title)}</b><em>${esc(item.detail)}</em><strong>${esc(item.action)}${icon('chevron-right')}</strong></span></button>`;
+    const taskHtml = (item, priority = false) => `<button type="button" class="workspace-task ${item.tone} ${priority ? 'is-priority' : ''}" data-project-goto="${item.page}" ${item.focusId ? `data-focus-id="${item.focusId}"` : ''}><span class="task-signal">${businessArt(taskArtKind(item))}</span><span><small>${priority ? (writableProject ? '优先处理 · ' : '优先查看 · ') : ''}${esc(item.type)}</small><b>${esc(item.title)}</b><em>${esc(item.detail)}</em><strong>${esc(item.action)}${icon('chevron-right')}</strong></span></button>`;
     c.innerHTML = `
       <div class="workspace-back"><button type="button" id="project-back">${icon('chevron-left')}所有项目</button><span>项目 #P-${String(project.id).padStart(4, '0')}</span></div>
       ${project.status === '已归档' ? `<div class="readonly-banner">${icon('archive')}<span><b>项目已归档</b> 交付与财务事实已锁定，可查看但不能修改。</span></div>` : ''}
@@ -1698,7 +1730,7 @@
         <div><small>估算余额</small><b>¥ ${money(estimatedBalance)}</b><span class="metric-note">按已录成本 · 非最终利润</span></div>
       </div>
 
-      <nav class="project-journey" aria-label="项目推进路径">${projectJourney.map((step) => `<button type="button" class="${step.status}" data-project-goto="${step.page}" ${step.page === 'projects' ? `data-focus-id="${project.id}"` : ''}><span class="journey-icon">${icon(step.status === 'done' ? 'check' : step.ico)}</span><span class="journey-copy"><b>${step.label}</b><small>${project.status === '已归档' && step.page === 'questionnaires' && !questionnaires.length ? '未设置' : step.status === 'done' ? '已就绪' : step.status === 'current' ? '跟进中' : '待推进'}</small></span>${icon('chevron-right')}</button>`).join('')}</nav>
+      <nav class="project-journey" aria-label="项目推进路径">${projectJourney.map((step) => `<button type="button" class="${step.status}" data-project-goto="${step.page}" ${step.page === 'projects' ? `data-focus-id="${project.id}"` : ''}><span class="journey-icon">${businessArt(step.art)}</span><span class="journey-copy"><b>${step.label}</b><small>${project.status === '已归档' && step.page === 'questionnaires' && !questionnaires.length ? '未设置' : step.status === 'done' ? '已就绪' : step.status === 'current' ? '跟进中' : '待推进'}</small></span>${icon('chevron-right')}</button>`).join('')}</nav>
 
       <div class="v13-workspace-columns">
         <div class="v13-workspace-main">
@@ -1709,12 +1741,12 @@
 
           <section class="workspace-panel delivery-panel">
             <div class="workspace-panel-head"><div><h2>课程安排</h2><small>讲师、时间与交付准备</small></div><button type="button" data-project-goto="dispatches">全部课程${icon('chevron-right')}</button></div>
-            <div class="delivery-rows">${dispatches.length ? dispatches.slice(0, 5).map((d) => `<button type="button" class="delivery-row" data-project-goto="dispatches" data-focus-id="${d.id}"><time datetime="${esc(d.teach_date || '')}" aria-label="${esc(d.teach_date || '日期待定')}"><small>${esc((d.teach_date || '').slice(5, 7) || '--')}月</small><b>${esc((d.teach_date || '').slice(8) || '--')}</b></time><span><b>${esc(d.subject)}</b><small>${esc(d.teacher_name || '讲师待定')} · ${esc([d.start_time, d.end_time].filter(Boolean).join('—') || `${num(d.hours)} 课时`)}<em>${esc(d.venue || '场地待定')}</em></small></span><span class="delivery-tags">${tag(d.material_status || '材料待补充')}${tag(d.status)}${icon('chevron-right')}</span></button>`).join('') : `<div class="workspace-empty">${icon('calendar-plus')}<b>尚未安排课程</b><span>先完成讲师与排期安排</span><button type="button" data-project-goto="dispatches">${writableProject ? '安排课程' : '查看排期'}${icon('chevron-right')}</button></div>`}</div>
+            <div class="delivery-rows">${dispatches.length ? dispatches.slice(0, 5).map((d) => `<button type="button" class="delivery-row" data-project-goto="dispatches" data-focus-id="${d.id}"><time datetime="${esc(d.teach_date || '')}" aria-label="${esc(d.teach_date || '日期待定')}"><small>${esc((d.teach_date || '').slice(5, 7) || '--')}月</small><b>${esc((d.teach_date || '').slice(8) || '--')}</b></time><span><b>${esc(d.subject)}</b><small>${esc(d.teacher_name || '讲师待定')} · ${esc([d.start_time, d.end_time].filter(Boolean).join('—') || `${num(d.hours)} 课时`)}<em>${esc(d.venue || '场地待定')}</em></small></span><span class="delivery-tags">${tag(d.material_status || '材料待补充')}${tag(d.status)}${icon('chevron-right')}</span></button>`).join('') : `<div class="workspace-empty">${businessArt('calendar')}<b>尚未安排课程</b><span>先完成讲师与排期安排</span><button type="button" data-project-goto="dispatches">${writableProject ? '安排课程' : '查看排期'}${icon('chevron-right')}</button></div>`}</div>
           </section>
 
           <section class="workspace-panel evaluation-panel">
             <div class="workspace-panel-head"><div><h2>效果评估</h2><small>反馈回收与培训质量</small></div><button type="button" data-project-goto="questionnaires">${writableProject ? '管理评估' : '查看评估'}${icon('chevron-right')}</button></div>
-            ${questionnaires.length ? `<div class="evaluation-focus"><div><small>问卷</small><b>${questionnaires.length}<em> 份</em></b></div><div><small>计划触达</small><b>${sendTotal}<em> 人次</em></b></div><div><small>已回收</small><b>${recvTotal}<em> · ${responseRate}%</em></b></div></div><p class="evaluation-note">${project.status === '已归档' ? icon('archive') + `历史回收率 ${responseRate}%，项目已归档` : responseRate >= 60 ? icon('circle-check') + '已达到基础复盘回收要求' : icon('info') + '回收率不足 60%，建议再次触达学员'}</p>` : `<div class="workspace-empty">${icon('clipboard-plus')}<b>${project.status === '已归档' ? '本项目未设置评估' : '尚未创建评估问卷'}</b><span>${project.status === '已归档' ? '历史状态，可在项目资料中核对' : '按项目需要准备培训反馈回收'}</span><button type="button" data-project-goto="questionnaires">${writableProject ? '创建评估' : '查看评估'}${icon('chevron-right')}</button></div>`}
+            ${questionnaires.length ? `<div class="evaluation-focus"><div><small>问卷</small><b>${questionnaires.length}<em> 份</em></b></div><div><small>计划触达</small><b>${sendTotal}<em> 人次</em></b></div><div><small>已回收</small><b>${recvTotal}<em> · ${responseRate}%</em></b></div></div><p class="evaluation-note">${project.status === '已归档' ? icon('archive') + `历史回收率 ${responseRate}%，项目已归档` : responseRate >= 60 ? icon('circle-check') + '已达到基础复盘回收要求' : icon('info') + '回收率不足 60%，建议再次触达学员'}</p>` : `<div class="workspace-empty">${businessArt('evaluation')}<b>${project.status === '已归档' ? '本项目未设置评估' : '尚未创建评估问卷'}</b><span>${project.status === '已归档' ? '历史状态，可在项目资料中核对' : '按项目需要准备培训反馈回收'}</span><button type="button" data-project-goto="questionnaires">${writableProject ? '创建评估' : '查看评估'}${icon('chevron-right')}</button></div>`}
           </section>
         </div>
 
@@ -1786,13 +1818,13 @@
       upsertTask({ key: `dispatch:${x.id}`, page: 'dispatches', projectId: x.project_id, focusId: x.id, tone: 'critical', score: 92, label: '等待确认', title: `${x.subject} · 讲师尚未确认`, meta: `${x.teach_date} · ${x.teacher_name || '讲师待定'}`, action: '记录确认结果' });
     });
     dispatches.filter((x) => !['已拒绝', '已完成'].includes(x.status) && dayDiff(x.teach_date) !== null && dayDiff(x.teach_date) <= 3 && x.material_status !== '已就绪').forEach((x) => {
-      upsertTask({ key: `dispatch:${x.id}`, page: 'dispatches', projectId: x.project_id, focusId: x.id, tone: dayDiff(x.teach_date) <= 1 ? 'critical' : 'warning', score: dayDiff(x.teach_date) <= 1 ? 88 : 68, label: '交付准备', title: `${x.subject} · 材料${x.material_status || '状态待补充'}`, meta: `${x.teach_date} · ${x.venue || '场地尚未确定'}`, action: '补齐交付准备' });
+      upsertTask({ key: `dispatch:${x.id}`, page: 'dispatches', projectId: x.project_id, focusId: x.id, tone: dayDiff(x.teach_date) <= 1 ? 'critical' : 'warning', score: dayDiff(x.teach_date) <= 1 ? 88 : 68, label: '交付准备', art: 'documents', title: `${x.subject} · 材料${x.material_status || '状态待补充'}`, meta: `${x.teach_date} · ${x.venue || '场地尚未确定'}`, action: '补齐交付准备' });
     });
     activeProjects.forEach((project) => {
       const projectDispatches = dispatches.filter((x) => String(x.project_id) === String(project.id) && x.status !== '已拒绝');
       const scheduled = projectDispatches.reduce((s, x) => s + Number(x.hours || 0), 0);
       const gap = Math.max(0, Number(project.hours || 0) - scheduled);
-      if (gap > 0) upsertTask({ key: `project:${project.id}:schedule`, page: 'dispatches', projectId: project.id, tone: 'warning', score: 74, label: '排课缺口', title: `${project.title} 尚缺 ${num(gap)} 课时`, meta: `计划 ${num(project.hours)} 课时 · 已排 ${num(scheduled)} 课时`, action: `安排 ${num(gap)} 课时` });
+      if (gap > 0) upsertTask({ key: `project:${project.id}:schedule`, page: 'dispatches', projectId: project.id, tone: 'warning', score: 74, label: '排课缺口', art: 'calendar', title: `${project.title} 尚缺 ${num(gap)} 课时`, meta: `计划 ${num(project.hours)} 课时 · 已排 ${num(scheduled)} 课时`, action: `安排 ${num(gap)} 课时` });
     });
     charges.filter((x) => x.status !== '已结清').forEach((x) => {
       const left = Math.max(0, Number(x.amount || 0) - Number(x.received || 0));
@@ -1831,7 +1863,7 @@
     const healthText = criticalCount ? '有紧急事项' : warningCount ? '需要关注' : '运行正常';
     const rowHtml = (x) => `
       <button type="button" class="v9-row ${x.tone}" data-goto="${x.page}" ${x.projectId ? `data-project-id="${x.projectId}"` : ''} ${x.focusId ? `data-focus-id="${x.focusId}"` : ''}>
-        <span class="v9-rail"></span>
+        <span class="v9-task-art">${businessArt(taskArtKind(x))}</span>
         <span class="v9-row-main"><small>${esc(x.label)} · ${esc(x.meta)}</small><b>${esc(x.title)}</b></span>
         <span class="v9-row-action">${esc(x.action)}${icon('arrow-up-right')}</span>
       </button>`;
@@ -1987,7 +2019,7 @@
     const actions = [
       { l: '消息', cls: 'gray', onClick: (r) => {
         const logs = String(r.msg_log || '').split('\n').map((line) => line.trim()).filter(Boolean);
-        openModal('通知与确认记录', logs.length ? `<div class="activity-log">${logs.map((line, i) => `<div><span>${String(i + 1).padStart(2, '0')}</span><p>${esc(line)}</p></div>`).join('')}</div>` : `<div class="workspace-empty">${icon('message-square-dashed')}<b>暂无通知记录</b><span>通过线下、电话或其他渠道通知师资后，可在这里记录操作轨迹。</span></div>`, { noFoot: true, kicker: '师资协同轨迹' });
+        openModal('通知与确认记录', logs.length ? `<div class="activity-log">${logs.map((line, i) => `<div><span>${String(i + 1).padStart(2, '0')}</span><p>${esc(line)}</p></div>`).join('')}</div>` : `<div class="workspace-empty">${businessArt('faculty')}<b>暂无通知记录</b><span>通过线下、电话或其他渠道通知师资后，可在这里记录操作轨迹。</span></div>`, { noFoot: true, kicker: '师资协同轨迹' });
       } },
       { l: '记录通知', cls: '', show: (r) => canWrite() && ['待启动', '进行中'].includes(r.project_status) && ['待发送', '已拒绝'].includes(r.status), onClick: (r) => confirmBox(`请先通过电话、微信或其他实际渠道联系师资“${r.teacher_name}”。确认已经通知《${r.subject}》的授课安排，并在系统中记录这次通知？`, async () => { const res = await api('/dispatches/send', { body: { id: r.id } }); toast(res || '已记录师资通知'); renderPage(); }) },
       { l: '确认', cls: 'green', show: (r) => canWrite() && ['待启动', '进行中'].includes(r.project_status) && r.status === '已发送', onClick: (r) => {
@@ -3071,15 +3103,17 @@
     const cached = state.cache.teacherRecommendationKey === teacherRecommendationKey() ? state.cache.teacherRecommendations : null;
     root.innerHTML = `<div class="teacher-recommend-workbench">
       <section class="recommend-input-card">
-        <div class="recommend-section-head"><span>${icon('sparkles')}</span><div><b>描述客户要什么</b><small>可从已有需求带入，也可直接粘贴客户原话</small></div></div>
-        <div class="form-item"><label for="recommend-demand">从已有培训需求带入</label><select id="recommend-demand"><option value="">直接填写客户要求</option>${context.demands.map((demand) => `<option value="${esc(demand.id)}" ${String(form.demandId) === String(demand.id) ? 'selected' : ''}>#R-${String(demand.id).padStart(4, '0')}｜${esc(demand.title)}｜${esc(demand.unit || '单位待补充')}</option>`).join('')}</select><small>选择后会复制到下方；您可以编辑，推荐以当前可见文字为准。</small></div>
-        <div class="form-item"><label for="recommend-requirement">客户单位要求<span class="req">*</span></label><textarea id="recommend-requirement" maxlength="10000" placeholder="例如：某银行希望为网点负责人开展客户投诉处理与服务礼仪培训，老师需有银行项目经验、案例丰富。计划 2026-10-15 授课，共 6 课时。">${esc(state.teacherRequirementDraft || '')}</textarea><small>请写明主题、参训对象、行业及日期。地点、差旅和复杂安排会保留供沟通确认。</small><span class="field-error" id="recommend-requirement-error" aria-live="polite"></span></div>
-        <div class="form-item recommend-budget"><label for="recommend-max-fee">最高课酬（元/课时，可选）</label><input id="recommend-max-fee" type="number" min="0" step="0.01" inputmode="decimal" value="${esc(form.maxFeeRate)}" placeholder="不限制课酬"><small>如有课酬上限，请在此填写每课时金额；总项目预算不直接作为课酬上限。</small><label class="recommend-budget-toggle"><input id="recommend-hard-budget" type="checkbox" ${form.hardBudget ? 'checked' : ''}><span>严格限制：排除超过此课酬的讲师</span></label><span class="field-error" id="recommend-budget-error" aria-live="polite"></span></div>
-        <div class="recommend-input-options"><label for="recommend-count">推荐人数</label><select id="recommend-count">${[3, 5, 10].map((count) => `<option value="${count}" ${String(form.maxResults) === String(count) ? 'selected' : ''}>Top ${count}</option>`).join('')}</select></div>
-        <button type="button" class="btn recommend-run" id="recommend-run">${icon('wand-sparkles')}识别需求并推荐老师</button>
-        <p class="recommend-input-foot">${icon('shield-check')}基于本地简历资料匹配，尚未接入大模型。扫描版或图片型简历需人工补充画像；确认资料与人选后再安排授课。</p>
+        <div class="recommend-section-head"><span>${businessArt('recommend')}</span><div><h2>为客户找到合适的讲师</h2><small>描述培训需求，查看匹配人选、推荐理由与资料依据。</small></div></div>
+        <div class="form-item recommend-import"><label for="recommend-demand">带入已有需求</label><select id="recommend-demand" aria-describedby="recommend-demand-help"><option value="">直接填写，或选择一条培训需求</option>${context.demands.map((demand) => `<option value="${esc(demand.id)}" ${String(form.demandId) === String(demand.id) ? 'selected' : ''}>#R-${String(demand.id).padStart(4, '0')}｜${esc(demand.title)}｜${esc(demand.unit || '单位待补充')}</option>`).join('')}</select><small id="recommend-demand-help">带入后可编辑，以当前文字为准。</small></div>
+        <div class="form-item recommend-requirement-field"><label for="recommend-requirement">客户培训需求<span class="req">*</span></label><textarea id="recommend-requirement" maxlength="10000" aria-describedby="recommend-requirement-help recommend-requirement-error" placeholder="例如：某银行计划为网点负责人开展客户投诉处理与服务礼仪培训。希望讲师有银行项目经验，授课以真实案例为主。计划 10 月 15 日开展，共 6 课时。">${esc(state.teacherRequirementDraft || '')}</textarea><small id="recommend-requirement-help">建议写明培训主题、参训对象、行业与授课时间。</small><span class="field-error" id="recommend-requirement-error" aria-live="polite"></span></div>
+        <details class="recommend-settings" id="recommend-settings" ${form.maxFeeRate || form.hardBudget ? 'open' : ''}><summary>${icon('sliders-horizontal')}筛选条件<small id="recommend-settings-summary"></small>${icon('chevron-down')}</summary><div class="recommend-settings-grid">
+          <div class="form-item recommend-budget"><label for="recommend-max-fee">最高课酬（元/课时）</label><input id="recommend-max-fee" type="number" min="0" step="0.01" inputmode="decimal" value="${esc(form.maxFeeRate)}" placeholder="留空表示不限" aria-describedby="recommend-budget-help recommend-budget-error"><small id="recommend-budget-help">按每课时金额筛选，不是总项目预算。</small><label class="recommend-budget-toggle"><input id="recommend-hard-budget" type="checkbox" ${form.hardBudget ? 'checked' : ''}><span>严格排除超出课酬上限的讲师</span></label><span class="field-error" id="recommend-budget-error" aria-live="polite"></span></div>
+          <div class="form-item recommend-input-options"><label for="recommend-count">推荐人数</label><select id="recommend-count">${[3, 5, 10].map((count) => `<option value="${count}" ${String(form.maxResults) === String(count) ? 'selected' : ''}>最多 ${count} 位</option>`).join('')}</select><small>仅返回有匹配依据的候选。</small></div>
+        </div></details>
+        <div class="recommend-submit-row"><p id="recommend-status" role="status">${cached ? '已保留上次推荐结果，可调整需求后重新匹配。' : '提交后将在下方展示需求分析与推荐结果。'}</p><button type="button" class="btn recommend-run" id="recommend-run">${icon('arrow-right')}开始匹配讲师</button></div>
+        <p class="recommend-input-foot">${icon('shield-check')}基于本地资料匹配，尚未接入大模型。扫描简历需补充画像；地点、差旅与最终人选仍需人工确认。</p>
       </section>
-      <section class="recommend-output" id="recommend-output" aria-live="polite">${cached ? '' : `<div class="recommend-start">${icon('scan-search')}<b>等待输入客户需求</b><p>提交后会先展示需求识别标签，再给出候选、匹配理由、简历依据与能力缺口。</p></div>`}</section>
+      <section class="recommend-output" id="recommend-output" aria-label="讲师推荐结果" aria-live="polite" tabindex="-1" ${cached ? '' : 'hidden'}></section>
     </div>`;
     const demandSelect = $('#recommend-demand', root);
     const requirement = $('#recommend-requirement', root);
@@ -3087,6 +3121,13 @@
     const count = $('#recommend-count', root);
     const maxFee = $('#recommend-max-fee', root);
     const hardBudget = $('#recommend-hard-budget', root);
+    const settings = $('#recommend-settings', root);
+    const status = $('#recommend-status', root);
+    const updateSettingsSummary = () => {
+      const fee = Number(maxFee.value);
+      $('#recommend-settings-summary', root).textContent = `${maxFee.value && fee > 0 ? `¥ ${money(fee)}/课时${hardBudget.checked ? ' · 严格限制' : ''}` : '课酬不限'} · 最多 ${count.value} 位`;
+    };
+    updateSettingsSummary();
     let activeRequest = null;
     const persistForm = () => {
       state.teacherRequirementDraft = requirement.value;
@@ -3095,13 +3136,16 @@
     const markRecommendationDirty = () => {
       persistForm();
       invalidateTeacherRecommendations();
-      output.innerHTML = `<div class="recommend-start">${icon('scan-search')}<b>推荐条件已更新</b><p>请重新执行推荐，以便候选结果与当前要求保持一致。</p></div>`;
-      refreshIcons(output);
+      if (!output.hidden) status.textContent = '条件已更新，请重新匹配。';
+      output.hidden = true;
+      output.innerHTML = '';
+      updateSettingsSummary();
     };
     demandSelect.onchange = () => {
       const demand = context.demands.find((item) => String(item.id) === demandSelect.value);
       if (demand) {
         requirement.value = demandRequirementText(demand);
+        $('#recommend-requirement-error', root).textContent = '';
         requirement.focus();
       }
       markRecommendationDirty();
@@ -3112,15 +3156,17 @@
     hardBudget.onchange = () => { $('#recommend-budget-error', root).textContent = ''; markRecommendationDirty(); };
     if (cached) renderRecommendationResults(output, cached, context);
     $('#recommend-run', root).onclick = async () => {
+      $('#recommend-requirement-error', root).textContent = '';
+      $('#recommend-budget-error', root).textContent = '';
       const text = requirement.value.trim();
       if (!text) { $('#recommend-requirement-error', root).textContent = '请填写客户单位要求'; requirement.focus(); return; }
       const feeValue = maxFee.value.trim();
       const fee = Number(feeValue);
       if (maxFee.validity.badInput || (feeValue && (!Number.isFinite(fee) || fee <= 0))) {
-        $('#recommend-budget-error', root).textContent = '最高课酬应为大于 0 的金额，或留空不限制'; maxFee.focus(); return;
+        settings.open = true; $('#recommend-budget-error', root).textContent = '最高课酬应为大于 0 的金额，或留空不限制'; maxFee.focus(); return;
       }
       if (hardBudget.checked && !feeValue) {
-        $('#recommend-budget-error', root).textContent = '使用严格限制前，请先填写最高课酬'; maxFee.focus(); return;
+        settings.open = true; $('#recommend-budget-error', root).textContent = '使用严格限制前，请先填写最高课酬'; maxFee.focus(); return;
       }
       persistForm();
       cancelTeacherRecommendation();
@@ -3138,6 +3184,8 @@
       button.disabled = true;
       button.classList.add('is-loading');
       button.innerHTML = `${icon('loader-circle', 'spin')}正在识别与匹配`;
+      output.hidden = false;
+      status.textContent = '正在核对需求与讲师资料…';
       output.setAttribute('aria-busy', 'true');
       output.innerHTML = `<div class="recommend-loading"><span></span><span></span><span></span><p>正在分析客户要求与讲师简历…</p></div>`;
       refreshIcons(button);
@@ -3149,9 +3197,13 @@
         state.cache.teacherRecommendations = result;
         state.cache.teacherRecommendationKey = requestKey;
         renderRecommendationResults(output, result, context);
+        status.textContent = '匹配完成，结果已展示在下方。';
+        output.focus({ preventScroll: true });
+        output.scrollIntoView({ block: 'start', behavior: 'auto' });
       } catch (error) {
         if (error?.name === 'AbortError' || controller.signal.aborted || requestSequence !== teacherRecommendationSequence || !isRouteCurrent(context.epoch, context.c, 'teachers') || !output.isConnected) return;
         output.innerHTML = `<div class="recommend-empty">${icon('cloud-alert')}<b>本次推荐未完成</b><p>${esc(error?.message || '请稍后重试，已输入的客户要求会继续保留。')}</p></div>`;
+        status.textContent = '本次匹配未完成，您填写的内容已保留。';
         refreshIcons(output);
       } finally {
         if (teacherRecommendationController === controller) teacherRecommendationController = null;
@@ -3178,10 +3230,10 @@
     const inLib = rows.filter((row) => row.status === '在库').length;
     const ready = resumes.filter((resume) => resumeStatusInfo(resume.parse_status).tone === 'ready').length;
     const attention = resumes.filter((resume) => ['failed', 'review', 'pending', 'processing'].includes(resumeStatusInfo(resume.parse_status).tone)).length;
-    const tabs = [{ key: 'library', label: '师资库', icon: 'users-round' }];
+    const tabs = [{ key: 'library', label: '师资库', art: 'faculty' }];
     if (canWrite()) tabs.push(
-      { key: 'resumes', label: '简历管理', icon: 'files', count: attention || '' },
-      { key: 'recommend', label: '智能推荐', icon: 'sparkles' },
+      { key: 'resumes', label: '简历管理', art: 'documents', count: attention || '' },
+      { key: 'recommend', label: '智能推荐', art: 'recommend' },
     );
     if (!tabs.some((tabItem) => tabItem.key === state.teacherTab)) state.teacherTab = 'library';
     const confirmedRates = rows.map((row) => Number(row.fee_rate)).filter((rate) => Number.isFinite(rate) && rate > 0);
@@ -3189,10 +3241,9 @@
     const summary = canWrite()
       ? `<div class="module-summary four teacher-summary"><div><span>${icon('users-round')}</span><small>当前师资</small><b>${rows.length}<em>人</em></b></div><div><span>${icon('user-check')}</span><small>当前在库</small><b>${inLib}<em>人</em></b></div><div><span>${icon('file-check-2')}</span><small>简历可推荐</small><b>${ready}<em>份</em></b></div><div><span>${icon('scan-line')}</span><small>解析待处理</small><b>${attention}<em>份</em></b></div></div>`
       : `<div class="module-summary three teacher-summary"><div><span>${icon('users-round')}</span><small>当前师资</small><b>${rows.length}<em>人</em></b></div><div><span>${icon('user-check')}</span><small>当前在库</small><b>${inLib}<em>人</em></b></div><div><span>${icon('badge-japanese-yen')}</span><small>已确认平均课酬</small><b>${confirmedRates.length ? `¥ ${money(avgRate)}` : '待确认'}</b></div></div>`;
-    const tabBar = canWrite() ? `<div class="teacher-mode-tabs" role="tablist" aria-label="师资资源功能">${tabs.map((tabItem) => `<button type="button" role="tab" id="teacher-tab-${tabItem.key}" aria-controls="teacher-tab-panel" aria-selected="${state.teacherTab === tabItem.key}" tabindex="${state.teacherTab === tabItem.key ? '0' : '-1'}" data-teacher-tab="${tabItem.key}" class="${state.teacherTab === tabItem.key ? 'active' : ''}">${icon(tabItem.icon)}<span>${tabItem.label}</span>${tabItem.count ? `<em>${tabItem.count}</em>` : ''}</button>`).join('')}</div>` : '';
+    const tabBar = canWrite() ? `<div class="teacher-mode-tabs" role="tablist" aria-label="师资资源功能">${tabs.map((tabItem) => `<button type="button" role="tab" id="teacher-tab-${tabItem.key}" aria-controls="teacher-tab-panel" aria-selected="${state.teacherTab === tabItem.key}" tabindex="${state.teacherTab === tabItem.key ? '0' : '-1'}" data-teacher-tab="${tabItem.key}" class="${state.teacherTab === tabItem.key ? 'active' : ''}">${businessArt(tabItem.art)}<span>${tabItem.label}</span>${tabItem.count ? `<em>${tabItem.count}</em>` : ''}</button>`).join('')}</div>` : '';
     c.innerHTML = `<div class="teacher-console">
-      ${summary}
-      ${tabBar}
+      <div class="teacher-console-head">${tabBar}${summary}</div>
       <div class="teacher-tab-panel" id="teacher-tab-panel" role="${canWrite() ? 'tabpanel' : 'region'}" ${canWrite() ? `aria-labelledby="teacher-tab-${esc(state.teacherTab)}"` : 'aria-label="师资库"'}></div>
     </div>`;
     const panel = $('#teacher-tab-panel', c);
