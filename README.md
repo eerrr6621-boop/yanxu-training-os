@@ -10,14 +10,10 @@ A full-lifecycle training-operations platform: from client demand to bid, projec
 
 > 中文文档见 [README_zh.md](README_zh.md)
 
-![Operations Cockpit](docs/screenshots/dashboard-cockpit.png)
-
-| ![Login](docs/screenshots/login-desktop.png) | ![Insights](docs/screenshots/report.png) |
-|:---:|:---:|
-| Light-premium login with rotating role headline | Business insights with live charts |
-
-All screenshots use the repository's isolated demo seed; no production records
-or credentials are included.
+The V13 interface uses a continuous project workspace, quiet navigation and
+native system typography. See the [visual maintenance guide](docs/DESIGN_V13.md).
+Existing files in `docs/screenshots/` are historical demo-only screenshots, not
+the current V13 interface; they contain no production records or credentials.
 
 ## What it is
 
@@ -33,7 +29,7 @@ It is deliberately built with **no framework and no build step**: a single Java 
 ## Highlights
 
 - **Operations Cockpit (今日运营)** — a single continuous “command deck” that auto-ranks what to do now: overdue invitations, classes starting soon, scheduling gaps, material readiness and collection follow-ups, with severity filters (all / urgent / watch / routine), a day-grouped class timeline, per-project health bars and a finance snapshot band.
-- **V10 technology showcase** — the established purple/blue visual language now has a new ImageGen hero and transparent PNG brand mark, with a responsive presentation layer shared by login, navigation and business surfaces.
+- **V13 clarity** — the established technology-showcase identity is now quieter: a new ImageGen transparent mark, native typography, continuous workspaces, a light sidebar and a compact search/account toolbar. Desktop, tablet and phone share the same visual rules.
 - **Public training-material library** — a no-login download center for course packs and templates, with editable multi-file upload queues for system admins and business managers, publishing controls, download counts and safe file storage.
 - **Private faculty intelligence** — upload PDF or PPTX instructor profiles, review the extracted professional profile, and turn an existing demand or pasted client brief into explainable teacher recommendations. Verified delivery metrics stay separate from claims written in a resume.
 - **Project workspace** — risk-first view per project: blockers and warnings are merged per business record and deep-link to the exact row that needs action; completion and archive are gated by real closure checks (hours scheduled & confirmed, collections, fees).
@@ -97,9 +93,15 @@ loopback-only database for each suite, and stops every instance afterward:
 bash scripts/check.sh
 ```
 
-All three suites (`test.js`, `test_integrity.js`, `test_faculty.js`) must pass.
+Offline frontend checks and 75 financial-display assertions run first. All three
+API suites (`test.js`, `test_integrity.js`, `test_faculty.js`) must also pass.
 The third covers recommendation relevance, manual-profile retention, claims,
 budget and schedule constraints.
+
+For frontend-only diagnostics without Java or a database, run
+`node scripts/check_frontend.cjs` and `node scripts/test_frontend.cjs`.
+Optionally add `--base-url http://127.0.0.1:8080` to the first command to verify
+served static resource status, MIME and hashes using read-only HTTP requests.
 
 ## Maintenance
 

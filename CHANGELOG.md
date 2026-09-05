@@ -2,6 +2,41 @@
 
 All notable changes to Yanxu Training OS. Dates follow the production release history; the format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.9.0] — 2026-09-06 · Clarity & Native-feeling Workspace
+
+### Changed
+- Refreshed the existing interface with a restrained blue/indigo palette, native
+  system typography, quieter navigation, consistent icons and a new ImageGen
+  transparent brand mark. No backend, database or permission-model migration.
+- Replaced the project-detail card wall with a continuous workspace: four clear
+  measures, a compact delivery path, prioritized tasks, course rows and a quiet
+  settlement sidebar. Project information opens in place; course rows retain the
+  project filter and exact record focus.
+- Simplified the top toolbar to search and a round account entry. Removed the
+  repeated date; account details, password changes and shortcut help live in the
+  account popover. Mobile search remains available with 44-pixel touch targets.
+- Unified materials, public questionnaires, forms, dialogs and faculty matching
+  surfaces without changing upload, download, privacy or recommendation behavior.
+
+### Fixed
+- Added the missing screen-reader-only utility that caused accessible search
+  labels to overlap icons and entered text. Improved narrow-screen filter wrapping,
+  summary labels, dialog sizing and unsupported icon references.
+- Table action menus now open above scrolling containers without shifting rows,
+  and support keyboard navigation, focus return and outside-click dismissal.
+- Project collection progress now follows the backend's contract-first target,
+  flags mismatched receivable plans, avoids false tasks for zero-value projects,
+  and rounds monetary remainders to cents to suppress floating-point ghost debt.
+- Archived projects no longer show actionable delivery or evaluation reminders
+  from historical records; archived questionnaire results use historical wording.
+
+### Quality
+- Added offline frontend resource, JavaScript syntax, icon and cache-version
+  checks, plus 75 pure-function financial-display assertions to the release gate.
+- Added optional read-only HTTP verification of resource status, MIME and SHA-256.
+- Documented the visual rules, original brand-generation prompt and manual UI
+  regression checklist in `docs/DESIGN_V13.md`.
+
 ## [1.8.0] — 2026-09-06 · Private Resume Intelligence & Faculty Matching
 
 ### Added

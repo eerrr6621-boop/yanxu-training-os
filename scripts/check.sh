@@ -2,6 +2,8 @@
 # Compile and test with three independent, throwaway databases. No production input.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+node scripts/check_frontend.cjs
+node scripts/test_frontend.cjs
 check_root="$(mktemp -d "${TMPDIR:-/tmp}/yanxu-check.XXXXXX")"
 check_pid=""
 check_java="${TRAINING_CHECK_JAVA:-java}"
