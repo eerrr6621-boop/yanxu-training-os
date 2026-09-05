@@ -123,7 +123,7 @@
   }
   window.addEventListener('resize', debounce(() => chartInstances.forEach((chart) => chart.resize())));
 
-  const state = { user: null, page: 'dashboard', projectId: null, contextProjectId: null, focusId: null, initialFilter: null, filters: {}, cache: {} };
+  const state = { user: null, page: 'dashboard', projectId: null, contextProjectId: null, focusId: null, initialFilter: null, filters: {}, cache: {}, teacherTab: 'library', teacherRequirementDraft: '', teacherRecommendationForm: { demandId: '', maxResults: '5', maxFeeRate: '', hardBudget: false } };
   let routeEpoch = 0;
   let routeCleanups = [];
   let lastRenderedHash = '';
@@ -178,6 +178,9 @@
     state.initialFilter = null;
     state.filters = {};
     state.cache = {};
+    state.teacherTab = 'library';
+    state.teacherRequirementDraft = '';
+    state.teacherRecommendationForm = { demandId: '', maxResults: '5', maxFeeRate: '', hardBudget: false };
     localStorage.removeItem('token');
     clearTimeout(toastTimer);
     toastTimer = null;
@@ -327,6 +330,79 @@
     return j.data;
   }
 
+  function encodeBase64UrlUtf8(value) {
+    const bytes = new TextEncoder().encode(String(value || ''));
+    let binary = '';
+    bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
+    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+  }
+
+  /** 讲师简历使用原始 PDF/PPTX 请求体上传，避免通用 JSON 请求器破坏文件内容。 */
+  async function uploadTeacherResume(file, teacherId, opts = {}) {
+    return new Promise((resolve, reject) => {
+      const request = new XMLHttpRequest();
+      const abort = () => request.abort();
+      const cleanup = () => opts.signal?.removeEventListener('abort', abort);
+      const fail = (message) => { cleanup(); toast(message, true); reject(new Error(message)); };
+      request.open('POST', `/api/teacher-resumes/upload?teacher_id=${encodeURIComponent(teacherId)}`);
+      request.setRequestHeader('Content-Type', /\.pptx$/i.test(file.name || '') ? 'application/vnd.openxmlformats-officedocument.presentationml.presentation' : 'application/pdf');
+      request.setRequestHeader('X-Resume-Name', encodeBase64UrlUtf8(file.name));
+      request.timeout = 10 * 60 * 1000;
+      request.upload.onprogress = (event) => opts.onProgress?.(event.loaded, event.lengthComputable ? event.total : file.size);
+      request.upload.onload = () => opts.onProgress?.(file.size, file.size);
+      request.onerror = () => fail(navigator.onLine ? '简历上传失败，请稍后重试' : '网络已断开，恢复连接后请重试');
+      request.ontimeout = () => fail('上传等待时间过长，请检查网络后重试');
+      request.onabort = () => { cleanup(); reject(new DOMException('上传已取消', 'AbortError')); };
+      request.onload = () => {
+        cleanup();
+        let payload;
+        try { payload = JSON.parse(request.responseText); }
+        catch (error) { fail(request.status === 413 ? '文件超过服务器允许的大小，请压缩后重试' : '上传服务暂时不可用，请稍后重试'); return; }
+        if (payload.code === 401) {
+          const activeModal = $('#modal-mask');
+          if (activeModal) activeModal.dataset.locked = 'false';
+          invalidateSession();
+          reject(new Error(payload.msg || '登录状态已失效，请重新登录'));
+          return;
+        }
+        if (request.status < 200 || request.status >= 300 || payload.code !== 0) { fail(payload.msg || '简历上传失败'); return; }
+        resolve(payload.data);
+      };
+      if (opts.signal?.aborted) { reject(new DOMException('上传已取消', 'AbortError')); return; }
+      opts.signal?.addEventListener('abort', abort, { once: true });
+      request.send(file);
+    });
+  }
+
+  async function downloadTeacherResume(teacherId, fallbackName = '讲师简历.pdf') {
+    let res;
+    try {
+      res = await fetch(`/api/teacher-resumes/download?teacher_id=${encodeURIComponent(teacherId)}`, { credentials: 'same-origin' });
+    } catch (error) {
+      toast('简历下载失败，请检查网络后重试', true);
+      return;
+    }
+    if (!res.ok || String(res.headers.get('content-type') || '').includes('application/json')) {
+      let message = '简历下载失败';
+      try {
+        const payload = JSON.parse(await res.text());
+        message = payload.msg || message;
+        if (payload.code === 401) invalidateSession();
+      } catch (error) { /* 保留通用提示 */ }
+      toast(message, true);
+      return;
+    }
+    const blob = await res.blob();
+    const href = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = href;
+    link.download = String(fallbackName || '讲师简历.pdf').replace(/[\\/:*?"<>|]/g, '_');
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(href), 1200);
+  }
+
   let toastTimer = null;
   function toast(msg, isErr) {
     clearTimeout(toastTimer);
@@ -406,6 +482,11 @@
   function closeModal() {
     const m = $('#modal-mask');
     if (!m) return;
+    if (m.dataset.locked === 'true') {
+      $('.modal', m)?.classList.add('attention');
+      setTimeout(() => $('.modal', m)?.classList.remove('attention'), 220);
+      return;
+    }
     if (m._keyHandler) document.removeEventListener('keydown', m._keyHandler);
     chartInstances = chartInstances.filter((chart) => {
       try { if (m.contains(chart.getDom())) { chart.dispose(); return false; } } catch (e) {}
@@ -488,9 +569,9 @@
     const label = action.l;
     if (label === '补齐准备') return row && row.status === '已确认' ? -1 : 2;
     if (['中标', '启动项目', '收款', '记录通知', '确认', '完成', '发布', '发送链接', '发放', '入库'].includes(label)) return 0;
-    if (['打开项目', '详情', '统计', '档案', '消息'].includes(label)) return 1;
-    if (['编辑', '评价', '重置密码'].includes(label)) return 3;
-    if (['归档', '关闭', '出库', '删除'].includes(label)) return 9;
+    if (['打开项目', '详情', '统计', '档案', '消息', '解析详情'].includes(label)) return 1;
+    if (['编辑', '评价', '重置密码', '编辑画像'].includes(label)) return 3;
+    if (['归档', '关闭', '出库', '删除', '删除简历'].includes(label)) return 9;
     return 5;
   }
 
@@ -538,10 +619,10 @@
   }
 
   const tagClass = (v) => {
-    if (['已确认', '已完成', '已结清', '已发放', '已中标', '在库', '已立项', '已就绪', '启用'].includes(v)) return 'green';
-    if (['待发送', '待评审', '待处理', '待发放', '未收费', '待启动', '待准备', '材料待补充'].includes(v)) return 'orange';
-    if (['已拒绝', '未中标', '已流标'].includes(v)) return 'red';
-    if (['部分收费', '进行中', '已发送', '已投标', '准备中'].includes(v)) return 'blue';
+    if (['已确认', '已完成', '已结清', '已发放', '已中标', '在库', '已立项', '已就绪', '启用', '可推荐'].includes(v)) return 'green';
+    if (['待发送', '待评审', '待处理', '待发放', '未收费', '待启动', '待准备', '材料待补充', '待确认', '等待解析'].includes(v)) return 'orange';
+    if (['已拒绝', '未中标', '已流标', '解析失败'].includes(v)) return 'red';
+    if (['部分收费', '进行中', '已发送', '已投标', '准备中', '解析中'].includes(v)) return 'blue';
     if (['已发布'].includes(v)) return 'violet';
     return 'gray';
   };
@@ -690,7 +771,7 @@
     dashboard: ['今日运营', ''], demands: ['培训需求', '统一沉淀客户需求与培训目标'],
     bids: ['投标与立项', '管理投标方案、报价与立项结果'], projects: ['项目总览', '以项目为中心协同交付与结算'],
     dispatches: ['课程与排期', '安排课程、发送邀请并跟踪讲师确认'], questionnaires: ['效果评估', '创建问卷并回收培训反馈'],
-    teachers: ['师资资源', '管理讲师档案、专长与授课评价'], charges: ['项目回款', '跟踪应收、回款进度与票据信息'],
+    teachers: ['师资资源', '管理讲师档案、简历解析、智能匹配与授课评价'], charges: ['项目回款', '跟踪应收、回款进度与票据信息'],
     fees: ['课酬发放', '根据确认课时核算并发放课酬'], costs: ['成本费用', '记录项目交付成本与费用构成'],
     report: ['经营洞察', '分析合同、回款、已录成本与项目质量'], users: ['用户与权限', '管理系统账号、角色与启用状态'],
     project_detail: ['项目工作区', '围绕风险、交付、评估与结算推进单个项目'],
@@ -755,6 +836,10 @@
     const commandItems = () => {
       const items = [];
       if (canWrite()) items.push({ label: '新建培训需求', meta: '录入客户目标、课时、师资要求与期望日期', keywords: '新建 创建 客户 需求', ico: 'plus', action: '新建', run: quickCreateDemand });
+      if (canWrite()) items.push(
+        { label: '上传讲师简历', meta: '进入师资资源的简历管理', keywords: '讲师 老师 PDF PPTX 上传 解析', ico: 'file-up', action: '前往', run: () => { state.teacherTab = 'resumes'; navigateTo('teachers'); } },
+        { label: '智能推荐讲师', meta: '识别客户需求并推荐匹配师资', keywords: '老师 推荐 匹配 客户 要求', ico: 'sparkles', action: '开始', run: () => { state.teacherTab = 'recommend'; navigateTo('teachers'); } },
+      );
       NAV.filter((n) => !n.admin || state.user.role === 'admin').forEach((n) => items.push({
         label: n.l, meta: (PAGE_META[n.k] || [n.l, ''])[1], keywords: `${n.l} ${n.group}`, ico: n.ico, action: '前往', run: () => navigateTo(n.k),
       }));
@@ -2244,16 +2329,349 @@
     };
   }
 
-  // ============ 师资库 ============
-  async function pageTeachers(c) {
+  // ============ 师资资源：档案、简历与智能推荐 ============
+  const teacherFeeRateText = (value) => Number.isFinite(Number(value)) && Number(value) > 0 ? `¥ ${money(value)}/课时` : '待确认';
+  const teacherFormFields = () => [
+    { k: 'name', label: '姓名', required: true },
+    { k: 'gender', label: '性别', type: 'select', options: ['男', '女'] },
+    { k: 'org', label: '所在单位' },
+    { k: 'title', label: '职称/职务' },
+    { k: 'field', label: '专业领域', span2: true },
+    { k: 'phone', label: '联系电话' },
+    { k: 'email', label: '电子邮箱', type: 'email' },
+    { k: 'fee_rate', label: '课酬标准（元/课时）', type: 'number', required: true, min: 0, step: 100, hint: '尚未确认时可填写 0，系统会显示为“待确认”。' },
+    { k: 'in_date', label: '入库日期', type: 'date' },
+    { k: 'intro', label: '师资简介', type: 'textarea' },
+  ];
+
+  let teacherResumeUploadConfig = {};
+  let teacherRecommendationSequence = 0;
+  let teacherRecommendationController = null;
+  let teacherProfileRequestSequence = 0;
+
+  function cancelTeacherRecommendation() {
+    teacherRecommendationSequence += 1;
+    teacherRecommendationController?.abort();
+    teacherRecommendationController = null;
+  }
+
+  function resumeLimitBytes(extension) {
+    const ext = String(extension || '').toLowerCase();
+    const fallback = ext === 'pptx' ? 80 * 1024 * 1024 : 15 * 1024 * 1024;
+    const config = teacherResumeUploadConfig || {};
+    const nested = config.limits?.[ext] || config.upload_limits?.[ext] || {};
+    const byteValues = [config[`max_${ext}_bytes`], config[`${ext}_max_bytes`], nested.max_bytes, nested.bytes];
+    const byteValue = byteValues.map(Number).find((value) => Number.isFinite(value) && value > 0);
+    if (byteValue) return byteValue;
+    const mbValues = [config[`max_${ext}_mb`], config[`${ext}_max_mb`], nested.max_mb, nested.mb];
+    const mbValue = mbValues.map(Number).find((value) => Number.isFinite(value) && value > 0);
+    return mbValue ? mbValue * 1024 * 1024 : fallback;
+  }
+
+  const resumeLimitMb = (extension) => Math.round(resumeLimitBytes(extension) / 1024 / 1024);
+  const invalidateTeacherRecommendations = () => {
+    cancelTeacherRecommendation();
+    delete state.cache.teacherRecommendations;
+    delete state.cache.teacherRecommendationKey;
+  };
+
+  function teacherRecommendationKey() {
+    const form = state.teacherRecommendationForm;
+    return JSON.stringify([state.teacherRequirementDraft.trim(), String(form.demandId || ''), Number(form.maxResults), String(form.maxFeeRate || '').trim(), Boolean(form.hardBudget)]);
+  }
+
+  function teacherResumeItems(payload) {
+    if (Array.isArray(payload)) return payload;
+    if (Array.isArray(payload?.items)) return payload.items;
+    if (Array.isArray(payload?.resumes)) return payload.resumes;
+    if (Array.isArray(payload?.rows)) return payload.rows;
+    return [];
+  }
+
+  function listText(value) {
+    if (Array.isArray(value)) return value.flatMap(listText).filter(Boolean);
+    if (value && typeof value === 'object') return Object.values(value).flatMap(listText).filter(Boolean);
+    if (value === undefined || value === null) return [];
+    return String(value).split(/\n+|[；;]\s*/).map((item) => item.trim()).filter(Boolean);
+  }
+
+  function resumeProfileText(value) {
+    if (value === undefined || value === null || value === '') return '';
+    if (typeof value === 'string') return value;
+    try { return JSON.stringify(value, null, 2); } catch (error) { return String(value); }
+  }
+
+  function formatResumeBytes(value) {
+    const bytes = Number(value || 0);
+    if (!Number.isFinite(bytes) || bytes <= 0) return '大小待确认';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(bytes < 10240 ? 1 : 0)} KB`;
+    return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  }
+
+  function formatResumeTime(value) {
+    if (!value) return '—';
+    return String(value).replace('T', ' ').replace(/\.\d+.*$/, '').slice(0, 16);
+  }
+
+  function resumeStatusInfo(value) {
+    const raw = String(value || '未上传').trim();
+    const key = raw.toLowerCase();
+    if (!raw || ['none', 'missing', 'not_uploaded', '未上传'].includes(key)) return { label: '未上传', tone: 'empty' };
+    if (key.includes('fail') || key.includes('error') || raw.includes('失败')) return { label: '解析失败', tone: 'failed' };
+    if (key.includes('needs_ocr') || key.includes('ocr') || raw.includes('需人工')) return { label: '需人工补充', tone: 'review' };
+    if (key.includes('review') || key.includes('confirm') || raw.includes('待确认')) return { label: '待确认', tone: 'review' };
+    if (key.includes('parsing') || key.includes('processing') || raw.includes('解析中')) return { label: '解析中', tone: 'processing' };
+    if (['ready', 'parsed', 'completed', 'success', '可推荐', '已解析'].includes(key) || raw.includes('可推荐')) return { label: '可推荐', tone: 'ready' };
+    if (key.includes('pending') || key.includes('queued') || key.includes('uploaded') || raw.includes('待解析') || raw.includes('等待')) return { label: '等待解析', tone: 'pending' };
+    return { label: raw, tone: 'empty' };
+  }
+
+  const resumeStatusTag = (resume) => tag(resumeStatusInfo(resume?.parse_status).label);
+  const resumeHasFile = (resume) => Boolean(resume && (resume.file_name || !['empty'].includes(resumeStatusInfo(resume.parse_status).tone)));
+
+  function openTeacherResumeUpload(teachers, selectedTeacherId = '') {
+    if (!canWrite()) return;
+    if (!teachers.length) { toast('请先通过手工入库建立讲师档案', true); return; }
+    const selected = String(selectedTeacherId || '');
+    const options = teachers.map((teacher) => `<option value="${esc(teacher.id)}" ${String(teacher.id) === selected ? 'selected' : ''}>${esc(teacher.name)}｜${esc(teacher.title || '讲师')}｜${esc(teacher.org || '单位待补充')}</option>`).join('');
+    const mask = openModal(selected ? '替换讲师简历' : '上传讲师简历', `
+      <div class="resume-upload-lead"><span>${icon('scan-text')}</span><div><b>上传 PDF 或 PPTX 后自动提取专业画像</b><p>解析结果会进入简历管理，建议核对后再用于智能推荐。</p></div></div>
+      <div class="form-item span2"><label for="teacher-resume-owner">关联讲师<span class="req">*</span></label><select id="teacher-resume-owner" ${selected ? '' : 'autofocus'}><option value="" disabled ${selected ? '' : 'selected'}>请选择讲师</option>${options}</select><span class="field-error" id="teacher-resume-owner-error" aria-live="polite"></span></div>
+      <label class="resume-drop-zone" id="teacher-resume-drop" for="teacher-resume-file">
+        <input class="sr-only" id="teacher-resume-file" type="file" accept=".pdf,.pptx,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation">
+        <span class="resume-drop-icon">${icon('file-up')}</span>
+        <b>选择或拖入讲师简历</b>
+        <small>PDF ≤ ${resumeLimitMb('pdf')} MB · PPTX ≤ ${resumeLimitMb('pptx')} MB；再次上传会替换旧文件</small>
+      </label>
+      <div class="resume-file-selected" id="teacher-resume-selected" role="status" aria-live="polite"><span>${icon('file-text')}</span><p><b>尚未选择文件</b><small>请选择需要解析的讲师简历</small></p></div>
+      <div class="resume-upload-progress" id="teacher-resume-progress" hidden><progress id="teacher-resume-progress-bar" max="100" value="0" aria-label="简历上传进度"></progress><span id="teacher-resume-progress-text" role="status" aria-live="polite">正在准备上传…</span></div>
+      <div class="resume-privacy-note">${icon('shield-check')}简历可能包含联系方式等个人信息，仅管理员和业务管理员可下载原件或维护画像。</div>
+    `, {
+      wide: true,
+      kicker: '师资智能档案',
+      okIcon: 'sparkles',
+      okText: selected ? '替换并重新解析' : '上传并解析',
+      onOk: async () => {
+        const teacherId = $('#teacher-resume-owner', mask).value;
+        const ownerError = $('#teacher-resume-owner-error', mask);
+        ownerError.textContent = '';
+        if (!teacherId) { ownerError.textContent = '请选择需要关联的讲师'; $('#teacher-resume-owner', mask).focus(); return false; }
+        if (!chosenFile) { toast('请选择 PDF 或 PPTX 讲师简历', true); $('#teacher-resume-file', mask).focus(); return false; }
+        const extension = /\.pptx$/i.test(chosenFile.name || '') ? 'pptx' : 'pdf';
+        const signature = new Uint8Array(await chosenFile.slice(0, 1024).arrayBuffer());
+        const signatureText = Array.from(signature.slice(0, 1024)).map((byte) => String.fromCharCode(byte)).join('');
+        const validSignature = extension === 'pdf' ? signatureText.includes('%PDF-') : signature[0] === 0x50 && signature[1] === 0x4b;
+        if (!validSignature) { toast(`文件内容不是有效的 ${extension.toUpperCase()}`, true); return false; }
+        mask.dataset.locked = 'true';
+        $('#modal-x', mask).disabled = true;
+        $('#modal-cancel', mask).disabled = true;
+        $('#teacher-resume-owner', mask).disabled = true;
+        $('#teacher-resume-file', mask).disabled = true;
+        $('#teacher-resume-progress', mask).hidden = false;
+        $('#teacher-resume-progress-bar', mask).value = 0;
+        $('#teacher-resume-progress-text', mask).textContent = '正在准备上传…';
+        const uploadFile = chosenFile;
+        try {
+          const result = await uploadTeacherResume(uploadFile, teacherId, {
+            onProgress: (loaded, total) => {
+              if (!mask.isConnected) return;
+              const percent = Math.min(100, Math.round(loaded / Math.max(1, total) * 100));
+              $('#teacher-resume-progress-bar', mask).value = percent;
+              $('#teacher-resume-progress-text', mask).textContent = loaded >= total
+                ? '文件上传完成，正在提取讲师信息，请稍候…'
+                : `正在上传 ${percent}% · ${formatResumeBytes(loaded)} / ${formatResumeBytes(total)}`;
+            },
+          });
+          invalidateTeacherRecommendations();
+          state.teacherTab = 'resumes';
+          toast(result?.status === 'needs_ocr' ? '简历已安全保存，请补充人工专业画像' : '简历上传与解析已完成');
+          renderPage();
+        } catch (error) {
+          if (mask.isConnected) $('#teacher-resume-progress-text', mask).textContent = error?.message || '上传未完成，请重试';
+          throw error;
+        } finally {
+          if (mask.isConnected) {
+            mask.dataset.locked = 'false';
+            $('#modal-x', mask).disabled = false;
+            $('#modal-cancel', mask).disabled = false;
+            $('#teacher-resume-owner', mask).disabled = false;
+            $('#teacher-resume-file', mask).disabled = false;
+          }
+        }
+      },
+    });
+    const fileInput = $('#teacher-resume-file', mask);
+    const drop = $('#teacher-resume-drop', mask);
+    const selectedBox = $('#teacher-resume-selected', mask);
+    let chosenFile = null;
+    const clearChosen = () => {
+      chosenFile = null;
+      fileInput.value = '';
+      drop.classList.remove('has-file');
+      selectedBox.innerHTML = `<span>${icon('file-text')}</span><p><b>尚未选择文件</b><small>请选择需要解析的讲师简历</small></p>`;
+      refreshIcons(selectedBox);
+    };
+    const choose = (file) => {
+      if (mask.dataset.locked === 'true') return;
+      if (!file) return;
+      const extension = /\.pptx$/i.test(file.name || '') ? 'pptx' : /\.pdf$/i.test(file.name || '') ? 'pdf' : '';
+      if (!extension || !file.size) { clearChosen(); toast('请选择有效的 PDF 或 PPTX 文件', true); return; }
+      if (file.size > resumeLimitBytes(extension)) { clearChosen(); toast(`${extension.toUpperCase()} 不能超过 ${resumeLimitMb(extension)} MB`, true); return; }
+      chosenFile = file;
+      drop.classList.add('has-file');
+      selectedBox.innerHTML = `<span>${icon('file-check-2')}</span><p><b>${esc(file.name)}</b><small>${formatResumeBytes(file.size)} · 已准备上传</small></p>`;
+      refreshIcons(selectedBox);
+    };
+    fileInput.onchange = () => choose(fileInput.files?.[0]);
+    ['dragenter', 'dragover'].forEach((name) => drop.addEventListener(name, (event) => { event.preventDefault(); drop.classList.add('is-dragover'); }));
+    ['dragleave', 'drop'].forEach((name) => drop.addEventListener(name, (event) => { event.preventDefault(); drop.classList.remove('is-dragover'); }));
+    drop.addEventListener('drop', (event) => choose(event.dataTransfer?.files?.[0]));
+  }
+
+  function resumeClaimFacts(claims = {}) {
+    claims = claims && typeof claims === 'object' ? claims : {};
+    const definitions = [
+      ['claimed_training_hours', '自述累计课时', '课时'],
+      ['claimed_sessions', '自述授课场次', '场'],
+      ['claimed_satisfaction_percent', '自述满意度', '%'],
+      ['claimed_experience_years', '自述从业年限', '年'],
+    ];
+    return definitions.flatMap(([key, label, unit]) => {
+      const raw = claims[key];
+      if (raw === undefined || raw === null || raw === '') return [];
+      const value = String(raw).trim();
+      return [{ key, label, value: value.endsWith(unit) ? value : `${value}${unit}` }];
+    });
+  }
+
+  function resumeClaimMarkup(claims = {}) {
+    const facts = resumeClaimFacts(claims);
+    return facts.length
+      ? `<dl class="resume-claim-facts">${facts.map((fact) => `<div><dt>${esc(fact.label)}</dt><dd>${esc(fact.value)}</dd></div>`).join('')}</dl><p class="resume-fact-caption">以上数值来自简历或管理员校准，请结合原件核对时间范围与计量口径。</p>`
+      : '<p class="resume-derived-empty">资料中暂未提取到明确的课时、场次、满意度或从业年限。</p>';
+  }
+
+  function manualProfileDraft(profile = {}) {
+    const groups = [
+      ['专业概述', profile.summary], ['擅长主题', profile.tags], ['行业经验', profile.industries],
+      ['授课对象', profile.audiences], ['专业资历', profile.credentials], ['代表课程', profile.courses],
+      ['授课形式', profile.delivery_modes], ['服务案例', profile.service_cases],
+    ];
+    const lines = groups.flatMap(([label, values]) => {
+      const content = listText(values).join('；');
+      return content ? [`${label}：${content}`] : [];
+    });
+    resumeClaimFacts(profile.resume_claims).forEach((fact) => lines.push(`${fact.label}：${fact.value}`));
+    return lines.join('\n');
+  }
+
+  async function openResumeProfileEditor(resume, teacher) {
+    if (!canWrite()) return;
     const epoch = routeEpoch;
-    const [rows, projects, dispatches] = await Promise.all([api('/teachers'), api('/projects'), api('/dispatches')]);
-    if (!isRouteCurrent(epoch, c, 'teachers')) return;
+    const ticket = ++teacherProfileRequestSequence;
+    let detail = resume;
+    if (!resume.profile) {
+      try { detail = await api(`/teacher-resumes/profile?teacher_id=${encodeURIComponent(resume.teacher_id)}`); }
+      catch (error) { return; }
+    }
+    if (!isRouteCurrent(epoch, null, 'teachers') || ticket !== teacherProfileRequestSequence) return;
+    const fields = [{
+      k: 'manual_profile', label: '管理员校准画像', type: 'textarea', required: true,
+      placeholder: '请完整填写讲师擅长主题、行业经验、授课对象、课程和资历，并注明需要进一步确认的条件。',
+      hint: '已带入现有专业事实供您核对。请保留仍然有效的内容并修正遗漏；保存后，这份完整画像将优先用于推荐。最多 10000 字。',
+    }];
+    openModal(`编辑专业画像 · ${teacher?.name || detail.teacher_name || '讲师'}`, renderForm(fields, { manual_profile: resumeProfileText(detail.manual_profile) || manualProfileDraft(detail.profile) }), {
+      wide: true,
+      kicker: '人工校准',
+      okIcon: 'save',
+      okText: '保存画像',
+      onOk: async () => {
+        const data = collectForm($('#modal-mask'), fields);
+        if (!data) return false;
+        if (data.manual_profile.length > 10000) { toast('校准画像不能超过 10000 字', true); return false; }
+        const target = Number(detail.id) > 0 ? { id: Number(detail.id) } : { teacher_id: Number(detail.teacher_id) };
+        await api('/teacher-resumes/profile', { body: { ...target, manual_profile: data.manual_profile } });
+        invalidateTeacherRecommendations();
+        state.teacherTab = 'resumes';
+        toast('人工专业画像已保存');
+        renderPage();
+      },
+    });
+  }
+
+  function reparseTeacherResume(resume) {
+    if (!canWrite()) return;
+    confirmBox(`重新解析【${resume.teacher_name || '该讲师'}】的简历？人工专业画像会保留。`, async () => {
+      await api('/teacher-resumes/reparse', { body: { teacher_id: Number(resume.teacher_id) } });
+      invalidateTeacherRecommendations();
+      state.teacherTab = 'resumes';
+      toast('已重新提交解析');
+      renderPage();
+    });
+  }
+
+  function deleteTeacherResume(resume) {
+    if (!canWrite()) return;
+    confirmBox(`确定删除【${resume.teacher_name || '该讲师'}】的简历原件与解析结果？讲师基础档案和历史评价不会删除。`, async () => {
+      await api('/teacher-resumes/delete', { body: { teacher_id: Number(resume.teacher_id) } });
+      invalidateTeacherRecommendations();
+      state.teacherTab = 'resumes';
+      toast('讲师简历已删除');
+      renderPage();
+    });
+  }
+
+  async function openResumeDetails(resume, teacher) {
+    if (!canWrite()) return;
+    const epoch = routeEpoch;
+    const ticket = ++teacherProfileRequestSequence;
+    let detail;
+    try {
+      detail = await api(`/teacher-resumes/profile?teacher_id=${encodeURIComponent(resume.teacher_id)}`);
+    } catch (error) {
+      return;
+    }
+    if (!isRouteCurrent(epoch, null, 'teachers') || ticket !== teacherProfileRequestSequence) return;
+    const manualProfile = resumeProfileText(detail.manual_profile);
+    const parsedProfile = detail.profile && typeof detail.profile === 'object' ? detail.profile : {};
+    const profileRows = [
+      ['擅长主题', listText(parsedProfile.tags)],
+      ['行业经验', listText(parsedProfile.industries)],
+      ['授课对象', listText(parsedProfile.audiences)],
+      ['专业资历', listText(parsedProfile.credentials)],
+      ['代表课程', listText(parsedProfile.courses)],
+      ['授课形式', listText(parsedProfile.delivery_modes)],
+    ].filter(([, values]) => values.length);
+    const parsedProfileHtml = `${parsedProfile.summary ? `<p class="resume-derived-summary">${esc(parsedProfile.summary)}</p>` : ''}${profileRows.length ? `<dl class="resume-derived-list">${profileRows.map(([label, values]) => `<div><dt>${esc(label)}</dt><dd>${values.map((value) => `<span>${esc(value)}</span>`).join('')}</dd></div>`).join('')}</dl>` : '<div class="resume-derived-empty">暂未提取到可展示的结构化画像</div>'}`;
+    const parseMessage = String(detail.parse_message || '').trim();
+    const serviceCases = listText(parsedProfile.service_cases);
+    const evidence = recommendationEvidence(parsedProfile.evidence);
+    openModal(`${teacher?.name || detail.teacher_name || '讲师'} · 简历解析`, `
+      <div class="resume-detail-head"><span class="person-avatar large">${esc((teacher?.name || detail.teacher_name || '讲师').slice(-2))}</span><div><h4>${esc(teacher?.name || detail.teacher_name || '讲师')} ${resumeStatusTag(detail)}</h4><p>${esc(teacher?.org || '单位待补充')} · ${esc(teacher?.title || '职称待补充')}</p></div><small>${esc(formatResumeTime(detail.updated_at))}</small></div>
+      <div class="resume-meta-strip"><span>${icon('file-text')}<b>${esc(detail.file_name || '简历文件')}</b><small>${esc(formatResumeBytes(detail.file_size))}</small></span><span>${icon('files')}<b>${esc(detail.page_count || '—')}</b><small>${/\.pptx$/i.test(detail.file_name || '') ? '幻灯片' : '页数'}</small></span><span>${icon('scan-text')}<b>${esc(resumeStatusInfo(detail.parse_status).label)}</b><small>解析状态</small></span></div>
+      ${parseMessage ? `<div class="resume-parse-message">${icon(resumeStatusInfo(detail.parse_status).tone === 'failed' ? 'circle-alert' : 'info')}<span>${esc(parseMessage)}</span></div>` : ''}
+      <div class="resume-claim-banner">${icon('badge-info')}<span>简历自述和管理员校准用于理解讲师能力；自述课时、满意度、客户案例不计入系统履约记录。</span></div>
+      <div class="resume-detail-grid">
+        <section><div class="section-title"><div><span>管理员校准画像</span><small>已保存的完整专业事实优先用于推荐</small></div></div><div class="resume-profile-copy">${manualProfile ? esc(manualProfile) : '尚未维护，可点击“编辑人工画像”核对并完善。'}</div></section>
+        <section><div class="section-title"><div><span>专业画像</span><small>${manualProfile ? '根据已校准资料整理，请核对关键信息' : '根据简历整理，请核对关键信息'}</small></div></div><div class="resume-profile-copy resume-derived-profile">${parsedProfileHtml}</div></section>
+        <section class="resume-facts-section"><div class="section-title"><div><span>简历自述数据</span><small>保留资料口径，供您核对</small></div></div>${resumeClaimMarkup(parsedProfile.resume_claims)}</section>
+        <section class="resume-facts-section"><div class="section-title"><div><span>行业与客户案例</span><small>来自讲师资料，项目情况需进一步确认</small></div></div>${serviceCases.length ? `<ul class="resume-service-cases">${serviceCases.map((item) => `<li>${esc(item)}</li>`).join('')}</ul>` : '<p class="resume-derived-empty">暂未提取到明确案例，可在校准画像中补充。</p>'}</section>
+      </div>
+      ${evidence.length ? `<details class="teacher-evidence"><summary>${icon('file-search')}查看资料依据</summary><ul>${evidence.map((item) => `<li>${esc(item)}</li>`).join('')}</ul></details>` : ''}
+      <div class="resume-detail-actions"><button type="button" class="btn gray" id="resume-detail-download">${icon('download')}下载原件</button><button type="button" class="btn gray" id="resume-detail-reparse">${icon('refresh-cw')}重新解析</button><button type="button" class="btn" id="resume-detail-edit">${icon('sliders-horizontal')}编辑人工画像</button></div>
+    `, { noFoot: true, wide: true, kicker: '简历与画像' });
+    $('#resume-detail-download').onclick = () => downloadTeacherResume(detail.teacher_id, detail.file_name);
+    $('#resume-detail-reparse').onclick = () => { closeModal(); reparseTeacherResume(resume); };
+    $('#resume-detail-edit').onclick = () => { closeModal(); openResumeProfileEditor({ ...resume, ...detail }, teacher); };
+  }
+
+  function renderTeacherLibrary(root, context) {
+    const { epoch, c, rows, projects, dispatches, resumeByTeacher } = context;
     const savedFilter = state.filters.teachers || {};
-    const inLib = rows.filter((r) => r.status === '在库').length;
-    const avgRate = rows.length ? rows.reduce((s, r) => s + Number(r.fee_rate || 0), 0) / rows.length : 0;
-    c.innerHTML = `<div class="module-summary three"><div><span>${icon('users-round')}</span><small>当前师资</small><b><span id="teachers-total">${rows.length}</span><em>人</em></b></div><div><span>${icon('user-check')}</span><small>当前在库</small><b><span id="teachers-inlib">${inLib}</span><em>人</em></b></div><div><span>${icon('badge-japanese-yen')}</span><small>当前平均课酬</small><b id="teachers-rate">¥ ${money(avgRate)}</b></div></div><div class="card data-card">
-      <div class="card-heading"><div><h2>师资档案</h2><p>当前显示 <span id="result-count">${rows.length}</span> 条记录 · 统一管理专长、联系方式与授课评价</p></div>${canWrite() ? `<button type="button" class="btn" id="add-btn">${icon('user-plus')}师资入库</button>` : ''}</div>
+    const fields = teacherFormFields();
+    root.innerHTML = `<div class="card data-card teacher-library-card">
+      <div class="card-heading"><div><h2>师资档案</h2><p>当前显示 <span id="result-count">${rows.length}</span> 条记录 · 档案、简历状态与履约评价统一查看</p></div>${canWrite() ? `<div class="teacher-head-actions"><button type="button" class="btn gray" id="teacher-add-manual">${icon('user-plus')}手工入库</button><button type="button" class="btn" id="teacher-upload-resume">${icon('file-up')}上传讲师简历</button></div>` : ''}</div>
       <div class="toolbar">
         <label class="search-box"><span class="sr-only">搜索师资姓名、单位或领域</span>${icon('search')}<input id="flt-kw" value="${esc(savedFilter.kw || '')}" placeholder="搜索：姓名/单位/领域" autocomplete="off"></label>
         <label class="select-filter"><span class="sr-only">按师资状态筛选</span><select id="flt-status"><option value="">全部状态</option><option ${savedFilter.status === '在库' ? 'selected' : ''}>在库</option><option ${savedFilter.status === '出库' ? 'selected' : ''}>出库</option></select></label>
@@ -2262,97 +2680,478 @@
       <div id="tbl"></div>
     </div>`;
 
-    const fields = [
-      { k: 'name', label: '姓名', required: true },
-      { k: 'gender', label: '性别', type: 'select', options: ['男', '女'] },
-      { k: 'org', label: '所在单位' },
-      { k: 'title', label: '职称/职务' },
-      { k: 'field', label: '专业领域', span2: true },
-      { k: 'phone', label: '联系电话' },
-      { k: 'email', label: '电子邮箱', type: 'email' },
-      { k: 'fee_rate', label: '课酬标准（元/课时）', type: 'number', required: true, min: 0, step: 100 },
-      { k: 'in_date', label: '入库日期', type: 'date' },
-      { k: 'intro', label: '师资简介', type: 'textarea' },
-    ];
-
     const cols = [
-      { k: 'id', l: '编号', mobileHide: true, render: (r) => `<span class="project-id">#T-${String(r.id).padStart(4, '0')}</span>` }, { k: 'name', l: '师资', render: (r) => `<div class="person-cell"><span class="person-avatar">${esc(r.name.slice(-2))}</span><span><b>${esc(r.name)}</b><small>${esc(r.title || '讲师')}</small></span></div>` }, { k: 'gender', l: '性别', mobileHide: true },
-      { k: 'org', l: '单位' }, { k: 'title', l: '职称', mobileHide: true }, { k: 'field', l: '专业领域' },
-      { k: 'fee_rate', l: '课酬标准', align: 'right', render: (r) => `¥ ${money(r.fee_rate)}/课时` },
-      { k: 'status', l: '状态', render: (r) => tag(r.status) },
+      { k: 'id', l: '编号', mobileHide: true, render: (row) => `<span class="project-id">#T-${String(row.id).padStart(4, '0')}</span>` },
+      { k: 'name', l: '师资', render: (row) => `<div class="person-cell"><span class="person-avatar">${esc(row.name.slice(-2))}</span><span><b>${esc(row.name)}</b><small>${esc(row.title || '讲师')}</small></span></div>` },
+      { k: 'org', l: '单位' },
+      { k: 'field', l: '专业领域' },
+      ...(canWrite() ? [{ k: 'resume_status', l: '简历状态', render: (row) => resumeStatusTag(resumeByTeacher.get(String(row.id))) }] : []),
+      { k: 'fee_rate', l: '课酬标准', align: 'right', render: (row) => teacherFeeRateText(row.fee_rate) },
+      { k: 'status', l: '状态', render: (row) => tag(row.status) },
     ];
-
-    const actions = [
-      { l: '档案', cls: '', icon: 'contact-round', onClick: (r) => showTeacherEvals(r, projects, dispatches) },
-    ];
+    const actions = [{ l: '档案', cls: '', icon: 'contact-round', onClick: (row) => showTeacherEvals(row, projects, dispatches) }];
     if (canWrite()) {
-      actions.push({ l: '出库', cls: 'orange', show: (r) => r.status === '在库', onClick: (r) => confirmBox(`确定将师资【${r.name}】移出师资库？出库后不可参与新调度。`, async () => { await api('/teachers/checkout', { body: { id: r.id } }); toast('已出库'); renderPage(); }) });
-      actions.push({ l: '入库', cls: 'green', show: (r) => r.status === '出库', onClick: (r) => confirmBox(`确定将师资【${r.name}】重新入库？`, async () => { await api('/teachers/checkin', { body: { id: r.id } }); toast('已重新入库'); renderPage(); }) });
-      actions.push({ l: '编辑', cls: 'gray', onClick: (r) => openModal('编辑师资', renderForm(fields, r), { onOk: async () => { const d = collectForm($('#modal-mask'), fields); if (!d) return false; await api('/teachers', { body: { ...r, ...d } }); toast('已保存'); renderPage(); } }) });
-      actions.push({ l: '删除', cls: 'red', onClick: (r) => confirmBox(`仅未产生排课、课酬或评价的师资可以删除。确定检查并删除【${r.name}】？`, async () => { await api('/teachers/delete', { body: { id: r.id } }); toast('已删除'); renderPage(); }) });
+      actions.push({ l: '上传简历', cls: 'gray', icon: 'file-up', onClick: (row) => openTeacherResumeUpload(rows, row.id) });
+      actions.push({ l: '出库', cls: 'orange', show: (row) => row.status === '在库', onClick: (row) => confirmBox(`确定将师资【${row.name}】移出师资库？出库后不可参与新调度。`, async () => { await api('/teachers/checkout', { body: { id: row.id } }); invalidateTeacherRecommendations(); toast('已出库'); renderPage(); }) });
+      actions.push({ l: '入库', cls: 'green', show: (row) => row.status === '出库', onClick: (row) => confirmBox(`确定将师资【${row.name}】重新入库？`, async () => { await api('/teachers/checkin', { body: { id: row.id } }); invalidateTeacherRecommendations(); toast('已重新入库'); renderPage(); }) });
+      actions.push({ l: '编辑', cls: 'gray', onClick: (row) => openModal('编辑师资', renderForm(fields, row), { onOk: async () => { const data = collectForm($('#modal-mask'), fields); if (!data) return false; await api('/teachers', { body: { ...row, ...data } }); invalidateTeacherRecommendations(); toast('已保存'); renderPage(); } }) });
+      actions.push({ l: '删除', cls: 'red', onClick: (row) => confirmBox(`仅未产生排课、课酬或评价的师资可以删除。确定检查并删除【${row.name}】？`, async () => { await api('/teachers/delete', { body: { id: row.id } }); invalidateTeacherRecommendations(); toast('已删除'); renderPage(); }) });
     }
     const draw = (list) => {
-      if (!isRouteCurrent(epoch, c, 'teachers')) return;
-      const table = $('#tbl', c);
+      if (!isRouteCurrent(epoch, c, 'teachers') || !root.isConnected) return;
+      const table = $('#tbl', root);
       if (!table) return;
       table.innerHTML = renderTable(cols, list, actions, 'teachers');
       bindTableActions(table, list, actions);
-      const visibleInLib = list.filter((row) => row.status === '在库').length;
-      const visibleAvg = list.length ? list.reduce((sum, row) => sum + Number(row.fee_rate || 0), 0) / list.length : 0;
-      $('#result-count', c).textContent = list.length;
-      $('#teachers-total', c).textContent = list.length;
-      $('#teachers-inlib', c).textContent = visibleInLib;
-      $('#teachers-rate', c).textContent = `¥ ${money(visibleAvg)}`;
+      $('#result-count', root).textContent = list.length;
     };
     draw(rows);
     let filterController = null;
     addRouteCleanup(() => filterController?.abort(), epoch);
     const runFilter = async () => {
-      if (!isRouteCurrent(epoch, c, 'teachers')) return;
-      const p = new URLSearchParams();
-      const keyword = $('#flt-kw', c);
-      const status = $('#flt-status', c);
-      if (keyword.value) p.set('kw', keyword.value);
-      if (status.value) p.set('status', status.value);
-      state.filters.teachers = { kw: keyword.value.trim(), status: status.value };
+      if (!isRouteCurrent(epoch, c, 'teachers') || !$('#flt-kw', root)) return;
+      const params = new URLSearchParams();
+      const keyword = $('#flt-kw', root);
+      const status = $('#flt-status', root);
+      if (keyword.value) params.set('kw', keyword.value);
+      if (status.value) params.set('status', status.value);
+      state.filters.teachers = { ...state.filters.teachers, kw: keyword.value.trim(), status: status.value };
       writeRouteToUrl(true);
       filterController?.abort();
       const controller = new AbortController();
       filterController = controller;
       try {
-        const list = await api('/teachers?' + p.toString(), { signal: controller.signal });
+        const list = await api('/teachers?' + params.toString(), { signal: controller.signal });
         if (controller === filterController) draw(list);
       } catch (error) {
         if (!error || error.name !== 'AbortError') return;
       }
     };
-    $('#flt-btn', c).onclick = runFilter;
-    $('#flt-status', c).onchange = runFilter;
+    $('#flt-btn', root).onclick = runFilter;
+    $('#flt-status', root).onchange = runFilter;
     const liveFilter = debounce(runFilter, 280);
     addRouteCleanup(liveFilter.cancel, epoch);
-    $('#flt-kw', c).oninput = liveFilter;
-    $('#flt-kw', c).onkeydown = (event) => {
+    $('#flt-kw', root).oninput = liveFilter;
+    $('#flt-kw', root).onkeydown = (event) => {
       if (event.key === 'Enter') { event.preventDefault(); runFilter(); }
-      if (event.key === 'Escape') { event.preventDefault(); $('#flt-kw', c).value = ''; runFilter(); }
+      if (event.key === 'Escape') { event.preventDefault(); $('#flt-kw', root).value = ''; runFilter(); }
     };
-    if (savedFilter.kw || savedFilter.status) await runFilter();
-    const addBtn = $('#add-btn', c);
-    if (addBtn) addBtn.onclick = () => openModal('师资入库', renderForm(fields, { in_date: new Date().toISOString().slice(0, 10) }), {
-      onOk: async () => { const d = collectForm($('#modal-mask'), fields); if (!d) return false; d.status = '在库'; await api('/teachers', { body: d }); toast('师资已入库'); renderPage(); },
+    if (savedFilter.kw || savedFilter.status) runFilter();
+    if ($('#teacher-upload-resume', root)) $('#teacher-upload-resume', root).onclick = () => openTeacherResumeUpload(rows);
+    if ($('#teacher-add-manual', root)) $('#teacher-add-manual', root).onclick = () => openModal('师资入库', renderForm(fields, { in_date: new Date().toISOString().slice(0, 10) }), {
+      onOk: async () => { const data = collectForm($('#modal-mask'), fields); if (!data) return false; data.status = '在库'; await api('/teachers', { body: data }); invalidateTeacherRecommendations(); toast('师资已入库'); renderPage(); },
     });
+  }
+
+  function renderResumeManagement(root, context) {
+    if (!canWrite()) {
+      root.innerHTML = `<div class="recommend-permission-card"><span>${icon('shield-lock')}</span><h2>当前账号无权访问简历管理</h2><p>请使用管理员或业务管理员账号维护讲师简历与专业画像。</p></div>`;
+      return;
+    }
+    const { rows, resumes, resumeLoadError } = context;
+    const savedFilter = state.filters.teacherResumes || {};
+    const teacherById = new Map(rows.map((teacher) => [String(teacher.id), teacher]));
+    const resumeById = new Map(resumes.map((resume) => [String(resume.teacher_id), resume]));
+    const knownIds = new Set(rows.map((teacher) => String(teacher.id)));
+    const records = rows.map((teacher) => ({
+      ...(resumeById.get(String(teacher.id)) || {}),
+      id: teacher.id,
+      teacher_id: teacher.id,
+      teacher_name: teacher.name,
+      teacher_title: teacher.title,
+      teacher_org: teacher.org,
+      teacher_status: teacher.status,
+      parse_status: resumeById.get(String(teacher.id))?.parse_status || '未上传',
+    }));
+    resumes.filter((resume) => !knownIds.has(String(resume.teacher_id))).forEach((resume) => records.push({ ...resume, id: resume.teacher_id }));
+    root.innerHTML = `${resumeLoadError ? `<div class="resume-load-error" role="alert">${icon('cloud-alert')}<span><b>简历状态暂时无法同步</b><small>${esc(resumeLoadError)}</small></span></div>` : ''}<div class="card data-card resume-manage-card">
+      <div class="card-heading"><div><h2>简历管理</h2><p>跟踪 PDF/PPTX 解析、人工画像与推荐可用状态</p></div><div class="teacher-head-actions"><button type="button" class="btn gray" id="resume-manage-refresh">${icon('refresh-cw')}刷新状态</button>${canWrite() ? `<button type="button" class="btn" id="resume-manage-upload">${icon('file-up')}上传讲师简历</button>` : ''}</div></div>
+      ${canWrite() ? '' : `<div class="resume-viewer-note">${icon('shield')}当前账号无权访问此区域。</div>`}
+      <div class="toolbar resume-toolbar"><label class="search-box"><span class="sr-only">搜索讲师</span>${icon('search')}<input id="resume-flt-keyword" value="${esc(savedFilter.keyword || '')}" placeholder="搜索讲师姓名" autocomplete="off"></label><label class="select-filter"><span class="sr-only">按解析状态筛选</span><select id="resume-flt-status"><option value="">全部解析状态</option>${['未上传', '等待解析', '解析中', '待确认', '需人工补充', '可推荐', '解析失败'].map((status) => `<option ${savedFilter.status === status ? 'selected' : ''}>${status}</option>`).join('')}</select></label></div>
+      ${resumes.some((resume) => ['pending', 'processing'].includes(resumeStatusInfo(resume.parse_status).tone)) ? '<p class="resume-refresh-note" role="status">正在解析的简历会自动更新状态；也可以点击“刷新状态”。</p>' : ''}
+      <div id="resume-table"></div>
+    </div>`;
+    const cols = canWrite() ? [
+      { k: 'teacher_name', l: '讲师', render: (record) => `<div class="person-cell"><span class="person-avatar">${esc((record.teacher_name || '讲师').slice(-2))}</span><span><b>${esc(record.teacher_name || '未知讲师')}</b><small>${esc(record.teacher_title || '讲师')} · ${esc(record.teacher_status || '状态待确认')}</small></span></div>` },
+      { k: 'file_name', l: '简历文件', render: (record) => resumeHasFile(record) ? `<span class="resume-file-cell"><b>${esc(record.file_name || '简历文件')}</b><small>${esc(formatResumeBytes(record.file_size))}${record.page_count ? ` · ${esc(record.page_count)} ${/\.pptx$/i.test(record.file_name || '') ? '张' : '页'}` : ''}</small></span>` : '<span class="muted-cell">尚未上传</span>' },
+      { k: 'parse_status', l: '解析状态', render: resumeStatusTag },
+      { k: 'manual_profile', l: '人工画像', render: (record) => `<span class="resume-profile-cell">${esc((resumeProfileText(record.manual_profile) || '尚未维护').slice(0, 72))}</span>` },
+      { k: 'updated_at', l: '最近更新', render: (record) => esc(formatResumeTime(record.updated_at)) },
+    ] : [
+      { k: 'teacher_name', l: '讲师', render: (record) => `<div class="person-cell"><span class="person-avatar">${esc((record.teacher_name || '讲师').slice(-2))}</span><span><b>${esc(record.teacher_name || '未知讲师')}</b><small>${esc(record.teacher_title || '讲师')}</small></span></div>` },
+      { k: 'parse_status', l: '解析状态', render: resumeStatusTag },
+      { k: 'updated_at', l: '最近更新', render: (record) => esc(formatResumeTime(record.updated_at)) },
+    ];
+    const actions = canWrite() ? [
+      { l: '解析详情', cls: '', icon: 'scan-text', show: resumeHasFile, onClick: (record) => openResumeDetails(record, teacherById.get(String(record.teacher_id))) },
+      { l: '上传简历', cls: 'gray', icon: 'file-up', show: (record) => !resumeHasFile(record), onClick: (record) => openTeacherResumeUpload(rows, record.teacher_id) },
+      { l: '替换简历', cls: 'gray', icon: 'replace', show: resumeHasFile, onClick: (record) => openTeacherResumeUpload(rows, record.teacher_id) },
+      { l: '编辑画像', cls: 'gray', icon: 'sliders-horizontal', show: resumeHasFile, onClick: (record) => openResumeProfileEditor(record, teacherById.get(String(record.teacher_id))) },
+      { l: '下载原件', cls: 'gray', icon: 'download', show: resumeHasFile, onClick: (record) => downloadTeacherResume(record.teacher_id, record.file_name) },
+      { l: '重新解析', cls: 'gray', icon: 'refresh-cw', show: resumeHasFile, onClick: reparseTeacherResume },
+      { l: '删除简历', cls: 'red', icon: 'trash-2', show: resumeHasFile, onClick: deleteTeacherResume },
+    ] : null;
+    const draw = () => {
+      const keyword = String($('#resume-flt-keyword', root)?.value || '').trim().toLowerCase();
+      const status = String($('#resume-flt-status', root)?.value || '');
+      state.filters.teacherResumes = { keyword, status };
+      const visible = records.filter((record) => (!keyword || String(record.teacher_name || '').toLowerCase().includes(keyword)) && (!status || resumeStatusInfo(record.parse_status).label === status));
+      const table = $('#resume-table', root);
+      table.innerHTML = renderTable(cols, visible, actions, 'teacher-resumes');
+      if (actions) bindTableActions(table, visible, actions);
+    };
+    draw();
+    const filter = debounce(draw, 160);
+    $('#resume-flt-keyword', root).oninput = filter;
+    $('#resume-flt-status', root).onchange = draw;
+    if ($('#resume-manage-upload', root)) $('#resume-manage-upload', root).onclick = () => openTeacherResumeUpload(rows);
+    $('#resume-manage-refresh', root).onclick = () => renderPage();
+    let stopped = false;
+    let timer;
+    let pollController;
+    let attempts = 0;
+    const stop = () => { stopped = true; clearTimeout(timer); pollController?.abort(); filter.cancel(); };
+    context.stopTeacherTabPolling = stop;
+    addRouteCleanup(stop, context.epoch);
+    const stamp = (items) => JSON.stringify(items.map((item) => [item.teacher_id, item.parse_status, item.updated_at]));
+    const originalStamp = stamp(resumes);
+    const poll = async () => {
+      if (stopped || state.teacherTab !== 'resumes' || !isRouteCurrent(context.epoch, context.c, 'teachers') || !root.isConnected) return;
+      pollController = new AbortController();
+      try {
+        const payload = await api('/teacher-resumes/manage', { signal: pollController.signal });
+        if (stopped || !isRouteCurrent(context.epoch, context.c, 'teachers') || state.teacherTab !== 'resumes') return;
+        if (stamp(teacherResumeItems(payload)) !== originalStamp) { stop(); renderPage(); return; }
+      } catch (error) {
+        if (error?.name === 'AbortError') return;
+        stop();
+        return;
+      }
+      if (++attempts < 12) timer = setTimeout(poll, 2500);
+      else {
+        const note = $('.resume-refresh-note', root);
+        if (note) note.textContent = '解析仍在进行，可稍后点击“刷新状态”查看结果。';
+      }
+    };
+    if (resumes.some((resume) => ['pending', 'processing'].includes(resumeStatusInfo(resume.parse_status).tone))) timer = setTimeout(poll, 1500);
+  }
+
+  function demandRequirementText(demand) {
+    if (!demand) return '';
+    return [
+      demand.unit ? `客户单位：${demand.unit}` : '',
+      demand.title ? `培训主题：${demand.title}` : '',
+      demand.content ? `培训内容：${demand.content}` : '',
+      demand.teacher_req ? `师资要求：${demand.teacher_req}` : '',
+      demand.hours ? `预计课时：${demand.hours}` : '',
+      demand.expect_date ? `期望日期：${demand.expect_date}` : '',
+      demand.remark ? `补充说明：${demand.remark}` : '',
+    ].filter(Boolean).join('\n');
+  }
+
+  function recommendationPercent(value) {
+    const score = Number(value);
+    if (!Number.isFinite(score)) return 0;
+    return Math.max(0, Math.min(100, Math.round(score * 10) / 10));
+  }
+
+  function teacherSystemMetrics(teacherId, dispatches = [], evaluations = [], fallback = {}) {
+    const id = String(teacherId || '');
+    const completed = dispatches.filter((item) => String(item.teacher_id) === id && item.status === '已完成');
+    const teacherEvaluations = evaluations.filter((item) => String(item.teacher_id) === id);
+    const completedSessions = completed.length || Number(fallback.completed_sessions || fallback.completed_count || 0);
+    const completedHours = completed.length
+      ? completed.reduce((total, item) => total + Number(item.hours || 0), 0)
+      : Number(fallback.completed_hours || 0);
+    const evaluationCount = teacherEvaluations.length || Number(fallback.evaluation_count || fallback.eval_count || 0);
+    const evaluationAverage = teacherEvaluations.length
+      ? teacherEvaluations.reduce((total, item) => total + Number(item.score || 0), 0) / teacherEvaluations.length
+      : Number(fallback.evaluation_score || fallback.evaluation_average || 0);
+    return {
+      completedSessions: Number.isFinite(completedSessions) ? completedSessions : 0,
+      completedHours: Number.isFinite(completedHours) ? completedHours : 0,
+      evaluationCount: Number.isFinite(evaluationCount) ? evaluationCount : 0,
+      evaluationAverage: Number.isFinite(evaluationAverage) && evaluationCount > 0 ? evaluationAverage : 0,
+    };
+  }
+
+  function recommendationEvidence(value) {
+    return (Array.isArray(value) ? value : listText(value)).map((item) => {
+      if (!item || typeof item !== 'object') return String(item || '');
+      const page = item.page || item.page_number;
+      const text = item.text || item.quote || item.evidence || item.content || '';
+      return [page ? `第 ${page} 页` : '', text].filter(Boolean).join(' · ');
+    }).filter(Boolean);
+  }
+
+  function breakdownLabel(key) {
+    return ({ topic: '主题契合', topics: '主题契合', industry: '行业经验', industries: '行业经验', audiences: '授课对象', credentials: '专业资历', performance: '历史履约', budget: '课酬预算', keyword: '关键能力', keywords: '关键能力', profile: '专业画像', experience: '项目经验', evaluation: '履约评价', delivery: '授课适配', resume: '简历证据' })[String(key).toLowerCase()] || '其他匹配条件';
+  }
+
+  function renderRecommendationResults(target, payload, context) {
+    const analysis = payload?.analysis || payload?.requirement_analysis || {};
+    const recommendations = payload?.recommendations || payload?.results || payload?.candidates || [];
+    const groups = [
+      ['培训主题', listText(analysis.topics)],
+      ['客户行业', listText(analysis.industries)],
+      ['授课对象', listText(analysis.audiences)],
+      ['专业资历', listText(analysis.credentials)],
+      ['关键要求', listText(analysis.keywords)],
+    ].filter((group) => group[1].length);
+    const conditionFacts = [analysis.expected_date ? `授课日期：${analysis.expected_date}` : '', Number(analysis.hours) > 0 ? `课时：${num(analysis.hours)}` : '', Number(analysis.max_fee_rate) > 0 ? `课酬上限：¥ ${money(analysis.max_fee_rate)}/课时` : ''].filter(Boolean);
+    const excluded = Array.isArray(payload?.excluded) ? payload.excluded : [];
+    const excludedHtml = excluded.length ? `<details class="recommend-excluded" ${recommendations.length ? '' : 'open'}><summary>${icon('calendar-x')}已排除 ${excluded.length} 位候选，查看原因</summary><ul>${excluded.map((item) => `<li><b>${esc(item.teacher_name || item.name || '讲师')}</b><span>${esc(item.reason || '当前条件不适合，请进一步确认')}</span></li>`).join('')}</ul></details>` : '';
+    const analysisHtml = `<section class="recommend-analysis"><div class="recommend-section-head"><span>${icon('scan-search')}</span><div><b>需求识别结果</b><small>请先核对识别到的主题、对象与条件</small></div></div>${analysis.summary ? `<p class="recommend-analysis-summary">${esc(analysis.summary)}</p>` : ''}${conditionFacts.length ? `<p class="recommend-condition-facts">${conditionFacts.map((fact) => `<span>${esc(fact)}</span>`).join('')}</p>` : ''}${groups.length ? `<div class="recommend-tag-groups">${groups.map(([label, values]) => `<div><small>${esc(label)}</small><p>${values.map((value) => `<span>${esc(value)}</span>`).join('')}</p></div>`).join('')}</div>` : '<div class="recommend-soft-empty">暂未识别到明确专业条件，请补充培训主题与参训对象。</div>'}<p class="recommend-condition-note">地点、差旅、复杂时间安排及其他特殊要求，请与候选讲师进一步确认。</p></section>`;
+    if (!recommendations.length) {
+      target.innerHTML = `${analysisHtml}${excludedHtml}<div class="recommend-empty">${icon('user-round-search')}<b>暂未找到合适候选</b><p>${excluded.length ? '请查看上方排除原因，再调整日期、课酬条件或补充更多讲师。' : '可补充培训主题、参训对象与行业后重试，也请检查在库讲师的专业资料是否完善。'}</p></div>`;
+      refreshIcons(target);
+      return;
+    }
+    const teacherById = new Map(context.rows.map((teacher) => [String(teacher.id), teacher]));
+    const cards = recommendations.map((item, index) => {
+      const teacher = item.teacher || teacherById.get(String(item.teacher_id)) || {};
+      const name = item.teacher_name || teacher.name || '候选讲师';
+      const score = recommendationPercent(item.match_score ?? item.score);
+      const reasons = listText(item.reasons || item.match_reasons);
+      const gaps = listText(item.gaps || item.risks);
+      const evidence = recommendationEvidence(item.evidence || item.resume_evidence);
+      const verified = teacherSystemMetrics(item.teacher_id || teacher.id, [], [], item.system_metrics || { ...item.performance, evaluation_score: item.performance?.average_evaluation });
+      const hasResume = Boolean(item.resume_id || item.resume_status);
+      const resumeLabel = hasResume ? resumeStatusTag({ parse_status: item.resume_status || '待确认' }) : tag('仅基础档案');
+      const breakdown = Array.isArray(item.score_breakdown)
+        ? item.score_breakdown.map((entry, i) => [entry.label || entry.name || `维度 ${i + 1}`, entry.score ?? entry.value])
+        : Object.entries(item.score_breakdown || {});
+      return `<article class="teacher-match-card ${index === 0 ? 'is-top' : ''}">
+        <div class="teacher-match-rank"><span>TOP</span><b>${index + 1}</b></div>
+        <div class="teacher-match-main">
+          <header><span class="person-avatar large">${esc(name.slice(-2))}</span><div><h3>${esc(name)} ${resumeLabel}</h3><p>${esc(item.org || teacher.org || '单位待补充')} · ${esc(item.title || teacher.title || '讲师')}</p><small>${esc(item.field || teacher.field || '专业领域待补充')}</small></div><div class="teacher-match-score" aria-label="需求匹配度 ${score} 分"><b>${score}</b><small>需求匹配</small></div></header>
+          <div class="teacher-match-facts"><span>${icon('badge-japanese-yen')}课酬 <b>${teacherFeeRateText(item.fee_rate ?? teacher.fee_rate)}</b></span></div>
+          <section class="teacher-verified-proof"><div><span>${icon('shield-check')}系统履约记录</span><small>本次推荐读取的已完成课程与评价</small></div><dl><div><dt>已完成场次</dt><dd>${num(verified.completedSessions)}</dd></div><div><dt>已完成课时</dt><dd>${num(verified.completedHours)}</dd></div><div><dt>评价均分</dt><dd>${verified.evaluationCount ? `${verified.evaluationAverage.toFixed(2)} <small>/ 5 分 · ${num(verified.evaluationCount)} 份</small>` : '暂无评价'}</dd></div></dl></section>
+          ${breakdown.length ? `<div class="teacher-score-breakdown">${breakdown.map(([label, value]) => { const pct = recommendationPercent(value); const displayLabel = item.score_breakdown_details?.[label]?.label || breakdownLabel(label); return `<div><span><small>${esc(displayLabel)}</small><b>${pct}%</b></span><i><em style="width:${pct}%"></em></i></div>`; }).join('')}</div>` : ''}
+          <div class="teacher-match-detail">
+            <section class="match-reasons"><b>${icon('badge-check')}推荐理由</b>${reasons.length ? `<ul>${reasons.map((reason) => `<li>${esc(reason)}</li>`).join('')}</ul>` : '<p>暂无细分理由</p>'}</section>
+            <section class="match-gaps"><b>${icon('triangle-alert')}缺口与待确认</b>${gaps.length ? `<ul>${gaps.map((gap) => `<li>${esc(gap)}</li>`).join('')}</ul>` : '<p>未发现明显缺口</p>'}</section>
+          </div>
+          ${resumeClaimFacts(item.resume_claims).length ? `<details class="teacher-evidence"><summary>${icon('badge-info')}查看简历自述数据</summary><div class="recommend-resume-claims">${resumeClaimMarkup(item.resume_claims)}</div></details>` : ''}
+          ${evidence.length ? `<details class="teacher-evidence"><summary>${icon('file-search')}查看简历自述依据 <span>${evidence.length}</span></summary><div class="resume-claim-note">简历中的课时、满意度和客户案例属于讲师资料自述，不计入上方系统履约记录。</div><ul>${evidence.map((item) => `<li>${esc(item)}</li>`).join('')}</ul></details>` : ''}
+          <footer>${hasResume ? `<button type="button" class="btn gray" data-view-recommend-resume="${esc(item.teacher_id || teacher.id || '')}">${icon('file-search')}简历与画像</button>` : ''}<button type="button" class="btn gray" data-view-recommend-teacher="${esc(item.teacher_id || teacher.id || '')}">${icon('contact-round')}档案与授课记录</button></footer>
+        </div>
+      </article>`;
+    }).join('');
+    target.innerHTML = `${analysisHtml}<div class="recommend-results-head"><div><b>推荐候选</b><small>共返回 ${recommendations.length} 位，按需求匹配度排序</small></div><span>候选参考</span></div><div class="teacher-match-list">${cards}</div>${excludedHtml}<div class="recommend-notice">${icon('info')}<span>匹配分用于比较现有资料与客户要求的契合程度。最终人选请结合资料核对、沟通与档期确认；系统不会自动安排授课。</span></div>`;
+    $$('[data-view-recommend-resume]', target).forEach((button) => {
+      button.onclick = () => {
+        const teacherId = button.dataset.viewRecommendResume;
+        openResumeDetails({ teacher_id: teacherId }, teacherById.get(String(teacherId)));
+      };
+    });
+    $$('[data-view-recommend-teacher]', target).forEach((button) => {
+      button.onclick = () => {
+        const teacher = teacherById.get(String(button.dataset.viewRecommendTeacher));
+        if (teacher) showTeacherEvals(teacher, context.projects, context.dispatches);
+        else toast('该讲师完整档案暂不可用', true);
+      };
+    });
+    refreshIcons(target);
+  }
+
+  function renderTeacherRecommendation(root, context) {
+    if (!canWrite()) {
+      root.innerHTML = `<div class="recommend-permission-card"><span>${icon('shield-lock')}</span><h2>智能推荐仅向授权运营人员开放</h2><p>只读账号可以查看师资基础档案，但不能访问讲师简历、解析结果或执行智能推荐。</p></div>`;
+      return;
+    }
+    const form = state.teacherRecommendationForm;
+    if (form.demandId && !context.demands.some((demand) => String(demand.id) === String(form.demandId))) {
+      form.demandId = '';
+      invalidateTeacherRecommendations();
+    }
+    const cached = state.cache.teacherRecommendationKey === teacherRecommendationKey() ? state.cache.teacherRecommendations : null;
+    root.innerHTML = `<div class="teacher-recommend-workbench">
+      <section class="recommend-input-card">
+        <div class="recommend-section-head"><span>${icon('sparkles')}</span><div><b>描述客户要什么</b><small>可从已有需求带入，也可直接粘贴客户原话</small></div></div>
+        <div class="form-item"><label for="recommend-demand">从已有培训需求带入</label><select id="recommend-demand"><option value="">直接填写客户要求</option>${context.demands.map((demand) => `<option value="${esc(demand.id)}" ${String(form.demandId) === String(demand.id) ? 'selected' : ''}>#R-${String(demand.id).padStart(4, '0')}｜${esc(demand.title)}｜${esc(demand.unit || '单位待补充')}</option>`).join('')}</select><small>选择后会复制到下方；您可以编辑，推荐以当前可见文字为准。</small></div>
+        <div class="form-item"><label for="recommend-requirement">客户单位要求<span class="req">*</span></label><textarea id="recommend-requirement" maxlength="10000" placeholder="例如：某银行希望为网点负责人开展客户投诉处理与服务礼仪培训，老师需有银行项目经验、案例丰富。计划 2026-10-15 授课，共 6 课时。">${esc(state.teacherRequirementDraft || '')}</textarea><small>请写明主题、参训对象、行业及日期。地点、差旅和复杂安排会保留供沟通确认。</small><span class="field-error" id="recommend-requirement-error" aria-live="polite"></span></div>
+        <div class="form-item recommend-budget"><label for="recommend-max-fee">最高课酬（元/课时，可选）</label><input id="recommend-max-fee" type="number" min="0" step="0.01" inputmode="decimal" value="${esc(form.maxFeeRate)}" placeholder="不限制课酬"><small>如有课酬上限，请在此填写每课时金额；总项目预算不直接作为课酬上限。</small><label class="recommend-budget-toggle"><input id="recommend-hard-budget" type="checkbox" ${form.hardBudget ? 'checked' : ''}><span>严格限制：排除超过此课酬的讲师</span></label><span class="field-error" id="recommend-budget-error" aria-live="polite"></span></div>
+        <div class="recommend-input-options"><label for="recommend-count">推荐人数</label><select id="recommend-count">${[3, 5, 10].map((count) => `<option value="${count}" ${String(form.maxResults) === String(count) ? 'selected' : ''}>Top ${count}</option>`).join('')}</select></div>
+        <button type="button" class="btn recommend-run" id="recommend-run">${icon('wand-sparkles')}识别需求并推荐老师</button>
+        <p class="recommend-input-foot">${icon('shield-check')}基于本地简历资料匹配，尚未接入大模型。扫描版或图片型简历需人工补充画像；确认资料与人选后再安排授课。</p>
+      </section>
+      <section class="recommend-output" id="recommend-output" aria-live="polite">${cached ? '' : `<div class="recommend-start">${icon('scan-search')}<b>等待输入客户需求</b><p>提交后会先展示需求识别标签，再给出候选、匹配理由、简历依据与能力缺口。</p></div>`}</section>
+    </div>`;
+    const demandSelect = $('#recommend-demand', root);
+    const requirement = $('#recommend-requirement', root);
+    const output = $('#recommend-output', root);
+    const count = $('#recommend-count', root);
+    const maxFee = $('#recommend-max-fee', root);
+    const hardBudget = $('#recommend-hard-budget', root);
+    let activeRequest = null;
+    const persistForm = () => {
+      state.teacherRequirementDraft = requirement.value;
+      state.teacherRecommendationForm = { demandId: demandSelect.value, maxResults: count.value, maxFeeRate: maxFee.value, hardBudget: hardBudget.checked };
+    };
+    const markRecommendationDirty = () => {
+      persistForm();
+      invalidateTeacherRecommendations();
+      output.innerHTML = `<div class="recommend-start">${icon('scan-search')}<b>推荐条件已更新</b><p>请重新执行推荐，以便候选结果与当前要求保持一致。</p></div>`;
+      refreshIcons(output);
+    };
+    demandSelect.onchange = () => {
+      const demand = context.demands.find((item) => String(item.id) === demandSelect.value);
+      if (demand) {
+        requirement.value = demandRequirementText(demand);
+        requirement.focus();
+      }
+      markRecommendationDirty();
+    };
+    requirement.oninput = () => { $('#recommend-requirement-error', root).textContent = ''; markRecommendationDirty(); };
+    count.onchange = markRecommendationDirty;
+    maxFee.oninput = () => { $('#recommend-budget-error', root).textContent = ''; markRecommendationDirty(); };
+    hardBudget.onchange = () => { $('#recommend-budget-error', root).textContent = ''; markRecommendationDirty(); };
+    if (cached) renderRecommendationResults(output, cached, context);
+    $('#recommend-run', root).onclick = async () => {
+      const text = requirement.value.trim();
+      if (!text) { $('#recommend-requirement-error', root).textContent = '请填写客户单位要求'; requirement.focus(); return; }
+      const feeValue = maxFee.value.trim();
+      const fee = Number(feeValue);
+      if (maxFee.validity.badInput || (feeValue && (!Number.isFinite(fee) || fee <= 0))) {
+        $('#recommend-budget-error', root).textContent = '最高课酬应为大于 0 的金额，或留空不限制'; maxFee.focus(); return;
+      }
+      if (hardBudget.checked && !feeValue) {
+        $('#recommend-budget-error', root).textContent = '使用严格限制前，请先填写最高课酬'; maxFee.focus(); return;
+      }
+      persistForm();
+      cancelTeacherRecommendation();
+      const requestSequence = teacherRecommendationSequence;
+      const requestKey = teacherRecommendationKey();
+      const controller = new AbortController();
+      teacherRecommendationController = controller;
+      activeRequest = controller;
+      delete state.cache.teacherRecommendations;
+      delete state.cache.teacherRecommendationKey;
+      const button = $('#recommend-run', root);
+      const old = button.innerHTML;
+      const controls = [demandSelect, requirement, count, maxFee, hardBudget];
+      controls.forEach((control) => { control.disabled = true; });
+      button.disabled = true;
+      button.classList.add('is-loading');
+      button.innerHTML = `${icon('loader-circle', 'spin')}正在识别与匹配`;
+      output.setAttribute('aria-busy', 'true');
+      output.innerHTML = `<div class="recommend-loading"><span></span><span></span><span></span><p>正在分析客户要求与讲师简历…</p></div>`;
+      refreshIcons(button);
+      try {
+        const body = { requirement: text, max_results: Number(count.value), hard_budget: hardBudget.checked };
+        if (feeValue) body.max_fee_rate = fee;
+        const result = await api('/teacher-recommendations', { body, signal: controller.signal });
+        if (controller.signal.aborted || requestSequence !== teacherRecommendationSequence || requestKey !== teacherRecommendationKey() || !isRouteCurrent(context.epoch, context.c, 'teachers') || state.teacherTab !== 'recommend' || !output.isConnected) return;
+        state.cache.teacherRecommendations = result;
+        state.cache.teacherRecommendationKey = requestKey;
+        renderRecommendationResults(output, result, context);
+      } catch (error) {
+        if (error?.name === 'AbortError' || controller.signal.aborted || requestSequence !== teacherRecommendationSequence || !isRouteCurrent(context.epoch, context.c, 'teachers') || !output.isConnected) return;
+        output.innerHTML = `<div class="recommend-empty">${icon('cloud-alert')}<b>本次推荐未完成</b><p>${esc(error?.message || '请稍后重试，已输入的客户要求会继续保留。')}</p></div>`;
+        refreshIcons(output);
+      } finally {
+        if (teacherRecommendationController === controller) teacherRecommendationController = null;
+        if (activeRequest === controller && output.isConnected) {
+          activeRequest = null;
+          output.removeAttribute('aria-busy');
+          controls.forEach((control) => { control.disabled = false; });
+          if (button.isConnected) { button.disabled = false; button.classList.remove('is-loading'); button.innerHTML = old; refreshIcons(button); }
+        }
+      }
+    };
+  }
+
+  async function pageTeachers(c) {
+    const epoch = routeEpoch;
+    const resumeRequest = canWrite() ? api('/teacher-resumes/manage').catch((error) => ({ items: [], _loadError: error.message || '加载失败' })) : Promise.resolve({ items: [] });
+    const evaluationRequest = canWrite() ? api('/teacher_evals') : Promise.resolve([]);
+    const demandRequest = canWrite() ? api('/demands') : Promise.resolve([]);
+    const [rows, projects, dispatches, demands, evaluations, resumePayload] = await Promise.all([api('/teachers'), api('/projects'), api('/dispatches'), demandRequest, evaluationRequest, resumeRequest]);
+    if (!isRouteCurrent(epoch, c, 'teachers')) return;
+    teacherResumeUploadConfig = resumePayload?.config || resumePayload?.upload_config || resumePayload || {};
+    const resumes = teacherResumeItems(resumePayload);
+    const resumeByTeacher = new Map(resumes.map((resume) => [String(resume.teacher_id), resume]));
+    const inLib = rows.filter((row) => row.status === '在库').length;
+    const ready = resumes.filter((resume) => resumeStatusInfo(resume.parse_status).tone === 'ready').length;
+    const attention = resumes.filter((resume) => ['failed', 'review', 'pending', 'processing'].includes(resumeStatusInfo(resume.parse_status).tone)).length;
+    const tabs = [{ key: 'library', label: '师资库', icon: 'users-round' }];
+    if (canWrite()) tabs.push(
+      { key: 'resumes', label: '简历管理', icon: 'files', count: attention || '' },
+      { key: 'recommend', label: '智能推荐', icon: 'sparkles' },
+    );
+    if (!tabs.some((tabItem) => tabItem.key === state.teacherTab)) state.teacherTab = 'library';
+    const confirmedRates = rows.map((row) => Number(row.fee_rate)).filter((rate) => Number.isFinite(rate) && rate > 0);
+    const avgRate = confirmedRates.length ? confirmedRates.reduce((total, rate) => total + rate, 0) / confirmedRates.length : 0;
+    const summary = canWrite()
+      ? `<div class="module-summary four teacher-summary"><div><span>${icon('users-round')}</span><small>当前师资</small><b>${rows.length}<em>人</em></b></div><div><span>${icon('user-check')}</span><small>当前在库</small><b>${inLib}<em>人</em></b></div><div><span>${icon('file-check-2')}</span><small>简历可推荐</small><b>${ready}<em>份</em></b></div><div><span>${icon('scan-line')}</span><small>解析待处理</small><b>${attention}<em>份</em></b></div></div>`
+      : `<div class="module-summary three teacher-summary"><div><span>${icon('users-round')}</span><small>当前师资</small><b>${rows.length}<em>人</em></b></div><div><span>${icon('user-check')}</span><small>当前在库</small><b>${inLib}<em>人</em></b></div><div><span>${icon('badge-japanese-yen')}</span><small>已确认平均课酬</small><b>${confirmedRates.length ? `¥ ${money(avgRate)}` : '待确认'}</b></div></div>`;
+    const tabBar = canWrite() ? `<div class="teacher-mode-tabs" role="tablist" aria-label="师资资源功能">${tabs.map((tabItem) => `<button type="button" role="tab" id="teacher-tab-${tabItem.key}" aria-controls="teacher-tab-panel" aria-selected="${state.teacherTab === tabItem.key}" tabindex="${state.teacherTab === tabItem.key ? '0' : '-1'}" data-teacher-tab="${tabItem.key}" class="${state.teacherTab === tabItem.key ? 'active' : ''}">${icon(tabItem.icon)}<span>${tabItem.label}</span>${tabItem.count ? `<em>${tabItem.count}</em>` : ''}</button>`).join('')}</div>` : '';
+    c.innerHTML = `<div class="teacher-console">
+      ${summary}
+      ${tabBar}
+      <div class="teacher-tab-panel" id="teacher-tab-panel" role="${canWrite() ? 'tabpanel' : 'region'}" ${canWrite() ? `aria-labelledby="teacher-tab-${esc(state.teacherTab)}"` : 'aria-label="师资库"'}></div>
+    </div>`;
+    const panel = $('#teacher-tab-panel', c);
+    const context = { epoch, c, rows, projects, dispatches, demands, evaluations, resumes, resumeByTeacher, resumeLoadError: resumePayload?._loadError || '' };
+    addRouteCleanup(() => { cancelTeacherRecommendation(); context.stopTeacherTabPolling?.(); teacherProfileRequestSequence += 1; }, epoch);
+    const showTab = (key, focus = false) => {
+      cancelTeacherRecommendation();
+      context.stopTeacherTabPolling?.();
+      context.stopTeacherTabPolling = null;
+      teacherProfileRequestSequence += 1;
+      state.teacherTab = key;
+      $$('[data-teacher-tab]', c).forEach((button) => {
+        const active = button.dataset.teacherTab === key;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-selected', String(active));
+        button.tabIndex = active ? 0 : -1;
+        if (active && focus) button.focus();
+      });
+      if (canWrite()) panel.setAttribute('aria-labelledby', `teacher-tab-${key}`);
+      if (key === 'resumes') renderResumeManagement(panel, context);
+      else if (key === 'recommend') renderTeacherRecommendation(panel, context);
+      else renderTeacherLibrary(panel, context);
+      refreshIcons(panel);
+    };
+    $$('[data-teacher-tab]', c).forEach((button, index, buttons) => {
+      button.onclick = () => showTab(button.dataset.teacherTab);
+      button.onkeydown = (event) => {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+        event.preventDefault();
+        let next = index;
+        if (event.key === 'ArrowLeft') next = (index - 1 + buttons.length) % buttons.length;
+        if (event.key === 'ArrowRight') next = (index + 1) % buttons.length;
+        if (event.key === 'Home') next = 0;
+        if (event.key === 'End') next = buttons.length - 1;
+        showTab(buttons[next].dataset.teacherTab, true);
+      };
+    });
+    showTab(state.teacherTab);
   }
 
   async function showTeacherEvals(t, projects, dispatches = []) {
     const epoch = routeEpoch;
+    const ticket = ++teacherProfileRequestSequence;
     const evals = await api('/teacher_evals?teacher_id=' + t.id);
-    if (!isRouteCurrent(epoch, null, 'teachers')) return;
-    const deliveredProjectIds = new Set(dispatches.filter((item) => String(item.teacher_id) === String(t.id) && item.status === '已完成').map((item) => String(item.project_id)));
+    if (!isRouteCurrent(epoch, null, 'teachers') || ticket !== teacherProfileRequestSequence) return;
+    const completedDeliveries = dispatches.filter((item) => String(item.teacher_id) === String(t.id) && item.status === '已完成').sort((left, right) => String(right.teach_date || '').localeCompare(String(left.teach_date || '')) || Number(right.id) - Number(left.id));
+    const deliveredProjectIds = new Set(completedDeliveries.map((item) => String(item.project_id)));
+    const projectById = new Map(projects.map((project) => [String(project.id), project]));
     const eligibleProjects = projects.filter((project) => project.status !== '已归档' && deliveredProjectIds.has(String(project.id)));
     const avg = evals.length ? (evals.reduce((s, e) => s + Number(e.score || 0), 0) / evals.length).toFixed(2) : '—';
+    const verified = teacherSystemMetrics(t.id, dispatches, evals);
     openModal(t.name, `
-      <div class="teacher-profile"><span class="person-avatar large">${esc(t.name.slice(-2))}</span><div><h3>${esc(t.name)} ${tag(t.status)}</h3><p>${esc(t.org || '未填写单位')} · ${esc(t.title || '未填写职称')}</p><div><span>${icon('tags')}${esc(t.field || '未填写专业领域')}</span><span>${icon('badge-japanese-yen')}¥ ${money(t.fee_rate)} / 课时</span></div></div><strong>${avg}<small>综合评分</small></strong></div>
+      <div class="teacher-profile"><span class="person-avatar large">${esc(t.name.slice(-2))}</span><div><h3>${esc(t.name)} ${tag(t.status)}</h3><p>${esc(t.org || '未填写单位')} · ${esc(t.title || '未填写职称')}</p><div><span>${icon('tags')}${esc(t.field || '未填写专业领域')}</span><span>${icon('badge-japanese-yen')}${teacherFeeRateText(t.fee_rate)}</span></div></div><strong>${avg}<small>系统履约评分</small></strong></div>
+      <section class="teacher-profile-proof"><div><span>${icon('shield-check')}系统履约记录</span><small>仅统计研序中已完成的课程与已提交评价，不等同于简历自述。</small></div><dl><div><dt>已完成场次</dt><dd>${num(verified.completedSessions)}</dd></div><div><dt>已完成课时</dt><dd>${num(verified.completedHours)}</dd></div><div><dt>评价均分</dt><dd>${verified.evaluationCount ? verified.evaluationAverage.toFixed(2) : '—'}</dd></div><div><dt>评价数量</dt><dd>${num(verified.evaluationCount)}</dd></div></dl></section>
       <div class="teacher-info"><p><small>联系电话</small><span>${esc(t.phone || '—')}</span></p><p><small>电子邮箱</small><span>${esc(t.email || '—')}</span></p><p><small>入库日期</small><span>${esc(t.in_date || '—')}</span></p><p><small>授课评价</small><span>${evals.length} 条</span></p></div>
       <div class="teacher-intro"><small>师资简介</small><p>${esc(t.intro || '暂无简介')}</p></div>
+      <div class="section-title response-title"><div><span>授课记录</span><small>每条已完成排课计为一场；新增课程请在项目排课中维护并确认完成。</small></div></div>
+      ${completedDeliveries.length ? renderTable([
+        { k: 'teach_date', l: '授课日期' }, { k: 'subject', l: '授课主题' },
+        { k: 'project_title', l: '培训项目', render: (record) => projectById.has(String(record.project_id)) ? `<button type="button" class="teacher-delivery-project" data-teacher-delivery-project="${esc(record.project_id)}">${esc(record.project_title || projectById.get(String(record.project_id))?.title || '查看项目')}${icon('arrow-up-right')}</button>` : esc(record.project_title || '项目待确认') },
+        { k: 'hours', l: '课时', align: 'right', render: (record) => num(record.hours) },
+      ], completedDeliveries, null, 'teacher-deliveries') : '<div class="inline-note">暂未记录已完成课程。录入项目排课并确认完成后，场次与课时会自动汇总到此处。</div>'}
       <div class="section-title response-title"><div><span>历史评价</span><small>来自培训项目的真实反馈</small></div></div>
       ${renderTable([
         { k: 'project_title', l: '培训项目' }, { k: 'score', l: '评分' },
@@ -2369,6 +3168,9 @@
         <div style="text-align:right;margin-top:10px"><button type="button" class="btn" id="eval-add">${icon('send')}提交评价</button></div>
       </div>` : canWrite() ? `<div class="inline-note">${icon('info')}该讲师暂无已完成授课记录，完成课程交付后即可新增评价。</div>` : ''}
     `, { noFoot: true, wide: true, kicker: '师资完整档案' });
+    $$('[data-teacher-delivery-project]', $('#modal-mask')).forEach((button) => {
+      button.onclick = () => { closeModal(); navigateTo('project_detail', { projectId: button.dataset.teacherDeliveryProject }); };
+    });
     const btn = $('#eval-add');
     if (btn) btn.onclick = async () => {
       const d = collectForm($('#modal-mask'), [
@@ -2379,6 +3181,7 @@
       d.teacher_id = t.id;
       d.score = Number(d.score);
       await api('/teacher_evals', { body: d });
+      invalidateTeacherRecommendations();
       toast('评价已提交');
       closeModal();
       showTeacherEvals(t, projects, dispatches);

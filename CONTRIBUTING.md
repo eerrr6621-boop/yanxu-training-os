@@ -1,12 +1,13 @@
 # Contributing
 
-Thanks for considering a contribution. This project optimises for **zero
-dependencies** and **operational simplicity**, so a few constraints apply:
+Thanks for considering a contribution. This project optimises for **minimal
+vendored dependencies** and **operational simplicity**, so a few constraints apply:
 
 ## Ground rules
 
-1. **Backend stays dependency-free.** Standard library + the two vendored jars
-   (`h2`, `ecj`) only. New frameworks will not be accepted.
+1. **Backend stays framework-free.** Use the Java standard library plus the
+   reviewed vendored jars (`h2`, `ecj`, `pdfbox-app`). New dependencies require
+   a pinned version, upstream checksum, license/notice files and a concrete need.
 2. **Frontend stays build-free.** Edit `web/app.js` / CSS directly; no bundlers,
    no transpilation.
 3. **Visual work is scoped.** New V10 styles belong in `v10.css` under the
@@ -18,16 +19,16 @@ dependencies** and **operational simplicity**, so a few constraints apply:
    [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)).
 5. **Test against isolation.** Spin up a throwaway instance
    (`-Dbootstrap.demo=true -Ddata.dir=<tmp> -Dbind.address=127.0.0.1`) and run
-   both suites against separate fresh databases: `test.js` (52 checks) and
-   `test_integrity.js` (93 checks).
+   all suites against separate fresh databases: `test.js`, `test_integrity.js`
+   and `test_faculty.js`. `bash scripts/check.sh` runs this release gate.
 6. **Browser acceptance.** Any UI change must be checked at 1440×900, 1920×1080,
    ~740×900 and 390×844 with a clean console and no horizontal overflow; respect
    `prefers-reduced-motion`.
 
 ## Pull request checklist
 
-- [ ] Both regression suites pass against an isolated database
-- [ ] No new dependencies, no build step introduced
+- [ ] All three regression suites pass against separate isolated databases
+- [ ] Any dependency is pinned, checksummed and documented; no frontend build step introduced
 - [ ] No secrets, hostnames or private data in the diff
 - [ ] CHANGELOG.md updated
 - [ ] Security-sensitive behavior is reflected in docs/SECURITY.md

@@ -8,6 +8,7 @@ following third-party artifacts under their own licenses:
 | Apache ECharts (`web/echarts.min.js`) | 5.5.0 | `ECHARTS-LICENSE.txt`, `ECHARTS-NOTICE.txt`, `ECHARTS-D3-LICENSE.txt` |
 | H2 Database Engine (`lib/h2.jar`) | 2.2.224 | `H2-LICENSE.txt` (MPL-2.0 or EPL-1.0) |
 | Eclipse Compiler for Java (`lib/ecj.jar`) | 3.44.0 | `ECJ-LICENSE.txt`, `ECJ-NOTICE.txt` (EPL-2.0) |
+| Apache PDFBox application (`lib/pdfbox-app-3.0.8.jar`) | 3.0.8 | `PDFBOX-LICENSE.txt`, `PDFBOX-NOTICE.txt` (Apache-2.0) |
 | Lucide (`web/lucide.min.js`) | 1.8.0 | `LUCIDE-LICENSE.txt` (ISC) |
 | Three.js (`web/vendor/three-r171/`) | r171 | `THREE-LICENSE.txt` (MIT) |
 

@@ -639,8 +639,9 @@ public class Api {
             long refs = lng(Db.one("SELECT " +
                     "(SELECT COUNT(*) FROM dispatches WHERE teacher_id=?) + " +
                     "(SELECT COUNT(*) FROM fees WHERE teacher_id=?) + " +
-                    "(SELECT COUNT(*) FROM teacher_evals WHERE teacher_id=?) c", id, id, id), "c");
-            if (refs > 0) throw new ApiException(400, "该师资已有排课、课酬或评价记录，请使用出库保留历史档案");
+                    "(SELECT COUNT(*) FROM teacher_evals WHERE teacher_id=?) + " +
+                    "(SELECT COUNT(*) FROM teacher_resumes WHERE teacher_id=?) c", id, id, id, id), "c");
+            if (refs > 0) throw new ApiException(400, "该师资已有排课、课酬、评价或简历记录，请使用出库保留历史档案");
         } else if ("bids".equals(mod)) {
             if ("已中标".equals(str(row, "status")) ||
                     lng(Db.one("SELECT COUNT(*) c FROM projects WHERE bid_id=?", id), "c") > 0)

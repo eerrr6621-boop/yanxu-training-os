@@ -79,6 +79,19 @@ public class Db {
                     "status VARCHAR(16) DEFAULT '上架', download_count BIGINT DEFAULT 0, created_by BIGINT," +
                     "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
             st.execute("CREATE INDEX IF NOT EXISTS idx_materials_status_created ON materials(status, created_at)");
+            st.execute("CREATE TABLE IF NOT EXISTS teacher_resumes(" +
+                    "id IDENTITY PRIMARY KEY, teacher_id BIGINT NOT NULL, file_name VARCHAR(255) NOT NULL," +
+                    "storage_name VARCHAR(64) UNIQUE NOT NULL, file_size BIGINT NOT NULL, sha256 VARCHAR(64) NOT NULL," +
+                    "page_count INT DEFAULT 0, extracted_text CLOB, profile_json CLOB, manual_profile CLOB, profile_source VARCHAR(24)," +
+                    "parse_status VARCHAR(24) DEFAULT 'queued', parse_error VARCHAR(500), is_current BOOLEAN DEFAULT FALSE," +
+                    "uploaded_by BIGINT, reviewed_by BIGINT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP," +
+                    "parsed_at TIMESTAMP, reviewed_at TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP," +
+                    "UNIQUE(teacher_id,sha256))");
+            st.execute("CREATE INDEX IF NOT EXISTS idx_teacher_resumes_teacher_current " +
+                    "ON teacher_resumes(teacher_id,is_current,created_at)");
+            st.execute("CREATE INDEX IF NOT EXISTS idx_teacher_resumes_status " +
+                    "ON teacher_resumes(parse_status,created_at)");
+            st.execute("ALTER TABLE teacher_resumes ADD COLUMN IF NOT EXISTS manual_profile CLOB");
             // 兼容已有本地数据库：以非破坏方式补齐运营字段。
             st.execute("ALTER TABLE projects ADD COLUMN IF NOT EXISTS owner VARCHAR(64)");
             st.execute("ALTER TABLE projects ADD COLUMN IF NOT EXISTS participant_count INT DEFAULT 0");

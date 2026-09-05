@@ -1,6 +1,6 @@
 # Architecture
 
-This document describes the public v1.7 architecture.
+This document describes the public v1.8 architecture.
 
 ## System topology
 
@@ -16,7 +16,7 @@ browser ──────────────────────┤
                  │ CSP · gzip · cache      │ auth · validation · workflow
                  └─────────────┬───────────┘
                                ▼
-                 embedded H2 + material files
+           embedded H2 + material/resume files
               one database · private data directory
 ```
 
@@ -46,6 +46,13 @@ original host and `X-Forwarded-Proto`.
     header while the body remains the original file stream. Server-generated
     storage names, size limits, extension/signature checks and attachment-only
     responses keep user filenames out of filesystem paths and browser execution.
+- **Private faculty intelligence — `src/com/training/TeacherIntelligence.java`**
+  - Authenticated PDF/PPTX resume upload, private download, parsing status,
+    manually reviewed professional profiles and explainable teacher matching.
+  - Resume bytes and extracted text never enter the public-material API. Parsing
+    executes outside the API business lock in a separate heap- and time-limited
+    process; recommendation uses local deterministic scoring and sends no resume
+    data to an external model.
 - **Authentication — `src/com/training/Auth.java`**
   - `PBKDF2WithHmacSHA256`, 210,000 iterations, 16-byte random salt and 32-byte
     derived key.
@@ -70,8 +77,8 @@ original host and `X-Forwarded-Proto`.
 ### Business objects
 
 `demands`, `bids`, `projects`, `dispatches`, `questionnaires`, `q_sends`,
-`q_responses`, `teachers`, `teacher_evals`, `charges`, `fees`, `costs`, `users`,
-`materials`.
+`q_responses`, `teachers`, `teacher_resumes`, `teacher_evals`, `charges`, `fees`,
+`costs`, `users`, `materials`.
 
 ### API method and trust boundaries
 
@@ -84,13 +91,18 @@ original host and `X-Forwarded-Proto`.
 | `/api/materials/manage` | `GET`, `HEAD` | admin or manager session required |
 | `/api/materials/upload` | `POST` binary stream | admin or manager session required |
 | `/api/materials/update`, `/delete` | `POST` JSON | admin or manager session required |
+| `/api/teacher-resumes/manage` | `GET`, `HEAD` | admin or manager session required |
+| `/api/teacher-resumes/upload` | `POST` PDF/PPTX stream | admin or manager session required |
+| `/api/teacher-resumes/download` | `GET`, `HEAD` | admin or manager session required |
+| `/api/teacher-resumes/profile`, `/reparse`, `/delete` | `POST` JSON | admin or manager session required |
+| `/api/teacher-recommendations` | `POST` JSON | admin or manager session required |
 | `/api/me`, lists, statistics, transition checks | `GET`, `HEAD` | session required |
 | Generic create/edit/delete | `POST` | writer role required |
 | Logout, password and workflow actions | `POST` | session; writer/admin as applicable |
 
-Every ordinary POST must be JSON. The only exception is the material-maintenance
-upload endpoint, whose file body is streamed with a custom same-origin metadata
-header and a configurable 100 MiB default cap. The browser uses same-origin
+Every ordinary POST must be JSON. The exceptions are the material-maintenance
+upload endpoint and private teacher-resume upload endpoint, whose file bodies are
+streamed with custom same-origin metadata headers and format-specific limits. The browser uses same-origin
 credentials; authentication tokens are not encoded into application URLs.
 Questionnaire links use a distinct random survey token and are not login sessions.
 
@@ -148,6 +160,15 @@ questionnaire and training-material pages.
     per-file validation, partial-success handling and targeted retry independent.
   - `web/app.js` links this page from the login header and signed-in sidebar;
     public access does not create or require a separate account.
+- **Faculty profiles and matching**
+  - The existing `teachers` workspace contains library, resume-management and
+    recommendation tabs without adding another primary-navigation section.
+  - PDF/PPTX uploads use a dedicated binary request helper. The recommendation
+    workspace can bring in an existing demand or accept a pasted client brief,
+    then shows recognized tags, evidence, gaps and score components.
+  - Completed-session/hour/evaluation metrics come from `dispatches` and
+    `teacher_evals`; any figures extracted from a resume remain labelled as
+    unverified resume claims.
 - **Visual assets**
   - `web/assets/yx-tech-orbit-v10.jpg` — ImageGen-created premium technology hero
     used by the login composition.

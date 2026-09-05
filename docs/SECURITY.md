@@ -1,6 +1,6 @@
 # Security model
 
-This document describes the security posture of the public v1.7 release.
+This document describes the security posture of the public v1.8 release.
 
 ## Authentication and password storage
 
@@ -56,6 +56,9 @@ The API returns real HTTP status codes (`400`, `401`, `403`, `404`, `405`,
 | Public material list and download | `GET`, `HEAD` |
 | Material maintenance upload | `POST` streamed file body + `X-Material-Meta` |
 | Material maintenance metadata update/delete | `POST` JSON |
+| Private teacher-resume list/download | `GET`, `HEAD`; admin or manager only |
+| Private teacher-resume upload | `POST` streamed PDF/PPTX + `X-Resume-Name`; admin or manager only |
+| Resume profile/reparse/delete and teacher recommendation | `POST` JSON; admin or manager only |
 
 - Every ordinary `POST` must use `Content-Type: application/json` (an optional
   charset is accepted). The only exception is `/api/materials/upload`: it accepts
@@ -70,6 +73,11 @@ The API returns real HTTP status codes (`400`, `401`, `403`, `404`, `405`,
   trailing root content, non-finite or out-of-range numeric literals and more
   than 100 nested containers. Business numeric fields are finite-checked again
   before storage, with integer/range checks where applicable.
+- Teacher resumes are stored in a separate non-public directory. Text PDFs are
+  capped at 15 MiB and PPTX profiles at 80 MiB by default. Extractors enforce
+  page/slide and text limits and run in a separate JVM with bounded heap and
+  wall-clock time. PPTX extraction reads slide XML only and rejects traversal
+  entries; it never expands files into the application directory.
 - The batch UI holds at most 20 files and uploads them sequentially. Each file is
   still a separate authenticated request and independently passes the same size,
   extension, signature, storage-name and authorization checks.
@@ -109,6 +117,16 @@ and returns downloads as `attachment` + `application/octet-stream` with
 requests support resumable downloads without enabling inline execution. Login
 and API traffic are rate-limited by nginx.
 
+Teacher resumes never share this public surface. Original files live under
+`<data.dir>/teacher-resumes` with server-generated names and require an active
+administrator or manager session for every list, upload, download, reparse,
+profile or delete operation. Downloads are attachment-only, `no-store` and
+`nosniff`. Directory responses omit storage names, hashes and complete extracted
+text. Recommendation processing is local and deterministic: resume/client text
+is untrusted data, no external model receives it, only in-library teachers can be
+returned, and no recommendation endpoint creates a dispatch. Gender and other
+protected personal attributes do not contribute to the score.
+
 ## Browser and static-content protections
 
 - Java emits a Content Security Policy restricted to the same origin, with
@@ -124,7 +142,7 @@ and API traffic are rate-limited by nginx.
 
 ## Production data and release hygiene
 
-- The production H2 file and material directory are owned by a dedicated
+- The production H2 file, material directory and teacher-resume directory are owned by a dedicated
   unprivileged user; the service umask keeps newly uploaded files private. The
   systemd unit uses `ProtectSystem=strict`, `ProtectHome=true`,
   `PrivateTmp=true`, `NoNewPrivileges=true` and can write only the data path.

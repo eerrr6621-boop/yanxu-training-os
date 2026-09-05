@@ -2,6 +2,54 @@
 
 All notable changes to Yanxu Training OS. Dates follow the production release history; the format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.8.0] — 2026-09-06 · Private Resume Intelligence & Faculty Matching
+
+### Added
+- Added a private instructor-resume library inside the existing faculty workspace.
+  Administrators and business managers can upload, replace, reparse, review,
+  download and delete PDF or PowerPoint profiles without exposing them through
+  the public training-material center.
+- Added local text extraction for selectable-text PDF files and PPTX slide text,
+  plus an editable professional profile for scanned or incomplete source files.
+- Added explainable local faculty matching from an existing demand or pasted client
+  requirement. Results show recognized topics, matched evidence, capability gaps
+  and score components; matching never creates a schedule or calls an external model.
+- Recommendation cards now distinguish system-recorded completed sessions, hours
+  and evaluation scores from unverified figures stated in a resume.
+- Added completed-course history with project links and explicit per-hour fee
+  limits, including reasons for excluding unavailable or over-budget candidates.
+
+### Correctness
+- Unrelated teachers are no longer suggested just to fill a result list. Specific
+  courses and client cases outside the topic dictionary can still supply evidence.
+- Professional text matching handles English word boundaries, explicit negations
+  and associate-professor titles without inflating qualifications.
+- Manual profile corrections survive reparsing and resume replacement; original
+  resume claims are updated separately and never become verified performance data.
+- Client edits take precedence over imported demand text. Stale recommendation
+  requests are cancelled, form drafts survive navigation, and parsing status refreshes.
+- PPTX extraction joins formatting runs within each paragraph, preserving Chinese
+  organization and course names split across styled text.
+
+### Security
+- Resume parsing runs in a separate memory- and time-limited Java process. PDF
+  files are capped at 15 MiB and PPTX files at 80 MiB; page/slide and extracted
+  text limits prevent unbounded processing.
+- Resume files use random private storage names under the data directory. Raw
+  files, storage paths, hashes and complete extracted text never appear in list or
+  recommendation responses, and no resume content is sent to an external model.
+- Upload, original-file download, profile maintenance and recommendations require
+  an administrator or business-manager session; read-only and anonymous users are
+  rejected server-side.
+
+### Quality
+- Expanded the isolated release gate to 52 end-to-end checks, 136
+  business-integrity/security checks and 32 matching checks (220 total), including PDF/PPTX parser
+  boundaries, private-file authorization, prompt-injection resistance and strict
+  separation between resume claims and verified delivery records.
+- Added the same repeatable test runner to GitHub pull requests, main-branch
+  updates, manual checks and a weekly scheduled regression.
+
 ## [1.7.2] — 2026-08-22 · Batch Material Upload
 
 ### Added
