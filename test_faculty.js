@@ -153,7 +153,7 @@ async function reparse(id) {
   check('具体服务案例参与匹配而非丢在摘要外', Boolean(bank));
   check('证据选中第四段的需求相关服务案例', bank && bank.evidence.some((item) => item.text.includes('星海银行大连分行')));
   check('返回证据最多三段且不泄露手机号邮箱全文', bank && bank.evidence.length <= 3 && bank.evidence.every((item) => item.text.length <= 180) && !JSON.stringify(bank).includes('13912345678') && !JSON.stringify(bank).includes('faculty@example.test') && !JSON.stringify(bank).includes('extracted_text'));
-  check('系统实绩不采用700课时95%自述', bank && bank.system_metrics.completed_sessions === 0 && bank.system_metrics.completed_hours === 0 && bank.system_metrics.evaluation_count === 0);
+  check('系统实绩不采用700课时95%自述且无记录不生成履约分', bank && bank.system_metrics.completed_sessions === 0 && bank.system_metrics.completed_hours === 0 && bank.system_metrics.evaluation_count === 0 && !Object.hasOwn(bank.score_breakdown, 'performance'));
   check('匹配结果明确给出证据等级和本地规则说明', bank && ['supported', 'limited'].includes(bank.evidence_strength) && result.notice.includes('本地规则'));
   result = await recommend('深海热液地质同位素测年和行星岩芯取样');
   check('没有专业相关证据时返回空结果', result.recommendations.length === 0 && result.notice.includes('没有找到'));

@@ -2896,7 +2896,6 @@
       ['客户行业', listText(analysis.industries)],
       ['授课对象', listText(analysis.audiences)],
       ['专业资历', listText(analysis.credentials)],
-      ['关键要求', listText(analysis.keywords)],
     ].filter((group) => group[1].length);
     const conditionFacts = [analysis.expected_date ? `授课日期：${analysis.expected_date}` : '', Number(analysis.hours) > 0 ? `课时：${num(analysis.hours)}` : '', Number(analysis.max_fee_rate) > 0 ? `课酬上限：¥ ${money(analysis.max_fee_rate)}/课时` : ''].filter(Boolean);
     const excluded = Array.isArray(payload?.excluded) ? payload.excluded : [];

@@ -718,10 +718,13 @@ public final class TeacherIntelligence {
         long evalCount = asLong(teacher.get("eval_count"));
         long deliveredSessions = asLong(teacher.get("delivered_sessions"));
         double deliveredHours = number(teacher, "delivered_hours");
-        double evaluationPart = evalCount > 0 ? Math.max(0, Math.min(7, avg / 5.0 * 7)) : 4.2;
+        double evaluationPart = evalCount > 0 ? Math.max(0, Math.min(7, avg / 5.0 * 7)) : 0;
         double deliveryPart = Math.min(3, deliveredSessions * 0.6);
         double performance = evaluationPart + deliveryPart;
-        match.addSimpleComponent("performance", "历史履约", performance, 10);
+        // Missing history is unknown, not a fabricated neutral performance score.
+        double availablePerformanceWeight = (evalCount > 0 ? 7 : 0) + (deliveredSessions > 0 ? 3 : 0);
+        if (availablePerformanceWeight > 0)
+            match.addSimpleComponent("performance", "历史履约", performance, availablePerformanceWeight);
         match.performance.put("average_evaluation", evalCount > 0 ? round(avg, 2) : null);
         match.performance.put("evaluation_count", evalCount);
         match.performance.put("completed_sessions", deliveredSessions);
