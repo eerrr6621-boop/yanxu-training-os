@@ -93,17 +93,24 @@ loopback-only database for each suite, and stops every instance afterward:
 bash scripts/check.sh
 ```
 
-Offline frontend checks, 95 financial/icon-mapping/stage assertions and a 14-asset
+Offline frontend checks, 95 financial/icon-mapping/stage assertions, deterministic
+login-book lifecycle/interaction and curved-page geometry assertions, and a 14-asset
 mapping/renderer/PNG-decode gate run first. All three
 API suites (`test.js`, `test_integrity.js`, `test_faculty.js`) must also pass.
 The third covers recommendation relevance, manual-profile retention, claims,
 budget and schedule constraints.
 
 For frontend-only diagnostics without Java or a database, run
-`node scripts/check_frontend.cjs`, `node scripts/test_frontend.cjs` and
+`node scripts/check_frontend.cjs`, `node scripts/test_frontend.cjs`,
+`node scripts/test_login_book.cjs`, `node scripts/test_book_geometry.mjs` and
 `node scripts/check_business_art.cjs`.
 Optionally add `--base-url http://127.0.0.1:8080` to the first command to verify
 served static resource status, MIME and hashes using read-only HTTP requests.
+The frontend gate also parses and links the local login ESM dependency closure
+(including vendored Three.js core) without evaluating it. Run
+`node scripts/test_local_esm.cjs` to test missing files/exports and boundary checks.
+Dynamic module paths must be string literals; computed imports need a separately
+reviewed explicit manifest and are not inferred by this gate.
 
 ## Maintenance
 

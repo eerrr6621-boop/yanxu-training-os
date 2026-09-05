@@ -180,6 +180,11 @@
   let loginRotTimer = null;
   let loginRotSwap = null;
   let v7GlowHandler = null;
+  let loginMotion = null;
+  function disposeLoginExperience() {
+    try { loginMotion?.destroy(); } catch (_) { /* Optional artwork must not block navigation. */ }
+    finally { loginMotion = null; }
+  }
 
   function clearRouteAsync() {
     const cleanups = routeCleanups;
@@ -762,6 +767,7 @@
   };
 
   function renderLogin() {
+    disposeLoginExperience();
     state.user = null;
     document.title = '登录 · 研序';
     if (navKeyHandler) { document.removeEventListener('keydown', navKeyHandler); navKeyHandler = null; }
@@ -771,22 +777,22 @@
     clearCharts();
     sceneBridge.setMode('login');
     document.getElementById('app').innerHTML = `
-      <main class="v6-login" aria-label="研序登录">
-        <div class="v6-bg" aria-hidden="true"><i class="v6-aurora a1"></i><i class="v6-aurora a2"></i><i class="v6-aurora a3"></i><span class="v6-gridlines"></span><span class="v6-glow"></span></div>
-        <header class="v6-top">
-          <div class="v10-top-left"><div class="v6-brand">${brandSymbol()}<span><b>研序</b><small>TRAINING OPERATIONS</small></span></div><a class="v10-material-entry" href="/materials.html">${businessArt('materials')}<span><b>培训资料下载</b><small>无需登录 · 公开获取</small></span>${icon('arrow-up-right')}</a></div>
-          <span class="v6-top-mini"><i aria-hidden="true"></i>培训运营中枢</span>
+      <main class="v6-login login-learning" aria-label="研序登录">
+        <header class="login-topbar">
+          <div class="orbit-brand">${brandSymbol()}<span>研序</span></div>
+          <a class="login-materials" href="/materials.html">${businessArt('materials')}<span>培训资料下载</span>${icon('arrow-up-right')}</a>
         </header>
-        <section class="v6-hero">
-          <div class="v6-hero-copy">
-            <span class="v10-kicker">YANXU / TRAINING OPERATIONS</span>
-            <h1>让培训运营，<br><em>井然有序。</em></h1>
-            <p>从客户需求到交付回款，把每个项目的关键进展看清楚。</p>
-            <div class="v10-proof" aria-label="研序核心能力"><span>${icon('workflow')}全流程协同</span><span>${icon('shield-check')}角色权限</span><span>${icon('chart-spline')}经营洞察</span></div>
-            <div class="v6-pulse" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><span class="v6-pulse-run"></span></div>
-          </div>
-          <div class="v6-card">
-            <div class="v6-card-head"><span class="v6-dot"></span><span><b>进入研序</b><small>使用授权账号继续</small></span><em>SECURE</em></div>
+        <div class="login-layout">
+          <section class="login-visual" data-login-visual aria-label="研序功能翻页介绍">
+            <div class="book-stage" data-login-book role="button" tabindex="0" aria-label="研序培训运营" title="拖动查看 · 点击左右书页翻动">
+              <div class="book-fallback" aria-hidden="true">
+                <div class="book-fallback-left">培训运营<br>从容有序。</div>
+                <div class="book-fallback-right">${brandSymbol()}<b>研序</b></div>
+              </div>
+            </div>
+          </section>
+          <section class="orbit-panel" aria-labelledby="login-heading">
+            <h1 id="login-heading">登录研序</h1>
             <form id="login-form">
               <div class="login-err" id="login-err" role="alert" aria-live="polite"></div>
               <label class="sr-only" for="login-user">账号</label>
@@ -797,11 +803,8 @@
               <div class="v10-caps" id="caps-lock-note" role="status" aria-live="polite"></div>
               <button type="submit" class="login-submit" id="login-btn"><span>进入工作台</span>${icon('arrow-right')}</button>
             </form>
-            <p class="v6-card-foot">${icon('lock-keyhole')}连接已加密 · 仅限授权用户访问</p>
-          </div>
-        </section>
-        <section class="v13-login-flow" aria-label="业务流程"><span><b>01</b>客户需求</span><i aria-hidden="true"></i><span><b>02</b>项目交付</span><i aria-hidden="true"></i><span><b>03</b>师资协同</span><i aria-hidden="true"></i><span><b>04</b>回款结算</span></section>
-        <footer class="v6-foot"><span>研序 · 培训运营中心</span><span>需求 → 项目 → 交付 → 结算</span></footer>
+          </section>
+        </div>
       </main>`;
     refreshIcons(document.getElementById('app'));
     const v6bg = $('.v6-bg');
@@ -833,17 +836,27 @@
     $('#login-pwd').addEventListener('keyup', updateCapsLock);
     $('#login-pwd').addEventListener('mousedown', updateCapsLock);
     const doLogin = async () => {
-      $('#login-err').textContent = '';
+      const form = $('#login-form');
+      const error = $('#login-err');
+      const userInput = $('#login-user');
+      const passwordInput = $('#login-pwd');
       const btn = $('#login-btn');
       if (btn.disabled) return;
+      error.textContent = '';
+      const username = userInput.value.trim();
+      const password = passwordInput.value;
+      const current = () => form.isConnected && $('#login-form') === form;
       btn.disabled = true;
+      form.setAttribute('aria-busy', 'true');
       btn.innerHTML = `${icon('loader-circle', 'spin')}<span>正在验证</span>`;
       sceneBridge.setPhase('loading');
+      loginMotion?.setPhase('loading');
       refreshIcons(btn);
       try {
-        const r = await api('/login', { body: { username: $('#login-user').value.trim(), password: $('#login-pwd').value } });
+        const r = await api('/login', { body: { username, password } });
+        if (!current()) return;
         localStorage.removeItem('token');
-        localStorage.setItem('yx_last_username', $('#login-user').value.trim());
+        localStorage.setItem('yx_last_username', username);
         state.user = r.user;
         if (!restoreRouteFromUrl()) {
           state.page = 'dashboard';
@@ -854,10 +867,14 @@
           writeRouteToUrl(true);
         }
         sceneBridge.setPhase('success');
+        loginMotion?.setPhase('success');
         renderLayout();
       } catch (e) {
+        if (!current()) return;
         sceneBridge.setPhase('error');
-        $('#login-err').textContent = e.message || '登录失败';
+        loginMotion?.setPhase('error');
+        error.textContent = e.message || '登录失败';
+        form.removeAttribute('aria-busy');
         btn.disabled = false;
         btn.innerHTML = `<span>进入工作台</span>${icon('arrow-right')}`;
         refreshIcons(btn);
@@ -871,7 +888,13 @@
       $('#pwd-toggle').setAttribute('aria-label', input.type === 'password' ? '显示密码' : '隐藏密码');
       refreshIcons($('#pwd-toggle'));
     };
-    requestAnimationFrame(() => (lastUser ? $('#login-pwd') : $('#login-user')).focus());
+    // Authentication remains usable if the optional visual cannot initialize.
+    const loginRoot = $('.login-learning');
+    try {
+      if (typeof window.YanxuLoginMotion?.mount !== 'function') throw new Error('Visual module unavailable');
+      loginMotion = window.YanxuLoginMotion.mount(loginRoot);
+    } catch (_) { loginRoot.dataset.motionState = 'unavailable'; }
+    // Do not steal focus or open a mobile keyboard on entry. Native Tab order remains intact.
   }
 
   // ============ 主布局 ============
@@ -1012,6 +1035,7 @@
   }
 
   function renderLayout() {
+    disposeLoginExperience();
     if (navKeyHandler) { document.removeEventListener('keydown', navKeyHandler); navKeyHandler = null; }
     if (globalKeyHandler) { document.removeEventListener('keydown', globalKeyHandler); globalKeyHandler = null; }
     const u = state.user;

@@ -229,6 +229,20 @@ function inspectScripts(files, sourceByPath, webRoot) {
   return { checked: externalCount + inlineCount, external_count: externalCount, inline_count: inlineCount, errors };
 }
 
+function inspectEsm(webRoot) {
+  const check = spawnSync(process.execPath, [
+    '--experimental-vm-modules', '--no-warnings', path.join(__dirname, 'check_local_esm.cjs'),
+    webRoot, '/login-motion.js',
+  ], { encoding: 'utf8', timeout: 15000, maxBuffer: 2 * 1024 * 1024 });
+  try {
+    const result = JSON.parse(check.stdout);
+    if (check.status !== 0) result.ok = false;
+    return result;
+  } catch (_) {
+    return { ok: false, resources: [], errors: [{ message: String(check.error || check.stderr || 'Module graph check produced no report').slice(0, 500) }] };
+  }
+}
+
 function htmlMounts(source) {
   const values = [];
   for (const tag of source.matchAll(/<(?:link|script|img)\b[^>]*>/gi)) {
@@ -255,6 +269,11 @@ function inspectHtml(files, sourceByPath, webRoot) {
     if (!bodyClass.split(/\s+/).includes('yx-v13')) issues.push(name + ': missing body.yx-v13');
     for (const required of requiredCommon) {
       if (!mounts.some((value) => value.split('?')[0] === required)) issues.push(name + ': missing ' + required);
+    }
+    if (name === 'index.html') {
+      const scripts = [...source.matchAll(/<script\b[^>]*\bsrc=["']([^"']+)["'][^>]*>/gi)].map((match) => match[1].split('?')[0]);
+      if (scripts.filter((value) => value === '/login-motion.js').length !== 1) issues.push(name + ': login-motion.js must load exactly once');
+      if (scripts.indexOf('/app.js') < 0 || scripts.indexOf('/login-motion.js') > scripts.indexOf('/app.js')) issues.push(name + ': login-motion.js must load before app.js');
     }
     for (const value of mounts) {
       const resourcePath = value.split('?')[0];
@@ -372,7 +391,8 @@ async function main() {
   const lucide = inspectLucide(webRoot, sourceByPath);
   const scripts = inspectScripts(files, sourceByPath, webRoot);
   const html = inspectHtml(files, sourceByPath, webRoot);
-  const references = collectResources(sourceByPath);
+  const esm = inspectEsm(webRoot);
+  const references = [...new Set([...collectResources(sourceByPath), ...esm.resources.map((item) => item.reference)])];
   for (const name of Object.keys(html.pages)) {
     const reference = '/' + name;
     if (!references.includes(reference)) references.push(reference);
@@ -380,7 +400,7 @@ async function main() {
   references.sort();
   const local = inspectLocalResources(webRoot, references);
   const http = await inspectHttp(baseUrl, local.items);
-  const ok = lucide.invalid.length === 0 && lucide.unexpected_dynamic.length === 0 &&
+  const ok = esm.ok && lucide.invalid.length === 0 && lucide.unexpected_dynamic.length === 0 &&
     scripts.errors.length === 0 && html.issues.length === 0 && local.missing.length === 0 &&
     http.failed.length === 0 && http.mime_mismatches.length === 0 && http.content_mismatches.length === 0;
   const report = {
@@ -390,6 +410,7 @@ async function main() {
     web_root: webRoot,
     lucide,
     scripts,
+    esm: { ok: esm.ok, mode: esm.mode, module_count: esm.module_count, edges: esm.edges, errors: esm.errors },
     html,
     resources: { referenced: references.length, local_missing: local.missing },
     http,

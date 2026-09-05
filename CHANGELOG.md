@@ -5,6 +5,20 @@ All notable changes to Yanxu Training OS. Dates follow the production release hi
 ## [1.9.0] — 2026-09-06 · Clarity & Native-feeling Workspace
 
 ### Changed
+- Replaced the verbose login hero and decorative wireframe experiment with a
+  real three-turn coursebook: training operations, faculty recommendations,
+  course delivery, then Yanxu. Real Three.js page surfaces bend around the spine;
+  the finite introduction stops at the brand page with no automatic looping.
+  A 48 × 12 flexible mesh, two-sided print textures, rounded covers, paper edges
+  and soft contact shadow replace the rigid CSS prototype. Drag to adjust the
+  viewpoint, hover to lift the corner, and click either page to navigate.
+  Arrow keys/Enter navigate; Space pauses/resumes and Home replays.
+  Centered the left-page copy. Removed all visible page numbers and controls;
+  preserved the public-materials header link. Removed promotional copy and badges.
+  Reduced motion goes directly to the final page; focus, hidden tabs and login
+  requests suspend the sequence without accumulating missed turns. Three.js r171
+  loads lazily from local files; failures fall back without blocking login.
+  Idle rendering stops completely; disposal releases GPU and event resources.
 - Refreshed the existing interface with a restrained blue/indigo palette, native
   system typography, quieter navigation, consistent icons and a new ImageGen
   transparent brand mark. No backend, database or permission-model migration.
@@ -27,6 +41,9 @@ All notable changes to Yanxu Training OS. Dates follow the production release hi
   approved uniform resizing produces transparent 160-pixel web assets.
 
 ### Fixed
+- Isolated login branding/form styles from legacy full-screen selectors. Added
+  visual teardown on rerender and login, stale-form guards for asynchronous
+  responses, and remembered-user capture from the actual submitted request.
 - Added the missing screen-reader-only utility that caused accessible search
   labels to overlap icons and entered text. Improved narrow-screen filter wrapping,
   summary labels, dialog sizing and unsupported icon references.
@@ -42,6 +59,10 @@ All notable changes to Yanxu Training OS. Dates follow the production release hi
   budget settings expand and focus the offending field.
 
 ### Quality
+- Added deterministic offline login-book assertions for page order, finite
+  playback, remaining-time preservation, overlapping pause reasons, reduced
+  motion, drag/tap interactions, asynchronous loading, stale callbacks, replay,
+  destruction and application integration, plus pure curved-page geometry tests.
 - Split oversized-resume regression into declared-length early rejection and
   actual chunked-stream rejection. Both require a real HTTP/JSON 413 and retain
   the original-file preservation check; connection resets do not count as a pass.
