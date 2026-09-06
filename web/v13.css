@@ -406,6 +406,24 @@ html body.yx-v13 :is(.recommend-input-card,.recommend-output,.recommend-permissi
 html body.yx-v13 .recommend-input-card { top: 92px; padding: 22px; }
 html body.yx-v13 .recommend-output { padding: 22px; }
 html body.yx-v13 :is(.recommend-section-head > span,.resume-upload-lead > span,.resume-drop-icon) { border-radius: 8px; background: #eef2ff; color: #4653e5; box-shadow: none; }
+html body.yx-v13 .teacher-entry-guide { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 20px; padding: 16px 22px; border-bottom: 1px solid #e5eaf2; background: #f8faff; color: #465776; font-size: 14px; line-height: 1.7; }
+html body.yx-v13 .teacher-entry-guide > b { color: #304563; font-weight: 600; }
+html body.yx-v13 .teacher-entry-guide ol { display: flex; flex-wrap: wrap; gap: 6px 22px; margin: 0; padding: 0; list-style: none; }
+html body.yx-v13 .teacher-entry-guide p { flex-basis: 100%; margin: 0; color: #62728a; }
+html body.yx-v13 .teacher-create-note { margin: 0 0 22px; color: #465776; font-size: 14px; line-height: 1.8; }
+html body.yx-v13 .resume-upload-lead p { font-size: 14px; line-height: 1.7; }
+html body.yx-v13 .resume-upload-fields { display: grid; grid-template-columns: minmax(0,1fr); gap: 22px; margin-bottom: 22px; }
+html body.yx-v13 .resume-upload-fields .form-item { gap: 8px; margin: 0; min-width: 0; }
+html body.yx-v13 .resume-upload-fields .form-item > label { margin: 0; }
+html body.yx-v13 .resume-upload-fields .form-grid { align-items: start; gap: 18px 22px; }
+html body.yx-v13 .resume-upload-fields .form-item > small { font-size: 14px; line-height: 1.7; color: #62728a; }
+html body.yx-v13 .resume-upload-fields select { min-width: 0; max-width: 100%; text-overflow: ellipsis; }
+html body.yx-v13 .resume-residence-note { margin: 0; font-size: 14px; line-height: 1.7; color: #62728a; }
+@media (max-width: 700px) {
+  html body.yx-v13 .resume-upload-fields .form-grid { grid-template-columns: minmax(0,1fr); }
+  html body.yx-v13 .teacher-entry-guide { padding: 14px 16px; }
+  html body.yx-v13 .teacher-entry-guide ol { flex-direction: column; gap: 4px; }
+}
 html body.yx-v13 :is(.recommend-start > svg,.recommend-empty > svg) { width: 54px; height: 54px; padding: 12px; border-radius: 10px; color: #4653e5; background: #f0f3ff; box-shadow: none; }
 html body.yx-v13 .recommend-analysis { padding: 18px; border: 1px solid #dde4f4; border-radius: 10px; background: #f7f9ff; }
 html body.yx-v13 .recommend-run { min-height: 44px; background: #4653e5; box-shadow: none; }
