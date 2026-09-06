@@ -4,6 +4,22 @@ All notable changes to Yanxu Training OS. Dates follow the production release hi
 
 ## [1.9.0] — 2026-09-06 · Clarity & Native-feeling Workspace
 
+### R5 preview iteration
+- Rebuilt the login composition as an ink-blue Three.js book stage and a focused,
+  light credential surface. Removed the left-page dash; refined matte binding,
+  compressed paper signatures, gutter curvature and lighting without an idle loop.
+- Restored a defined dark navigation frame, unified white table headers and
+  protected desktop numeric columns from awkward line breaks.
+- Added guided faculty-demand blanks with formal labels, optional details,
+  automatic brief assembly and a separate raw-message draft. Existing demands
+  prefill editable facts; only the selected input mode is submitted.
+- Redesigned matching as a compact requirement profile and candidate list.
+  Reasons and gaps are sequential; scoring and system-delivery detail expand
+  on demand. Scores are references, not probabilities; resume claims stay separate.
+- Recognize explicitly labelled requested hours in manual briefs, without
+  inferring hours from budgets or a teacher's past experience. Added isolated tests.
+- R5 remains a local preview and maintenance commit, not a production release.
+
 ### Changed
 - Replaced the verbose login hero and decorative wireframe experiment with a
   real three-turn coursebook: training operations, faculty recommendations,

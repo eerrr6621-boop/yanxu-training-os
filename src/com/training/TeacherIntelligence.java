@@ -1543,6 +1543,15 @@ public final class TeacherIntelligence {
                 } else date = "";
             }
             double hours = demand == null ? 0 : number(demand, "hours");
+            // Guided briefs use an explicit field, never infer hours from budgets,
+            // teacher experience or bare numbers elsewhere in the customer text.
+            if (demand == null) {
+                Matcher hoursMatch = Pattern.compile("(?m)^\\s*(?:补充要求[：:]\\s*)?(?:预计课时|培训课时|课时)[：:]\\s*(\\d+(?:\\.\\d+)?)\\s*(?:课时|学时)?\\s*$").matcher(source);
+                if (hoursMatch.find()) {
+                    double parsedHours = Double.parseDouble(hoursMatch.group(1));
+                    if (Double.isFinite(parsedHours) && parsedHours > 0) hours = parsedHours;
+                }
+            }
             return new Requirement(detect(source, TOPICS), detect(source, INDUSTRIES), detect(source, AUDIENCES),
                     detect(source, CREDENTIALS), detect(source, DELIVERY_MODES), keywords(source), date, hours, explicitBudget);
         }

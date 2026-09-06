@@ -3,7 +3,7 @@
   'use strict';
   const instances = new WeakMap();
   let rendererModule;
-  const defaultLoad = () => (rendererModule ||= import('/scene/login-book-three.js?v=20260906v13three').catch((error) => { rendererModule = null; throw error; }));
+  const defaultLoad = () => (rendererModule ||= import('/scene/login-book-three.js?v=20260906v13r5').catch((error) => { rendererModule = null; throw error; }));
   const FIRST_WAIT = 1900, HOLD = 1300, TURN_MS = 1450;
   const noop = () => ({ setPhase() {}, destroy() {} });
   function mount(root, { loadScene = defaultLoad } = {}) {

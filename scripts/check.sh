@@ -7,6 +7,7 @@ node scripts/test_local_esm.cjs
 node scripts/test_frontend.cjs
 node scripts/test_login_book.cjs
 node scripts/test_book_geometry.mjs
+node scripts/test_book_binding.cjs
 node scripts/check_business_art.cjs
 check_root="$(mktemp -d "${TMPDIR:-/tmp}/yanxu-check.XXXXXX")"
 check_pid=""

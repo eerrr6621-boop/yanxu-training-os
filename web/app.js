@@ -174,6 +174,7 @@
   let routeCleanups = [];
   let lastRenderedHash = '';
   let navKeyHandler = null;
+  let navViewportCleanup = null;
   let globalKeyHandler = null;
   let scrollShadowHandler = null;
   let v6PointerHandler = null;
@@ -771,6 +772,7 @@
     state.user = null;
     document.title = '登录 · 研序';
     if (navKeyHandler) { document.removeEventListener('keydown', navKeyHandler); navKeyHandler = null; }
+    if (navViewportCleanup) { navViewportCleanup(); navViewportCleanup = null; }
     if (globalKeyHandler) { document.removeEventListener('keydown', globalKeyHandler); globalKeyHandler = null; }
     if (scrollShadowHandler) { window.removeEventListener('scroll', scrollShadowHandler); scrollShadowHandler = null; }
     if (v7GlowHandler) { window.removeEventListener('pointermove', v7GlowHandler); v7GlowHandler = null; }
@@ -792,14 +794,14 @@
             </div>
           </section>
           <section class="orbit-panel" aria-labelledby="login-heading">
-            <h1 id="login-heading">登录研序</h1>
+            <div class="login-panel-heading"><span class="login-product-name">培训运营工作台</span><h1 id="login-heading">登录研序</h1></div>
             <form id="login-form">
               <div class="login-err" id="login-err" role="alert" aria-live="polite"></div>
-              <label class="sr-only" for="login-user">账号</label>
-              <div class="login-input">${icon('user-round')}<input id="login-user" name="username" placeholder="账号" autocomplete="username" required aria-describedby="login-user-hint"></div>
+              <div class="login-credentials">
+                <div class="login-field"><label for="login-user">账号</label><div class="login-input"><input id="login-user" name="username" placeholder="输入您的账号" autocomplete="username" required aria-describedby="login-user-hint"></div></div>
+                <div class="login-field"><label for="login-pwd">密码</label><div class="login-input"><input id="login-pwd" name="password" type="password" placeholder="输入密码" autocomplete="current-password" required aria-describedby="caps-lock-note"><button type="button" id="pwd-toggle" aria-label="显示密码">${icon('eye')}</button></div></div>
+              </div>
               <span class="sr-only" id="login-user-hint">请输入您的研序授权账号</span>
-              <label class="sr-only" for="login-pwd">密码</label>
-              <div class="login-input">${icon('lock-keyhole')}<input id="login-pwd" name="password" type="password" placeholder="密码" autocomplete="current-password" required aria-describedby="caps-lock-note"><button type="button" id="pwd-toggle" aria-label="显示密码">${icon('eye')}</button></div>
               <div class="v10-caps" id="caps-lock-note" role="status" aria-live="polite"></div>
               <button type="submit" class="login-submit" id="login-btn"><span>进入工作台</span>${icon('arrow-right')}</button>
             </form>
@@ -1036,6 +1038,7 @@
 
   function renderLayout() {
     disposeLoginExperience();
+    if (navViewportCleanup) { navViewportCleanup(); navViewportCleanup = null; }
     if (navKeyHandler) { document.removeEventListener('keydown', navKeyHandler); navKeyHandler = null; }
     if (globalKeyHandler) { document.removeEventListener('keydown', globalKeyHandler); globalKeyHandler = null; }
     const u = state.user;
@@ -1134,6 +1137,10 @@
       else if (restoreFocus) navOpener?.focus();
     };
     setNavOpen(false);
+    const navViewport = window.matchMedia('(max-width: 1024px)');
+    const onNavViewportChange = () => setNavOpen(false, navViewport.matches && sidebar.contains(document.activeElement));
+    navViewport.addEventListener('change', onNavViewportChange);
+    navViewportCleanup = () => navViewport.removeEventListener('change', onNavViewportChange);
     menuBtn.onclick = () => setNavOpen(true, false, menuBtn);
     scrim.onclick = () => setNavOpen(false, true);
     navKeyHandler = (e) => {
@@ -3009,6 +3016,18 @@
     ].filter(Boolean).join('\n');
   }
 
+  function guidedRequirementText(draft) {
+    const fields = [['unit', '客户单位'], ['topic', '培训主题'], ['audience', '参训对象'], ['goals', '希望解决的问题'], ['date', '期望日期'], ['hours', '预计课时'], ['preference', '师资要求'], ['extra', '补充说明']];
+    return fields.map(([key, label]) => {
+      const value = String(draft?.[key] ?? '').trim();
+      return value ? `${label}：${value}` : '';
+    }).filter(Boolean).join('\n');
+  }
+
+  function demandGuidedFields(demand) {
+    return { unit: String(demand?.unit || ''), topic: String(demand?.title || ''), audience: '', goals: String(demand?.content || ''), date: String(demand?.expect_date || ''), hours: Number(demand?.hours) > 0 ? String(demand.hours) : '', preference: String(demand?.teacher_req || ''), extra: String(demand?.remark || '') };
+  }
+
   function recommendationPercent(value) {
     const score = Number(value);
     if (!Number.isFinite(score)) return 0;
@@ -3060,7 +3079,7 @@
     const conditionFacts = [analysis.expected_date ? `授课日期：${analysis.expected_date}` : '', Number(analysis.hours) > 0 ? `课时：${num(analysis.hours)}` : '', Number(analysis.max_fee_rate) > 0 ? `课酬上限：¥ ${money(analysis.max_fee_rate)}/课时` : ''].filter(Boolean);
     const excluded = Array.isArray(payload?.excluded) ? payload.excluded : [];
     const excludedHtml = excluded.length ? `<details class="recommend-excluded" ${recommendations.length ? '' : 'open'}><summary>${icon('calendar-x')}已排除 ${excluded.length} 位候选，查看原因</summary><ul>${excluded.map((item) => `<li><b>${esc(item.teacher_name || item.name || '讲师')}</b><span>${esc(item.reason || '当前条件不适合，请进一步确认')}</span></li>`).join('')}</ul></details>` : '';
-    const analysisHtml = `<section class="recommend-analysis"><div class="recommend-section-head"><span>${icon('scan-search')}</span><div><b>需求识别结果</b><small>请先核对识别到的主题、对象与条件</small></div></div>${analysis.summary ? `<p class="recommend-analysis-summary">${esc(analysis.summary)}</p>` : ''}${conditionFacts.length ? `<p class="recommend-condition-facts">${conditionFacts.map((fact) => `<span>${esc(fact)}</span>`).join('')}</p>` : ''}${groups.length ? `<div class="recommend-tag-groups">${groups.map(([label, values]) => `<div><small>${esc(label)}</small><p>${values.map((value) => `<span>${esc(value)}</span>`).join('')}</p></div>`).join('')}</div>` : '<div class="recommend-soft-empty">暂未识别到明确专业条件，请补充培训主题与参训对象。</div>'}<p class="recommend-condition-note">地点、差旅、复杂时间安排及其他特殊要求，请与候选讲师进一步确认。</p></section>`;
+    const analysisHtml = `<section class="recommend-analysis"><header class="recommend-profile-head"><h2>${icon('scan-search')}需求画像</h2><span>请核对识别结果</span></header>${groups.length ? `<dl class="recommend-profile-grid">${groups.map(([label, values]) => `<div><dt>${esc(label)}</dt><dd>${values.map((value) => esc(value)).join(' · ')}</dd></div>`).join('')}</dl>` : `<p class="recommend-profile-empty">${esc(analysis.summary || '暂未识别到明确专业条件，请补充培训主题与参训对象。')}</p>`}${conditionFacts.length ? `<p class="recommend-condition-facts">${conditionFacts.map((fact) => `<span>${esc(fact)}</span>`).join('')}</p>` : ''}<p class="recommend-condition-note">地点、差旅及特殊安排仍需人工确认。</p></section>`;
     if (!recommendations.length) {
       target.innerHTML = `${analysisHtml}${excludedHtml}<div class="recommend-empty">${icon('user-round-search')}<b>暂未找到合适候选</b><p>${excluded.length ? '请查看上方排除原因，再调整日期、课酬条件或补充更多讲师。' : '可补充培训主题、参训对象与行业后重试，也请检查在库讲师的专业资料是否完善。'}</p></div>`;
       refreshIcons(target);
@@ -3081,23 +3100,24 @@
         ? item.score_breakdown.map((entry, i) => [entry.label || entry.name || `维度 ${i + 1}`, entry.score ?? entry.value])
         : Object.entries(item.score_breakdown || {});
       return `<article class="teacher-match-card ${index === 0 ? 'is-top' : ''}">
-        <div class="teacher-match-rank"><span>TOP</span><b>${index + 1}</b></div>
         <div class="teacher-match-main">
-          <header><span class="person-avatar large">${esc(name.slice(-2))}</span><div><h3>${esc(name)} ${resumeLabel}</h3><p>${esc(item.org || teacher.org || '单位待补充')} · ${esc(item.title || teacher.title || '讲师')}</p><small>${esc(item.field || teacher.field || '专业领域待补充')}</small></div><div class="teacher-match-score" aria-label="需求匹配度 ${score} 分"><b>${score}</b><small>需求匹配</small></div></header>
-          <div class="teacher-match-facts"><span>${icon('badge-japanese-yen')}课酬 <b>${teacherFeeRateText(item.fee_rate ?? teacher.fee_rate)}</b></span></div>
-          <section class="teacher-verified-proof"><div><span>${icon('shield-check')}系统履约记录</span><small>本次推荐读取的已完成课程与评价</small></div><dl><div><dt>已完成场次</dt><dd>${num(verified.completedSessions)}</dd></div><div><dt>已完成课时</dt><dd>${num(verified.completedHours)}</dd></div><div><dt>评价均分</dt><dd>${verified.evaluationCount ? `${verified.evaluationAverage.toFixed(2)} <small>/ 5 分 · ${num(verified.evaluationCount)} 份</small>` : '暂无评价'}</dd></div></dl></section>
-          ${breakdown.length ? `<div class="teacher-score-breakdown">${breakdown.map(([label, value]) => { const pct = recommendationPercent(value); const displayLabel = item.score_breakdown_details?.[label]?.label || breakdownLabel(label); return `<div><span><small>${esc(displayLabel)}</small><b>${pct}%</b></span><i><em style="width:${pct}%"></em></i></div>`; }).join('')}</div>` : ''}
+          <header><span class="person-avatar large">${esc(name.slice(-2))}</span><div><h3>${esc(name)} ${resumeLabel}</h3><p>${esc(item.org || teacher.org || '单位待补充')} · ${esc(item.title || teacher.title || '讲师')}</p><small>${esc(item.field || teacher.field || '专业领域待补充')}</small></div><div class="teacher-match-score" aria-label="匹配参考分 ${score}，满分 100"><b>${score}<em>/ 100</em></b><small>匹配参考分</small></div></header>
+          <div class="teacher-match-facts"><span>课酬 <b>${teacherFeeRateText(item.fee_rate ?? teacher.fee_rate)}</b></span><span>系统已完成 <b>${num(verified.completedSessions)} 场</b></span><span>授课评价 <b>${verified.evaluationCount ? `${verified.evaluationAverage.toFixed(2)} / 5` : '暂无记录'}</b></span></div>
           <div class="teacher-match-detail">
             <section class="match-reasons"><b>${icon('badge-check')}推荐理由</b>${reasons.length ? `<ul>${reasons.map((reason) => `<li>${esc(reason)}</li>`).join('')}</ul>` : '<p>暂无细分理由</p>'}</section>
             <section class="match-gaps"><b>${icon('triangle-alert')}缺口与待确认</b>${gaps.length ? `<ul>${gaps.map((gap) => `<li>${esc(gap)}</li>`).join('')}</ul>` : '<p>未发现明显缺口</p>'}</section>
           </div>
+          <details class="teacher-match-audit"><summary>${icon('chart-no-axes-column')}匹配评分与授课记录${icon('chevron-down')}</summary>
+            ${breakdown.length ? `<div class="teacher-score-breakdown">${breakdown.map(([label, value]) => { const pct = recommendationPercent(value); const displayLabel = item.score_breakdown_details?.[label]?.label || breakdownLabel(label); return `<div><span><small>${esc(displayLabel)}</small><b>${pct}%</b></span><i><em style="width:${pct}%"></em></i></div>`; }).join('')}</div>` : ''}
+            <section class="teacher-verified-proof"><div><span>${icon('shield-check')}系统履约记录</span><small>仅统计本系统已完成课程与已提交评价</small></div><dl><div><dt>已完成场次</dt><dd>${num(verified.completedSessions)}</dd></div><div><dt>已完成课时</dt><dd>${num(verified.completedHours)}</dd></div><div><dt>评价均分</dt><dd>${verified.evaluationCount ? `${verified.evaluationAverage.toFixed(2)} <small>/ 5 分 · ${num(verified.evaluationCount)} 份</small>` : '暂无评价'}</dd></div></dl></section>
+          </details>
           ${resumeClaimFacts(item.resume_claims).length ? `<details class="teacher-evidence"><summary>${icon('badge-info')}查看简历自述数据</summary><div class="recommend-resume-claims">${resumeClaimMarkup(item.resume_claims)}</div></details>` : ''}
           ${evidence.length ? `<details class="teacher-evidence"><summary>${icon('file-search')}查看简历自述依据 <span>${evidence.length}</span></summary><div class="resume-claim-note">简历中的课时、满意度和客户案例属于讲师资料自述，不计入上方系统履约记录。</div><ul>${evidence.map((item) => `<li>${esc(item)}</li>`).join('')}</ul></details>` : ''}
           <footer>${hasResume ? `<button type="button" class="btn gray" data-view-recommend-resume="${esc(item.teacher_id || teacher.id || '')}">${icon('file-search')}简历与画像</button>` : ''}<button type="button" class="btn gray" data-view-recommend-teacher="${esc(item.teacher_id || teacher.id || '')}">${icon('contact-round')}档案与授课记录</button></footer>
         </div>
       </article>`;
     }).join('');
-    target.innerHTML = `${analysisHtml}<div class="recommend-results-head"><div><b>推荐候选</b><small>共返回 ${recommendations.length} 位，按需求匹配度排序</small></div><span>候选参考</span></div><div class="teacher-match-list">${cards}</div>${excludedHtml}<div class="recommend-notice">${icon('info')}<span>匹配分用于比较现有资料与客户要求的契合程度。最终人选请结合资料核对、沟通与档期确认；系统不会自动安排授课。</span></div>`;
+    target.innerHTML = `${analysisHtml}<div class="recommend-results-head"><h2>推荐候选 <em>${recommendations.length}</em></h2><small>按资料匹配程度排序</small></div><div class="teacher-match-list">${cards}</div>${excludedHtml}<div class="recommend-notice">${icon('info')}<span>匹配分用于比较现有资料与客户要求的契合程度。最终人选请结合资料核对、沟通与档期确认；系统不会自动安排授课。</span></div>`;
     $$('[data-view-recommend-resume]', target).forEach((button) => {
       button.onclick = () => {
         const teacherId = button.dataset.viewRecommendResume;
@@ -3125,11 +3145,32 @@
       invalidateTeacherRecommendations();
     }
     const cached = state.cache.teacherRecommendationKey === teacherRecommendationKey() ? state.cache.teacherRecommendations : null;
+    let inputMode = form.inputMode || (state.teacherRequirementDraft ? 'raw' : 'guided');
+    let rawInitialized = form.rawInitialized ?? (inputMode === 'raw');
+    const guided = form.guided || {};
+    const guidedField = (key, label, placeholder, limit = 200, type = 'text') => `<div class="form-item"><label for="recommend-guide-${key}">${esc(label)}${key === 'topic' ? '<span class="req">*</span>' : ''}</label><input id="recommend-guide-${key}" data-recommend-guide="${key}" type="${type}" maxlength="${limit}" value="${esc(guided[key] || '')}" placeholder="${esc(placeholder)}" ${key === 'topic' ? 'aria-required="true" aria-describedby="recommend-topic-error"' : ''}>${key === 'topic' ? '<span class="field-error" id="recommend-topic-error" aria-live="polite"></span>' : ''}</div>`;
     root.innerHTML = `<div class="teacher-recommend-workbench">
       <section class="recommend-input-card">
-        <div class="recommend-section-head"><span>${businessArt('recommend')}</span><div><h2>为客户找到合适的讲师</h2><small>描述培训需求，查看匹配人选、推荐理由与资料依据。</small></div></div>
+        <div class="recommend-section-head"><div><h2>培训需求简报</h2><small>填写已知信息，匹配有资料依据的讲师。</small></div></div>
         <div class="form-item recommend-import"><label for="recommend-demand">带入已有需求</label><select id="recommend-demand" aria-describedby="recommend-demand-help"><option value="">直接填写，或选择一条培训需求</option>${context.demands.map((demand) => `<option value="${esc(demand.id)}" ${String(form.demandId) === String(demand.id) ? 'selected' : ''}>#R-${String(demand.id).padStart(4, '0')}｜${esc(demand.title)}｜${esc(demand.unit || '单位待补充')}</option>`).join('')}</select><small id="recommend-demand-help">带入后可编辑，以当前文字为准。</small></div>
-        <div class="form-item recommend-requirement-field"><label for="recommend-requirement">客户培训需求<span class="req">*</span></label><textarea id="recommend-requirement" maxlength="10000" aria-describedby="recommend-requirement-help recommend-requirement-error" placeholder="例如：某银行计划为网点负责人开展客户投诉处理与服务礼仪培训。希望讲师有银行项目经验，授课以真实案例为主。计划 10 月 15 日开展，共 6 课时。">${esc(state.teacherRequirementDraft || '')}</textarea><small id="recommend-requirement-help">建议写明培训主题、参训对象、行业与授课时间。</small><span class="field-error" id="recommend-requirement-error" aria-live="polite"></span></div>
+        <div class="recommend-entry-modes" role="group" aria-label="需求填写方式"><button type="button" data-recommend-mode="guided" aria-pressed="${inputMode === 'guided'}" aria-controls="recommend-guided">填写要点</button><button type="button" data-recommend-mode="raw" aria-pressed="${inputMode === 'raw'}" aria-controls="recommend-raw">粘贴客户原话</button><small>两种草稿分别保留，以当前方式匹配。</small></div>
+        <div id="recommend-guided" ${inputMode === 'guided' ? '' : 'hidden'}>
+          <p class="recommend-guide-help">仅培训主题必填，其余信息可稍后补充。</p>
+          <div class="recommend-guide-grid">
+            ${guidedField('topic', '培训主题', '例如：客户投诉处理与服务礼仪')}
+            ${guidedField('audience', '参训对象', '例如：网点负责人、一线员工')}
+            ${guidedField('unit', '客户单位 / 行业', '例如：某商业银行 / 金融行业')}
+            ${guidedField('goals', '培训目标', '例如：提升投诉沟通能力，掌握实用话术', 1600)}
+          </div>
+          <details class="recommend-guide-more" ${guided.date || guided.hours || guided.preference || guided.extra ? 'open' : ''}><summary>补充时间与讲师偏好<span>选填</span>${icon('chevron-down')}</summary><div class="recommend-guide-grid">
+            ${guidedField('date', '计划授课日期', '', 80, 'date')}
+            <div class="recommend-hours-field">${guidedField('hours', '预计课时', '例如：6，未确定可留空', 32, 'number')}<span class="field-error" id="recommend-hours-error" aria-live="polite"></span></div>
+            ${guidedField('preference', '讲师经验 / 授课偏好', '例如：有银行授课经历、擅长案例演练', 1200)}
+            ${guidedField('extra', '其他要求', '例如：地点、线上或线下、授课风格', 1200)}
+          </div></details>
+          <details class="recommend-brief-preview"><summary>查看整理后的需求${icon('chevron-down')}</summary><p id="recommend-brief-text"></p></details>
+        </div>
+        <div class="form-item recommend-requirement-field" id="recommend-raw" ${inputMode === 'raw' ? '' : 'hidden'}><label for="recommend-requirement">客户原话<span class="req">*</span></label><textarea id="recommend-requirement" maxlength="10000" aria-describedby="recommend-requirement-help recommend-requirement-error" placeholder="直接粘贴客户的消息，也可以补充或修改。">${esc(form.rawDraft ?? state.teacherRequirementDraft ?? '')}</textarea><small id="recommend-requirement-help">将按这段文字匹配，不叠加另一种方式的草稿。</small><span class="field-error" id="recommend-requirement-error" aria-live="polite"></span></div>
         <details class="recommend-settings" id="recommend-settings" ${form.maxFeeRate || form.hardBudget ? 'open' : ''}><summary>${icon('sliders-horizontal')}筛选条件<small id="recommend-settings-summary"></small>${icon('chevron-down')}</summary><div class="recommend-settings-grid">
           <div class="form-item recommend-budget"><label for="recommend-max-fee">最高课酬（元/课时）</label><input id="recommend-max-fee" type="number" min="0" step="0.01" inputmode="decimal" value="${esc(form.maxFeeRate)}" placeholder="留空表示不限" aria-describedby="recommend-budget-help recommend-budget-error"><small id="recommend-budget-help">按每课时金额筛选，不是总项目预算。</small><label class="recommend-budget-toggle"><input id="recommend-hard-budget" type="checkbox" ${form.hardBudget ? 'checked' : ''}><span>严格排除超出课酬上限的讲师</span></label><span class="field-error" id="recommend-budget-error" aria-live="polite"></span></div>
           <div class="form-item recommend-input-options"><label for="recommend-count">推荐人数</label><select id="recommend-count">${[3, 5, 10].map((count) => `<option value="${count}" ${String(form.maxResults) === String(count) ? 'selected' : ''}>最多 ${count} 位</option>`).join('')}</select><small>仅返回有匹配依据的候选。</small></div>
@@ -3141,6 +3182,20 @@
     </div>`;
     const demandSelect = $('#recommend-demand', root);
     const requirement = $('#recommend-requirement', root);
+    const guideInputs = $$('[data-recommend-guide]', root);
+    const hoursInput = $('#recommend-guide-hours', root);
+    hoursInput.min = '0'; hoursInput.step = 'any'; hoursInput.inputMode = 'decimal';
+    hoursInput.setAttribute('aria-describedby', 'recommend-hours-error');
+    const modeButtons = $$('[data-recommend-mode]', root);
+    const readGuided = () => Object.fromEntries(guideInputs.map((input) => [input.dataset.recommendGuide, input.value]));
+    const currentRequirement = () => inputMode === 'guided' ? guidedRequirementText(readGuided()) : requirement.value;
+    const updateBrief = () => { $('#recommend-brief-text', root).textContent = guidedRequirementText(readGuided()) || '填写上方要点后，这里会自动整理。不确定的信息可以留空。'; };
+    const displayMode = () => {
+      $('#recommend-guided', root).hidden = inputMode !== 'guided';
+      $('#recommend-raw', root).hidden = inputMode !== 'raw';
+      modeButtons.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.recommendMode === inputMode)));
+    };
+    updateBrief(); displayMode();
     const output = $('#recommend-output', root);
     const count = $('#recommend-count', root);
     const maxFee = $('#recommend-max-fee', root);
@@ -3154,8 +3209,8 @@
     updateSettingsSummary();
     let activeRequest = null;
     const persistForm = () => {
-      state.teacherRequirementDraft = requirement.value;
-      state.teacherRecommendationForm = { demandId: demandSelect.value, maxResults: count.value, maxFeeRate: maxFee.value, hardBudget: hardBudget.checked };
+      state.teacherRequirementDraft = currentRequirement();
+      state.teacherRecommendationForm = { demandId: demandSelect.value, maxResults: count.value, maxFeeRate: maxFee.value, hardBudget: hardBudget.checked, inputMode, guided: readGuided(), rawDraft: requirement.value, rawInitialized };
     };
     const markRecommendationDirty = () => {
       persistForm();
@@ -3165,16 +3220,39 @@
       output.innerHTML = '';
       updateSettingsSummary();
     };
+    guideInputs.forEach((input) => { input.oninput = () => {
+      if (input.dataset.recommendGuide === 'topic') {
+        $('#recommend-topic-error', root).textContent = '';
+        $('#recommend-guide-topic', root).removeAttribute('aria-invalid');
+      }
+      if (input.dataset.recommendGuide === 'hours') { $('#recommend-hours-error', root).textContent = ''; hoursInput.removeAttribute('aria-invalid'); }
+      updateBrief(); markRecommendationDirty();
+    }; });
+    modeButtons.forEach((button) => { button.onclick = () => {
+      if (button.dataset.recommendMode === inputMode) return;
+      if (button.dataset.recommendMode === 'raw' && !rawInitialized) { requirement.value = guidedRequirementText(readGuided()); rawInitialized = true; }
+      inputMode = button.dataset.recommendMode;
+      displayMode(); markRecommendationDirty();
+    }; });
     demandSelect.onchange = () => {
       const demand = context.demands.find((item) => String(item.id) === demandSelect.value);
       if (demand) {
         requirement.value = demandRequirementText(demand);
+        rawInitialized = true;
+        const imported = demandGuidedFields(demand);
+        guideInputs.forEach((input) => { input.value = imported[input.dataset.recommendGuide] || ''; });
+        if (imported.date || imported.hours || imported.preference || imported.extra) $('.recommend-guide-more', root).open = true;
         $('#recommend-requirement-error', root).textContent = '';
-        requirement.focus();
+        requirement.removeAttribute('aria-invalid');
+        $('#recommend-topic-error', root).textContent = '';
+        $('#recommend-guide-topic', root).removeAttribute('aria-invalid');
+        $('#recommend-hours-error', root).textContent = ''; hoursInput.removeAttribute('aria-invalid');
+        updateBrief();
+        (inputMode === 'guided' ? $('#recommend-guide-topic', root) : requirement).focus();
       }
       markRecommendationDirty();
     };
-    requirement.oninput = () => { $('#recommend-requirement-error', root).textContent = ''; markRecommendationDirty(); };
+    requirement.oninput = () => { rawInitialized = true; $('#recommend-requirement-error', root).textContent = ''; requirement.removeAttribute('aria-invalid'); markRecommendationDirty(); };
     count.onchange = markRecommendationDirty;
     maxFee.oninput = () => { $('#recommend-budget-error', root).textContent = ''; markRecommendationDirty(); };
     hardBudget.onchange = () => { $('#recommend-budget-error', root).textContent = ''; markRecommendationDirty(); };
@@ -3182,8 +3260,19 @@
     $('#recommend-run', root).onclick = async () => {
       $('#recommend-requirement-error', root).textContent = '';
       $('#recommend-budget-error', root).textContent = '';
-      const text = requirement.value.trim();
-      if (!text) { $('#recommend-requirement-error', root).textContent = '请填写客户单位要求'; requirement.focus(); return; }
+      const text = currentRequirement().trim();
+      if (inputMode === 'guided' && !$('#recommend-guide-topic', root).value.trim()) {
+        $('#recommend-topic-error', root).textContent = '请填写培训主题，例如：客户服务。';
+        $('#recommend-guide-topic', root).setAttribute('aria-invalid', 'true');
+        $('#recommend-guide-topic', root).focus(); return;
+      }
+      if (!text) { $('#recommend-requirement-error', root).textContent = '请填写客户培训需求'; requirement.setAttribute('aria-invalid', 'true'); requirement.focus(); return; }
+      if (inputMode === 'guided' && (hoursInput.validity.badInput || (hoursInput.value.trim() && (!Number.isFinite(Number(hoursInput.value)) || Number(hoursInput.value) <= 0)))) {
+        $('.recommend-guide-more', root).open = true;
+        $('#recommend-hours-error', root).textContent = '课时应为大于 0 的数字，未确定可留空。';
+        hoursInput.setAttribute('aria-invalid', 'true'); hoursInput.focus(); return;
+      }
+      if (text.length > 10000) { status.textContent = '需求内容超过 10000 字，请精简后重试。'; return; }
       const feeValue = maxFee.value.trim();
       const fee = Number(feeValue);
       if (maxFee.validity.badInput || (feeValue && (!Number.isFinite(fee) || fee <= 0))) {
@@ -3203,7 +3292,7 @@
       delete state.cache.teacherRecommendationKey;
       const button = $('#recommend-run', root);
       const old = button.innerHTML;
-      const controls = [demandSelect, requirement, count, maxFee, hardBudget];
+      const controls = [demandSelect, requirement, count, maxFee, hardBudget, ...guideInputs, ...modeButtons];
       controls.forEach((control) => { control.disabled = true; });
       button.disabled = true;
       button.classList.add('is-loading');
@@ -3211,7 +3300,8 @@
       output.hidden = false;
       status.textContent = '正在核对需求与讲师资料…';
       output.setAttribute('aria-busy', 'true');
-      output.innerHTML = `<div class="recommend-loading"><span></span><span></span><span></span><p>正在分析客户要求与讲师简历…</p></div>`;
+      output.innerHTML = `<div class="matching-progress"><div>${icon('scan-search')}<b>正在核对讲师资料</b></div><p>分析培训需求，检索对应经历与推荐依据。</p><i aria-hidden="true"></i></div>`;
+      refreshIcons(output);
       refreshIcons(button);
       try {
         const body = { requirement: text, max_results: Number(count.value), hard_budget: hardBudget.checked };

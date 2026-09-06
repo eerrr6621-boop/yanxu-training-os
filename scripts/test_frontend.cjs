@@ -106,6 +106,20 @@ function main() {
   const projectRoot = parseProjectRoot(process.argv.slice(2));
   const appPath = path.join(projectRoot, 'web', 'app.js');
   const collectionProgress = loadPureFunction(appPath, 'collectionProgress');
+  const guidedRequirementText = loadPureFunction(appPath, 'guidedRequirementText');
+  const demandGuidedFields = loadPureFunction(appPath, 'demandGuidedFields');
+  check('empty guided form sends no invented requirement', guidedRequirementText({}) === '' && guidedRequirementText(null) === '');
+  check('guided blanks are omitted', guidedRequirementText({topic:'  客户服务  ',audience:' '}) === '培训主题：客户服务');
+  const guide = { unit:'某银行', topic:'投诉处理', audience:'网点负责人', goals:'沟通话术', date:'2026-10-15', hours:'6', preference:'真实案例', extra:'线下' };
+  const guideText = guidedRequirementText(guide);
+  check('all guided facts retained', Object.values(guide).every(value => guideText.includes(value)) && guideText.split('\n').length === 8);
+  check('only explicit fields enter matching text', !guidedRequirementText({topic:'<script>保留为文字</script>', unknown:'MUST_NOT_APPEAR'}).includes('MUST_NOT_APPEAR'));
+  const demand = {unit:'甲单位',title:'领导力',content:'案例研讨',expect_date:'2026-11-01',hours:8,teacher_req:'管理经验',remark:'含复盘'};
+  const imported = demandGuidedFields(demand);
+  check('demand import preserves structured facts', imported.topic === demand.title && imported.goals === demand.content && imported.preference === demand.teacher_req && imported.extra === demand.remark && imported.hours === '8' && imported.date === demand.expect_date);
+  check('demand import does not infer audience', imported.audience === '');
+  check('unknown hours remain blank', demandGuidedFields({hours:0}).hours === '' && demandGuidedFields(null).topic === '');
+  const guidedAssertions = passed + failures.length;
 
   // Contract is authoritative. A 50k registered/received tranche against a
   // 100k contract still leaves 50k outstanding and surfaces plan mismatch.
@@ -167,7 +181,7 @@ function main() {
   check('difference beyond half a cent creates a mismatch', outsideTolerance.mismatch === true, String(outsideTolerance.mismatch));
   check('result objects are independent', collectionProgress(1, 1, 0) !== collectionProgress(1, 1, 0));
 
-  const financialAssertions = passed + failures.length;
+  const financialAssertions = passed + failures.length - guidedAssertions;
   const taskArtKind = loadPureFunction(appPath, 'taskArtKind');
   const artCases = [
     [{ page: 'dispatches', type: '紧急交付' }, 'faculty'],
@@ -208,6 +222,7 @@ function main() {
     ok: failures.length === 0,
     suite: 'frontend pure-function regression',
     financial_assertions: financialAssertions,
+    guided_requirement_assertions: guidedAssertions,
     icon_mapping_assertions: artCases.length,
     collection_stage_assertions: stageCases.length,
     source: path.relative(projectRoot, appPath),

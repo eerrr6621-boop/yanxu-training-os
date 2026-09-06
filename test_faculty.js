@@ -182,6 +182,12 @@ async function reparse(id) {
   check('软预算下未知课酬不冒充免费且不加达标分', unknown && unknown.score_breakdown.budget === 0 && unknown.gaps.some((gap) => gap.includes('课酬尚未')));
   result = await recommend('银行客户服务，项目总预算2000元');
   check('总预算不会自动当作每课时上限', result.analysis.max_fee_rate === null && Boolean(found(result, expensiveId)));
+  result = await recommend('培训主题：银行客户服务\n预计课时：6.5\n期望日期：2099-02-03');
+  check('引导填写的课时和日期进入需求画像', result.analysis.hours === 6.5 && result.analysis.expected_date === '2099-02-03');
+  result = await recommend('银行客户服务，预算6000元，讲师有600课时经验');
+  check('预算和讲师经验不被当作本次培训课时', result.analysis.hours === null);
+  result = await recommend('培训主题：银行客户服务\n预计课时：-6');
+  check('无效负课时不会误识别为正课时', result.analysis.hours === null);
   result = await recommend('不需要人工智能，只需要銀行客户服务，地点北京，可以远程授课');
   check('否定主题不被当作客户必需主题且复杂约束有提示', !result.analysis.topics.includes('数字化与人工智能') && result.analysis.needs_manual_review.some((x) => x.includes('所在地')));
 
