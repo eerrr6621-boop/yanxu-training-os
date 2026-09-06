@@ -1,15 +1,14 @@
 (function (scope) {
   'use strict';
-  const labels = { preview: '本地预览', published: '已发布', history: '历史版本' };
   const formatter = new Intl.DateTimeFormat('en-GB', {
     timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
   });
 
-  // Filter sections, not entire days: a day can contain published AND preview work.
-  function selectDays(entries, filter = 'all') {
+  // Public notes are a release history, never an internal preview queue.
+  function selectDays(entries) {
     return entries.map(entry => ({ ...entry, sections: entry.sections.filter(section =>
-      filter === 'all' || (filter === 'published' ? section.status !== 'preview' : section.status === 'preview')
+      section.status === 'published' || section.status === 'history'
     ) })).filter(entry => entry.sections.length);
   }
   function formatRecordTime(value) {
@@ -41,8 +40,8 @@
     if (text) node.textContent = text;
     return node;
   }
-  function render(filter) {
-    const entries = selectDays(scope.YanxuReleases || [], filter);
+  function render() {
+    const entries = selectDays(scope.YanxuReleases || []);
     root.replaceChildren();
     entries.forEach((entry, index) => {
       const article = element('article', 'release-entry'); article.id = entry.id;
@@ -53,16 +52,13 @@
       const detail = element('details', 'release-detail'); detail.open = index === 0;
       const summary = element('summary', 'release-summary');
       const heading = element('div', 'release-heading');
-      const statuses = element('div', 'release-statuses');
-      [...new Set(entry.sections.map(section => section.status))].forEach(status =>
-        statuses.append(element('span', 'release-status ' + status, labels[status])));
-      heading.append(statuses, element('h2', '', entry.title));
+      heading.append(element('h2', '', entry.title));
       const arrow = element('i', 'release-chevron'); arrow.setAttribute('data-lucide', 'chevron-down'); arrow.setAttribute('aria-hidden', 'true');
       summary.append(heading, arrow); detail.append(summary);
       entry.sections.forEach(section => {
         const group = element('section', 'release-group');
         const subheading = element('h3', 'release-group-heading');
-        subheading.append(element('span', 'release-status ' + section.status, labels[section.status]), element('span', 'release-version', section.version));
+        subheading.append(element('span', 'release-version', section.version));
         const list = element('ul', 'release-changes');
         [...new Set(section.changes)].forEach(change => list.append(element('li', '', change)));
         group.append(subheading, list); detail.append(group);
@@ -80,9 +76,5 @@
     document.getElementById('updates-count').textContent = summaryCount(entries);
     scope.lucide?.createIcons();
   }
-  document.querySelectorAll('[data-release-filter]').forEach(button => button.addEventListener('click', () => {
-    document.querySelectorAll('[data-release-filter]').forEach(item => item.setAttribute('aria-pressed', String(item === button)));
-    render(button.dataset.releaseFilter);
-  }));
-  render('all');
+  render();
 })(typeof window === 'undefined' ? globalThis : window);

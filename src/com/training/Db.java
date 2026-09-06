@@ -110,13 +110,15 @@ public class Db {
             st.execute("ALTER TABLE dispatches ADD COLUMN IF NOT EXISTS venue VARCHAR(200)");
             st.execute("ALTER TABLE dispatches ADD COLUMN IF NOT EXISTS confirm_deadline VARCHAR(32)");
             st.execute("ALTER TABLE dispatches ADD COLUMN IF NOT EXISTS material_status VARCHAR(32)");
-            // 为随系统提供的示例项目补充可直接体验的交付信息；只处理首次迁移产生的 NULL 字段。
+            // 只在明确启用的演示环境补填示例值，真实项目即使同名也不自动改写。
+            if (Boolean.getBoolean("bootstrap.demo")) {
             st.execute("UPDATE projects SET owner='陈婧', participant_count=42, delivery_mode='线下集中', venue='市干部教育中心 302', contract_no='YX-2026-017' WHERE owner IS NULL AND title='中层干部领导力提升培训班'");
             st.execute("UPDATE projects SET owner='赵明', participant_count=60, delivery_mode='线下集中', venue='某商业银行培训中心 A1', contract_no='YX-2026-021' WHERE owner IS NULL AND title='新员工入职培训（第一期）'");
             st.execute("UPDATE projects SET owner='周航', participant_count=38, delivery_mode='线下集中', venue='机关党校报告厅', contract_no='YX-2026-026' WHERE owner IS NULL AND title='党史学习教育专题培训班'");
             st.execute("UPDATE dispatches SET start_time='09:00', end_time='12:00', venue='市干部教育中心 302', confirm_deadline='2026-08-10', material_status='准备中' WHERE start_time IS NULL AND project_id=1 AND subject='战略思维与领导力'");
             st.execute("UPDATE dispatches SET start_time='14:00', end_time='17:00', venue='市干部教育中心 302', confirm_deadline='2026-08-10', material_status='待准备' WHERE start_time IS NULL AND project_id=1 AND subject='团队建设与绩效管理'");
             st.execute("UPDATE dispatches SET start_time='09:00', end_time='16:30', venue='机关党校报告厅', confirm_deadline='2026-08-04', material_status='待准备' WHERE start_time IS NULL AND project_id=3 AND subject='党史专题辅导'");
+            }
         }
         seed();
     }

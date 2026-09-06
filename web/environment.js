@@ -33,13 +33,21 @@
         else if (data.status === 'ok' && typeof data.city === 'string' && data.city.length <= 30 && Number.isFinite(data.temperature) && data.temperature >= -90 && data.temperature <= 65 && typeof data.condition === 'string' && data.condition.length <= 24 && Number.isFinite(Date.parse(data.fetchedAt)) && Date.now() - Date.parse(data.fetchedAt) < 3600000 && Date.parse(data.fetchedAt) < Date.now() + 300000 && data.source === 'QWeather') {
           const district = typeof data.district === 'string' && data.district.length <= 30 ? data.district : '';
           weather.replaceChildren(textNode('span', 'weather-location', data.city + (district && district !== data.city ? ' · ' + district : '')), textNode('b', 'weather-temperature', `${Math.round(data.temperature)}°`), textNode('span', 'weather-condition', data.condition));
-          const source = textNode('a', 'weather-source', '天气服务由和风天气驱动'); source.href = 'https://www.qweather.com/'; source.rel = 'noreferrer';
-          weather.append(source);
-          (Array.isArray(data.attributions) ? data.attributions.slice(0,5) : []).forEach((url, index) => {
+          const credit = textNode('span', 'weather-source', '');
+          const provider = textNode('a', 'weather-provider', '和风天气'); provider.href = 'https://www.qweather.com/'; provider.rel = 'noreferrer';
+          provider.title = '和风天气官网';
+          credit.append(textNode('span', '', '天气服务由'), provider);
+          let attributionCount = 0;
+          (Array.isArray(data.attributions) ? data.attributions.slice(0,5) : []).forEach(url => {
             try { const link = new URL(url); if (link.protocol !== 'https:' || link.username || link.password || link.port || url.length > 512) return;
-              const note = textNode('a', 'weather-source', `来源声明${index + 1}`); note.href = link.href; note.rel = 'noreferrer'; weather.append(note);
+              const note = textNode('a', 'weather-attribution', attributionCount === 0 ? '提供' : ` · 数据来源${attributionCount + 1}`);
+              note.href = link.href; note.rel = 'noreferrer'; note.title = '查看天气数据来源';
+              note.setAttribute('aria-label', attributionCount === 0 ? '提供 · 天气数据来源说明' : `数据来源${attributionCount + 1} · 天气归因说明`);
+              credit.append(note); attributionCount++;
             } catch (_) { /* Invalid provider links are never activated. */ }
           });
+          if (!attributionCount) credit.append(textNode('span', '', '提供'));
+          weather.append(credit);
           weather.title = `网络位置估算 · 获取于 ${new Date(data.fetchedAt).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})}`;
           loadingRetries = 0; settledAt = Date.now(); failed = false;
         } else { unavailable(data.status); settledAt = Date.now(); loadingRetries = 0; failed = !['not_configured','location_unavailable'].includes(data.status); if (failed) delay = 60000; }

@@ -26,6 +26,7 @@ public class Main {
         MIME.put("json", "application/json; charset=utf-8");
         MIME.put("png", "image/png");
         MIME.put("jpg", "image/jpeg");
+        MIME.put("webp", "image/webp");
         MIME.put("svg", "image/svg+xml");
         MIME.put("ico", "image/x-icon");
         MIME.put("woff2", "font/woff2");

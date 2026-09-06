@@ -615,7 +615,10 @@ html body.yx-v13 .environment-time time { font-size: 30px; font-weight: 400; let
 html body.yx-v13 .environment-time > span { font-size: 12px; }
 html body.yx-v13 .environment-weather { display: flex; flex-wrap: wrap; align-items: baseline; gap: 7px; min-height: 18px; margin-top: 10px; font-size: 12px; line-height: 1.5; color: #657891; }
 html body.yx-v13 .weather-temperature { font-weight: 550; color: #344b69; }
-html body.yx-v13 .weather-source { font-size: 10px; color: #718198; text-underline-offset: 3px; margin-left: auto; }
+html body.yx-v13 .weather-source { font-size: 11px; color: #657891; text-underline-offset: 3px; margin-left: auto; }
+html body.yx-v13 .weather-source a { color: inherit; text-decoration: none; }
+html body.yx-v13 .weather-source a:hover,
+html body.yx-v13 .weather-source a:focus-visible { text-decoration: underline; }
 html body.yx-v13 .weather-unavailable { color: #718198; }
 html body.yx-v13 .login-release-link { display: flex; justify-content: space-between; align-items: center; margin-top: 24px; font-size: 12px; color: #657891; text-decoration: none; min-height: 32px; }
 html body.yx-v13 .login-release-link svg { width: 14px; height: 14px; }

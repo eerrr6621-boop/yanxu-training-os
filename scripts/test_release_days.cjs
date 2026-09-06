@@ -7,7 +7,7 @@ vm.runInNewContext(fs.readFileSync('web/releases.js', 'utf8'), context);
 vm.runInNewContext(fs.readFileSync('web/updates.js', 'utf8'), context);
 const entries = context.YanxuReleases;
 const { selectDays, formatRecordTime, latestRecord, summaryCount } = context.YanxuReleaseView;
-check(entries.length === 7, 'six recorded days and one month archive');
+check(entries.length >= 7, 'retained recorded days and month archive');
 check(new Set(entries.map(entry => entry.date)).size === entries.length, 'one public entry per date');
 check(Object.isFrozen(entries), 'immutable source');
 for (const entry of entries) {
@@ -16,7 +16,7 @@ for (const entry of entries) {
   check(entry.sections.length > 0, 'nonempty daily notes');
   for (const section of entry.sections) {
     check(Object.isFrozen(section) && Object.isFrozen(section.changes), 'immutable section');
-    check(['preview', 'published', 'history'].includes(section.status), 'explicit status');
+    check(['published', 'history'].includes(section.status), 'public data contains release history only');
     check(new Set(section.changes).size === section.changes.length, 'no duplicate change within section');
     check(section.changes.length >= 2, 'useful consolidated changes');
     check(Boolean(section.timeSource && section.source), 'auditable time provenance');
@@ -28,20 +28,20 @@ for (const entry of entries) {
     }
   }
 }
-const all = selectDays(entries), preview = selectDays(entries, 'preview'), published = selectDays(entries, 'published');
-check(all.length === 7 && published.length === 7 && preview.length === 1, 'filters preserve consolidated dates');
-check(all[0].sections.length === 2, 'same-day preview and published remain distinguishable');
-check(preview[0].sections.every(section => section.status === 'preview'), 'preview-only filter');
-check(published.every(day => day.sections.every(section => section.status !== 'preview')), 'published filter never leaks preview');
-check(entries[0].sections.length === 2, 'filter does not mutate stored history');
-check(summaryCount(all) === '6 天更新 · 1 份早期归档', 'count describes days, not iterations');
-check(summaryCount(preview) === '1 天更新', 'preview day count');
+const all = selectDays(entries);
+check(all.length === entries.length, 'only approved release data is included');
+const mixed = [{date:'2026-09-07',sections:[{status:'preview',recordedAt:'2026-09-07T12:00:00+08:00'}, {status:'published',recordedAt:'2026-09-07T01:00:00+08:00'}, {status:'unknown'}]}];
+const publicOnly = selectDays(mixed);
+check(publicOnly[0].sections.length === 1 && publicOnly[0].sections[0].status === 'published', 'future draft and unknown states fail closed');
+check(mixed[0].sections.length === 3, 'selection never mutates source');
+check(selectDays([{sections:[{status:'preview'}]}]).length === 0, 'unreleased-only day never renders');
+check(summaryCount(all) === `${entries.length - 1} 天更新 · 1 份早期归档`, 'count describes days, not iterations');
 check(summaryCount([]) === '暂无更新', 'empty count');
-check(latestRecord(published[0]) === '2026-09-06T01:53:12+08:00', 'filtered timestamp excludes newer preview');
-check(latestRecord(all[0]) === preview[0].sections[0].recordedAt, 'all mode uses latest record of day');
-check(latestRecord(entries[1]) === '2026-08-22T02:16:07+08:00', 'August 22 verified merge timestamp');
-check(latestRecord(entries[2]) === '2026-08-13T09:31:31+08:00', 'August 13 committer timestamp, not author timestamp');
-check(latestRecord(entries[3]) === null && latestRecord(entries[6]) === null, 'early dates never become midnight');
+check(latestRecord(publicOnly[0]) === '2026-09-07T01:00:00+08:00', 'draft timestamp cannot leak into public record');
+check(latestRecord(entries.find(x => x.date === '2026-09-06')) === '2026-09-06T22:07:48+08:00', 'actual weather activation recorded in same-day entry');
+check(latestRecord(entries.find(x => x.date === '2026-08-22')) === '2026-08-22T02:16:07+08:00', 'August 22 verified merge timestamp');
+check(latestRecord(entries.find(x => x.date === '2026-08-13')) === '2026-08-13T09:31:31+08:00', 'August 13 committer timestamp, not author timestamp');
+check(latestRecord(entries.find(x => x.date === '2026-08-07')) === null && latestRecord(entries.find(x => x.id === 'initial')) === null, 'early dates never become midnight');
 check(latestRecord({ date: '2026-09-06', sections: [{ recordedAt: '2026-09-07T12:00:00+08:00' }] }) === null, 'reject wrong-day records');
 check(formatRecordTime('2026-09-06T00:03:04+08:00') === '2026-09-06 00:03:04', '24-hour clock at midnight');
 check(formatRecordTime('2026-09-06T23:59:59+08:00') === '2026-09-06 23:59:59', 'explicit Beijing time, second precision');
@@ -69,8 +69,10 @@ check(submit.includes('justify-content: center') && submit.includes('position: r
 check(css.includes('.orbit-panel .login-submit > svg { position: absolute; right: 22px;'), 'arrow does not displace centered label');
 for (const page of ['index', 'answer', 'materials', 'updates']) {
   const html = fs.readFileSync('web/' + page + '.html', 'utf8');
-  check(html.includes('yanxu-v13-clarity-r11') && html.includes('v13.css?v=20260906v13r11'), 'current shared CSS cache: ' + page);
+  check(html.includes('yanxu-v13-release-r1') && html.includes('v13.css?v=20260907v13r1'), 'current release and shared CSS cache: ' + page);
 }
 const updateHtml = fs.readFileSync('web/updates.html', 'utf8');
-check(updateHtml.includes('releases.js?v=20260906v13r11') && updateHtml.includes('updates.js?v=20260906v13r11'), 'daily schema and renderer cache move together');
+check(updateHtml.includes('releases.js?v=20260907v13r1') && updateHtml.includes('updates.js?v=20260907v13r1'), 'release data and renderer caches move together');
+check(!/本地预览|已发布|发布与历史|预览迭代|data-release-filter/.test(updateHtml + renderer), 'no internal deployment labels or filters on user-facing page');
+check(updateHtml.includes('<h1>更新记录</h1>'), 'plain-language page name');
 console.log(JSON.stringify({ ok: true, suite: 'R11 daily release grouping and exact timestamps', checks }));

@@ -127,7 +127,9 @@ The reference production topology is a systemd service bound to `127.0.0.1` behi
 R7 adds an optional local-IP city/weather surface and public update timeline.
 Weather is disabled until configured; see [docs/WEATHER.md](docs/WEATHER.md) for
 provider credentials, trusted proxy requirements and privacy/accuracy boundaries.
-This preview iteration is not a production deployment.
+Version 1.9.0 was deployed and verified on 2026-09-07. Public update notes contain
+only actual releases, with daily grouping and verified timestamps. Source pushes
+and production deployments are tracked separately.
 
 ## Vendor assets & licenses
 

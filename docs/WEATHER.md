@@ -1,4 +1,4 @@
-# 自动城市天气（线上已启用；V13 新版界面仍为本地预览）
+# 自动城市天气（已随 V13 正式运行）
 
 ## 已实现的行为
 
@@ -45,8 +45,9 @@ YANXU_WEATHER_TRUST_LOOPBACK_PROXY=true
 查询、实时天气各一次真实请求验证；只开启 GeoAPI 与天气预报权限，未购买套餐。
 私钥和连接配置单独受限保存，不包含在仓库中。操作员授权后，线上已于
 2026-09-06 22:07:48（北京时间）启用天气专用补丁，服务器及外部真实访问链路
-均通过验证。本次基于原 V12 业务版本，仅新增天气；V13 整套新版界面尚未上线。
-本地 18087 保留 V13 新版预览，不伪造公网 IP，也未加载生产私钥。
+均通过验证。随后 V13 整套界面与业务更新于 2026-09-07 01:19:22（北京时间）
+正式部署并验收，沿用受限天气配置。本地 18087 仍为独立预览，不伪造公网 IP，
+也未加载生产私钥。
 
 可选 `YANXU_IP_DATABASE_DIR` 指向已核验 XDB 文件夹，默认 `lib/ip2region`。
 库的固定版本与摘要见同目录 `README.md`；不在启动时自动下载或更新数据库。
@@ -75,7 +76,9 @@ proxy_set_header X-Forwarded-For $remote_addr;
 - [当前计费](https://dev.qweather.com/docs/finance/pricing/)：按量额度会变动，请在开通时核验。
 - [身份认证](https://dev.qweather.com/docs/configuration/authentication/) 与 [专属 Host](https://dev.qweather.com/docs/configuration/api-host/)。
 - [GeoAPI](https://dev.qweather.com/docs/api/geoapi/city-lookup/) 与 [当前天气 v1](https://dev.qweather.com/docs/api/weather/weather-current/)。v1 没有观测时间字段，因此界面标记的是“获取于”，不是伪造的实况更新时间。
-- [来源标注](https://dev.qweather.com/docs/terms/attribution/)：天气展示旁附和风来源与返回的来源声明链接。
+- [来源标注](https://dev.qweather.com/docs/terms/attribution/)与[元数据归因](https://dev.qweather.com/docs/resource/metadata/)：
+  天气展示旁合并为“天气服务由和风天气提供”；“和风天气”链接官网，“提供”
+  链接返回的首个归因地址，额外归因仍保留。不使用无合作依据的“赞助”表述。
 - [缓存建议](https://dev.qweather.com/docs/best-practices/cache/)。
 
 网站隐私说明应写明：本机使用访问 IP 估算城市、用途为展示天气，访客 IP 不提供

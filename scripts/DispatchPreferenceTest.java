@@ -80,6 +80,14 @@ public final class DispatchPreferenceTest {
         Db.exec("CREATE TABLE teachers(id IDENTITY PRIMARY KEY,name VARCHAR(64),gender VARCHAR(8),org VARCHAR(200),title VARCHAR(64),field VARCHAR(200),phone VARCHAR(32),email VARCHAR(64),fee_rate DOUBLE,intro CLOB,status VARCHAR(16),in_date VARCHAR(32),out_date VARCHAR(32),created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
         Db.exec("INSERT INTO teachers(id,name,org,status,fee_rate) VALUES(42,'迁移测试老师','上海示例机构','在库',1800)");
         Db.init();
+        for (int id = 1; id <= 3; id++) {
+            String title = Arrays.asList("中层干部领导力提升培训班", "新员工入职培训（第一期）", "党史学习教育专题培训班").get(id - 1);
+            Db.exec("INSERT INTO projects(id,title,owner,contract_no) VALUES(?,?,NULL,NULL)", id, title);
+        }
+        Db.exec("INSERT INTO dispatches(id,project_id,subject,start_time) VALUES(80,1,'战略思维与领导力',NULL),(81,1,'团队建设与绩效管理',NULL),(82,3,'党史专题辅导',NULL)");
+        Db.init();
+        check(((Number)Db.one("SELECT COUNT(*) n FROM projects WHERE owner IS NULL AND contract_no IS NULL").get("n")).intValue() == 3, "production same-title projects never get demo owner/contracts");
+        check(((Number)Db.one("SELECT COUNT(*) n FROM dispatches WHERE id IN(80,81,82) AND start_time IS NULL AND venue IS NULL").get("n")).intValue() == 3, "production same-subject dispatches never get demo time/venue");
         Map<String,Object> old = Db.one("SELECT * FROM teachers WHERE id=42");
         check(old.get("base_city") == null && old.get("base_province") == null, "never infer residence from organization");
         check(old.get("name").equals("迁移测试老师"), "preserve old teacher ID/name");

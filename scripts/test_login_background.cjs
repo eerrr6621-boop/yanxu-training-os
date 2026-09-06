@@ -26,5 +26,5 @@ const pause = css.match(/\.login-learning:is\(([^)]+)\) \.login-ambient span \{ 
 for (const state of ['paused','loading','loading-visual','unavailable','focused','hidden','reduced']) check(pause.includes('"'+state+'"'),'background pauses during '+state);
 check(css.includes('.login-learning:has(#login-form:focus-within) .login-ambient span'),'form focus pauses without depending on WebGL');
 check(css.includes('.login-learning:has(#login-form[aria-busy="true"]) .login-ambient span { animation-play-state: paused; }'),'form request pauses without depending on WebGL');
-for (const file of ['index.html','answer.html','materials.html','updates.html']) check(read('web/'+file).toString().includes('v13.css?v=20260906v13r11'),'shared stylesheet cache '+file);
+for (const file of ['index.html','answer.html','materials.html','updates.html']) check(read('web/'+file).toString().includes('v13.css?v=20260907v13r1'),'shared stylesheet cache '+file);
 console.log(JSON.stringify({ok:true,suite:'R10 login background asset and isolation',checks,bytes:asset.length}));

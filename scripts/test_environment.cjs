@@ -5,7 +5,7 @@ const check=(condition,message)=>{assert.ok(condition,message);checks++;};
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
 function harness(fetcher){
   let now=Date.now(),seq=0;const timers=new Map(),listeners=new Map(),windowListeners=new Map();
-  class Element{constructor(){this.children=[];this.textContent='';this.dataset={};}replaceChildren(...nodes){this.children=nodes;}append(...nodes){this.children.push(...nodes);}}
+  class Element{constructor(){this.children=[];this.textContent='';this.dataset={};this.attributes={};}replaceChildren(...nodes){this.children=nodes;}append(...nodes){this.children.push(...nodes);}setAttribute(key,value){this.attributes[key]=value;}}
   const clock=new Element(),date=new Element(),weather=new Element(),login=new Element();
   const host={querySelector:s=>({'[data-local-clock]':clock,'[data-local-date]':date,'[data-local-weather]':weather}[s]),closest:()=>login};
   class TestDate extends Date {constructor(...args){super(...(args.length?args:[now]));}static now(){return now;}}
@@ -22,6 +22,13 @@ function harness(fetcher){
   instance.destroy();check(h.timers.size===0 && h.listeners.size===0 && h.windowListeners.size===0,'destroy clears all timers/listeners');
   let complete,signal;const late=harness((url,options)=>{check(url==='/api/visitor-context' && !url.includes('?'),'only own endpoint without IP/city override');signal=options.signal;return new Promise(resolve=>complete=resolve);});
   const old=late.mount();old.destroy();check(signal.aborted,'destroy aborts pending request');complete({ok:true,json:async()=>({status:'not_configured'})});await settle();check(late.weather.children.length===0,'late response cannot update detached page');check(late.timers.size===0,'late response cannot restart timers');
-  const safe=harness(async()=>({ok:true,json:async()=>({status:'ok',city:'<script>bad</script>',temperature:20,condition:'晴',fetchedAt:new Date().toISOString(),source:'QWeather',attributions:['javascript:alert(1)','https://developer.qweather.com/attribution.html']})}));const safeInstance=safe.mount();await settle();check(safe.weather.children[0].textContent==='<script>bad</script>','location is text, never injected HTML');check(safe.weather.children.filter(x=>x.href).every(x=>x.href.startsWith('https:')),'attribution links protocol checked');safeInstance.destroy();
+  const safe=harness(async()=>({ok:true,json:async()=>({status:'ok',city:'<script>bad</script>',temperature:20,condition:'晴',fetchedAt:new Date().toISOString(),source:'QWeather',attributions:['javascript:alert(1)','https://developer.qweather.com/attribution.html']})}));const safeInstance=safe.mount();await settle();check(safe.weather.children[0].textContent==='<script>bad</script>','location is text, never injected HTML');
+  const credit=safe.weather.children.find(x=>x.className==='weather-source'), links=credit.children.filter(x=>x.href);
+  check(links.length===2 && links.every(x=>x.href.startsWith('https:')),'brand and safe attribution links retained, unsafe link rejected');
+  check(credit.children.map(x=>x.textContent).join('')==='天气服务由和风天气提供','single accurate provider line, no sponsorship claim or separate numbered label');
+  check(links[0].href==='https://www.qweather.com/' && links[1].href==='https://developer.qweather.com/attribution.html','both official homepage and returned attribution remain accessible');
+  check(links[1].attributes['aria-label']==='提供 · 天气数据来源说明','attribution link accessible name preserves visible label');safeInstance.destroy();
+  const multi=harness(async()=>({ok:true,json:async()=>({status:'ok',city:'上海',temperature:20,condition:'晴',fetchedAt:new Date().toISOString(),source:'QWeather',attributions:['https://developer.qweather.com/attribution.html','https://example.org/source']})}));const multiInstance=multi.mount();await settle();
+  check(multi.weather.children.find(x=>x.className==='weather-source').children.filter(x=>x.href).length===3,'multiple provider-required source links are not dropped');multiInstance.destroy();
   console.log(JSON.stringify({ok:true,suite:'weather clock lifecycle and network recovery',checks}));
 })().catch(error=>{console.error(error);process.exitCode=1;});

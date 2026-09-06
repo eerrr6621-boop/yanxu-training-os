@@ -2,7 +2,28 @@
 
 All notable changes to Yanxu Training OS. Dates follow the production release history; the format is based on [Keep a Changelog](https://keepachangelog.com/).
 
-## [1.9.0] — 2026-09-06 · Clarity & Native-feeling Workspace
+## [1.9.0] — 2026-09-07 · Clarity & Native-feeling Workspace
+
+### Production release
+- Deployed and verified at 2026-09-07 01:19:22 Asia/Shanghai. This completes the
+  earlier V13 preview iterations below; those entries retain their historical context.
+- Shipped the light workspace, interactive book, guided pre-bid recommendation,
+  required teacher residence and same-professional-band local preference.
+- Public update notes now contain release history only, without internal status
+  labels or preview filters. Unreleased notes are excluded; actual release time
+  is recorded to the second, and older date/month precision is retained.
+- Added WebP HTTP content types and actual HTTP resource validation to the
+  isolated regression gate. Restricted legacy sample-project autofill to demo mode.
+- Verified 257 isolated business checks, 431 dispatch/migration assertions, weather
+  and UI suites, plus all 55 deployed frontend resources. Cold-copy migration
+  preserves all 15 tables / 166 previous columns and adds six nullable fields only.
+- Preserved production data/uploads and weather credentials. Cold backups and a
+  code-only rollback were verified; 15 simulated deployment failure cases passed.
+- Consolidated weather attribution into one accurate provider line. The QWeather
+  homepage and every required metadata attribution link remain keyboard accessible;
+  removed the standalone numbered source label without implying sponsorship.
+- GitHub synchronization is separate and remains pending workflow authorization
+  until a remote push and CI are independently verified.
 
 ### R11 preview iteration
 - Enlarged login public navigation to 17px on desktop / 16px on mobile. Added one

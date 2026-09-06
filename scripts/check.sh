@@ -54,6 +54,9 @@ run_suite() {
     tail -n 40 "$check_root/${suite%.js}.log"
     return 1
   fi
+  if [[ "$suite" = test.js ]]; then
+    node scripts/check_frontend.cjs --base-url "http://127.0.0.1:$port"
+  fi
   TRAINING_API_BASE="http://127.0.0.1:$port/api" node "$suite"
   kill "$check_pid"
   wait "$check_pid" 2>/dev/null || true

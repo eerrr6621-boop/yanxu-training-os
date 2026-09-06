@@ -791,7 +791,7 @@
         <div class="login-ambient" aria-hidden="true"><span></span></div>
         <header class="login-topbar">
           <div class="orbit-brand">${brandSymbol()}<span>研序</span></div>
-          <nav class="login-public-nav" aria-label="公共页面"><a class="login-materials" href="/materials.html">${businessArt('materials')}<span>培训资料下载</span>${icon('arrow-up-right')}</a><a class="login-history" href="/updates.html"><span>往期更新</span><img class="login-new" src="/assets/new-wordmark-v13r11.webp" alt="NEW" width="160" height="44"></a></nav>
+          <nav class="login-public-nav" aria-label="公共页面"><a class="login-materials" href="/materials.html">${businessArt('materials')}<span>培训资料下载</span>${icon('arrow-up-right')}</a><a class="login-history" href="/updates.html"><span>更新记录</span><img class="login-new" src="/assets/new-wordmark-v13r11.webp" alt="NEW" width="160" height="44"></a></nav>
         </header>
         <div class="login-layout">
           <section class="login-visual" data-login-visual aria-label="培训运营，就用研序">
@@ -1075,7 +1075,7 @@
             ${groups.map((g) => `<div class="nav-group"><div class="nav-label">${esc(g.name)}</div>${g.items.map((n) =>
               `<button type="button" class="nav-item ${selectedNavigation === n.k ? 'active' : ''}" data-nav="${n.k}" ${selectedNavigation === n.k ? 'aria-current="page"' : ''}>${businessArt(n.art)}<span>${n.l}</span></button>`).join('')}</div>`).join('')}
           </nav>
-          <a class="sidebar-updates" href="/updates.html">${icon('history')}<span>往期更新</span>${icon('arrow-up-right')}</a>
+          <a class="sidebar-updates" href="/updates.html">${icon('history')}<span>更新记录</span>${icon('arrow-up-right')}</a>
         </aside>
         <button type="button" class="sidebar-scrim" id="sidebar-scrim" aria-label="关闭导航" aria-hidden="true" tabindex="-1"></button>
         <div class="main">
