@@ -1,5 +1,5 @@
 import * as THREE from '/vendor/three-r171/three.module.min.js';
-import { createPageSurface, easeBookProgress } from '/scene/book-surface.js';
+import { createPageSurface } from '/scene/book-surface.js';
 import { createPaperBlock, pageRestRelief } from '/scene/book-binding.js';
 
 // All artwork is local. Canvas is only a high-resolution print surface for live pages.
@@ -7,16 +7,10 @@ const PAGE_W = 1.55, PAGE_H = 2.1;
 const PRINT_W = 768, PRINT_H = 1024;
 const ASSETS = {
   brand: '/assets/yx-mark-v13.png',
-  projects: '/assets/icons/projects-v13.png',
-  faculty: '/assets/icons/faculty-v13.png',
-  calendar: '/assets/icons/calendar-v13.png',
+  endorsement: '/assets/book-endorsement-v13r8.png',
   paper: '/assets/book-paper-v13r7.jpg',
 };
-const CONTENT = [
-  { title: '培训运营', tags: '需求 · 项目 · 进度', art: 'projects', lines: ['专业匹配', '有据可依。'] },
-  { title: '师资推荐', tags: '简历 · 经验 · 匹配', art: 'faculty', lines: ['进度清晰', '交付有序。'] },
-  { title: '课程交付', tags: '排期 · 执行 · 评估', art: 'calendar', lines: ['培训运营', '从容有序。'] },
-];
+const TOPICS = ['培训运营', '师资推荐', '课程交付', '项目管理'];
 
 export function createBookScene(host, { onInvalidate = () => {}, onContextLost = () => {} } = {}) {
   let disposed = false, renderer, shadowLight;
@@ -27,7 +21,7 @@ export function createBookScene(host, { onInvalidate = () => {}, onContextLost =
   const geo = (value) => { geometries.add(value); return value; };
   const mat = (value) => { materials.add(value); return value; };
   const images = {}, prints = [], paperMaterials = [];
-  let lastState = { page: 0, turn: null, pitch: 0, yaw: 0, hover: 0 };
+  let lastState = { topic: 0, transition: null, pitch: 0, yaw: 0 };
 
   function dispose() {
     if (disposed) return;
@@ -49,7 +43,8 @@ export function createBookScene(host, { onInvalidate = () => {}, onContextLost =
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.NeutralToneMapping;
     renderer.toneMappingExposure = 1;
-    renderer.shadowMap.enabled = true;
+    // Fixed paper surfaces need no animated shadow map; avoid edge acne at mobile scale.
+    renderer.shadowMap.enabled = false;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.domElement.className = 'book-three-canvas';
     renderer.domElement.setAttribute('aria-hidden', 'true');
@@ -62,7 +57,7 @@ export function createBookScene(host, { onInvalidate = () => {}, onContextLost =
     const key = new THREE.DirectionalLight(0xffffff, 2.7);
     shadowLight = key;
     key.position.set(-3.2, 4.5, 5.5);
-    key.castShadow = true;
+    key.castShadow = false;
     key.shadow.mapSize.set(1024, 1024);
     Object.assign(key.shadow.camera, { left: -3, right: 3, top: 3, bottom: -3, near: .5, far: 15 });
     key.shadow.bias = -.0007;
@@ -71,7 +66,7 @@ export function createBookScene(host, { onInvalidate = () => {}, onContextLost =
     const fill = new THREE.DirectionalLight(0xc0d3ee, .5);
     fill.position.set(3, 1.3, 4); scene.add(fill);
 
-    function print(kind, data, mirror = false) {
+    function print(kind, mirror = false) {
       const canvas = document.createElement('canvas'); canvas.width = PRINT_W; canvas.height = PRINT_H;
       const ctx = canvas.getContext('2d');
       if (!ctx) throw new Error('Page print unavailable');
@@ -81,35 +76,53 @@ export function createBookScene(host, { onInvalidate = () => {}, onContextLost =
       if (mirror) { texture.repeat.x = -1; texture.offset.x = 1; }
       textures.add(texture);
       function repaint() {
-        ctx.fillStyle = '#fbfcfa'; ctx.fillRect(0, 0, PRINT_W, PRINT_H);
-        if (images.paper) { ctx.globalAlpha = .28; ctx.drawImage(images.paper, 0, 0, PRINT_W, PRINT_H); ctx.globalAlpha = 1; }
+        ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, PRINT_W, PRINT_H);
+        if (images.paper) { ctx.globalAlpha = .12; ctx.drawImage(images.paper, 0, 0, PRINT_W, PRINT_H); ctx.globalAlpha = 1; }
         const edge = ctx.createLinearGradient(0, 0, PRINT_W, 0);
         if (kind === 'left') { edge.addColorStop(.935, 'rgba(68,64,59,0)'); edge.addColorStop(1, 'rgba(68,64,59,.075)'); }
         else { edge.addColorStop(0, 'rgba(68,64,59,.075)'); edge.addColorStop(.065, 'rgba(68,64,59,0)'); }
         ctx.fillStyle = edge; ctx.fillRect(0, 0, PRINT_W, PRINT_H);
         ctx.textBaseline = 'alphabetic';
         if (kind === 'left') {
-          ctx.fillStyle = '#435574'; ctx.textAlign = 'center'; ctx.font = '400 60px "PingFang SC", "Microsoft YaHei", sans-serif';
-          data.lines.forEach((line, i) => ctx.fillText(line, 384, 495 + i * 103));
+          ctx.textAlign = 'left'; ctx.font = '600 112px "PingFang SC", "Microsoft YaHei", sans-serif';
+          const ink = ctx.createLinearGradient(138, 0, 582, 0);
+          ink.addColorStop(0, '#344bcb'); ink.addColorStop(1, '#277e9e'); ctx.fillStyle = ink;
+          const swap = lastState.transition;
+          ctx.save(); ctx.beginPath(); ctx.rect(110, 350, 550, 175); ctx.clip();
+          if (swap) {
+            const t = Math.max(0, Math.min(1, swap.progress));
+            const exit = Math.min(1, t / .58), enter = Math.max(0, (t - .2) / .8);
+            ctx.globalAlpha = (1 - exit) ** 2;
+            ctx.fillText(TOPICS[lastState.topic], 138, 490 - 56 * exit);
+            ctx.globalAlpha = 1 - (1 - enter) ** 3;
+            ctx.fillText(TOPICS[swap.next], 138, 490 + 64 * (1 - enter) ** 3);
+          } else ctx.fillText(TOPICS[lastState.topic], 138, 490);
+          ctx.restore();
+          if (images.endorsement) {
+            // Preserve the generated art and alpha. Account for its transparent margins optically.
+            ctx.drawImage(images.endorsement, 59, 495, 551, 551 / 3);
+          } else {
+            // Readable fallback while the optional local brand print loads.
+            ctx.fillStyle = '#26374e'; ctx.font = '500 94px "PingFang SC", "Microsoft YaHei", sans-serif';
+            ctx.fillText('就用', 138, 625);
+            ctx.strokeStyle = '#425be2'; ctx.lineWidth = 8; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+            ctx.beginPath(); ctx.moveTo(375, 594); ctx.lineTo(507, 594);
+            ctx.moveTo(478, 568); ctx.lineTo(507, 594); ctx.lineTo(478, 620); ctx.stroke();
+          }
         } else if (kind === 'brand') {
-          if (images.brand) ctx.drawImage(images.brand, 278, 308, 212, 212);
+          if (images.brand) ctx.drawImage(images.brand, 304, 320, 160, 160);
           ctx.textAlign = 'center'; ctx.fillStyle = '#263b5a';
-          ctx.font = '500 76px "PingFang SC", "Microsoft YaHei", sans-serif'; ctx.fillText('研 序', 384, 632);
-        } else {
-          if (images[data.art]) ctx.drawImage(images[data.art], 299, 290, 170, 170);
-          ctx.textAlign = 'center'; ctx.fillStyle = '#2e425f';
-          ctx.font = '500 66px "PingFang SC", "Microsoft YaHei", sans-serif'; ctx.fillText(data.title, 384, 558);
-          ctx.fillStyle = '#8793a7'; ctx.font = '400 28px "PingFang SC", "Microsoft YaHei", sans-serif'; ctx.fillText(data.tags, 384, 634);
+          ctx.font = '600 116px "PingFang SC", "Microsoft YaHei", sans-serif'; ctx.fillText('研序', 384, 625);
         }
         texture.needsUpdate = true;
       }
-      prints.push(repaint); repaint(); return texture;
+      prints.push(repaint); repaint(); return { texture, repaint };
     }
     const paper = (map, side = THREE.FrontSide) => {
       const value = mat(new THREE.MeshStandardMaterial({ map, color: 0xffffff, roughness: .91, metalness: 0, side }));
       paperMaterials.push(value); return value;
     };
-    const coverMaterial = mat(new THREE.MeshStandardMaterial({ color: 0xb9c6d6, roughness: .72, metalness: .08 }));
+    const coverMaterial = mat(new THREE.MeshStandardMaterial({ color: 0xcbd3df, roughness: .8, metalness: .03 }));
     const edgeCanvas = document.createElement('canvas'); edgeCanvas.width = 256; edgeCanvas.height = 128;
     const edgeContext = edgeCanvas.getContext('2d');
     if (!edgeContext) throw new Error('Paper edge print unavailable');
@@ -133,7 +146,8 @@ export function createBookScene(host, { onInvalidate = () => {}, onContextLost =
     for (const side of [-1, 1]) {
       const cover = new THREE.Mesh(roundedCover(PAGE_W + .065, PAGE_H + .075), coverMaterial);
       cover.position.set(side * (PAGE_W / 2 + .002), 0, -.11); cover.castShadow = true; book.add(cover); hitMeshes.push(cover);
-      const binding = createPaperBlock({ width: PAGE_W, height: PAGE_H, side });
+      // Fine page layers are printed in the edge map, not subpixel ridges that alias on phones.
+      const binding = createPaperBlock({ width: PAGE_W, height: PAGE_H, side, layers: 1 });
       const bindingGeometry = geo(new THREE.BufferGeometry());
       bindingGeometry.setAttribute('position', new THREE.BufferAttribute(binding.positions, 3));
       bindingGeometry.setAttribute('uv', new THREE.BufferAttribute(binding.uvs, 2));
@@ -187,23 +201,17 @@ export function createBookScene(host, { onInvalidate = () => {}, onContextLost =
       } };
     }
     // A left-side page must expose its back after folding, so use a mirrored back map.
-    const leftBaseBack = surface(null, print('left', { lines: ['需求明确', '推进有序。'] }, true), .005);
+    const leftPrint = print('left', true), rightPrint = print('brand');
+    const leftBaseBack = surface(null, leftPrint.texture, .005);
     leftBaseBack.set(1);
-    const rightBase = surface(print('brand'), null, .003); rightBase.set(0);
-    const pages = CONTENT.map((content, i) => surface(print('front', content), print('left', content, true), .014 + i * .006));
+    const rightBase = surface(rightPrint.texture, null, .003); rightBase.set(0);
     const raycaster = new THREE.Raycaster(), pointer = new THREE.Vector2();
     function render(state = lastState) {
       if (disposed) return;
+      const textChanged = state.topic !== lastState.topic || state.transition?.progress !== lastState.transition?.progress;
       lastState = state;
-      book.rotation.set(-.24 + state.pitch, -.06 + state.yaw, .065);
-      pages.forEach((pageSurface, i) => {
-        const t = state.turn?.index === i ? state.turn.progress : i < state.page ? 1 : 0;
-        const eased = easeBookProgress(t);
-        const elevation = state.turn?.index === i
-          ? .014 + ((3 - i) * (1 - eased) + (i + 1) * eased) * .006 + .012 * Math.sin(Math.PI * eased)
-          : .014 + (i < state.page ? i + 1 : 3 - i) * .006;
-        pageSurface.set(t, !state.turn && i === state.page ? state.hover : 0, elevation);
-      });
+      book.rotation.set(-.18 + state.pitch, -.09 + state.yaw, .035);
+      if (textChanged) leftPrint.repaint();
       renderer.render(scene, camera);
     }
     function resize() {
@@ -212,7 +220,7 @@ export function createBookScene(host, { onInvalidate = () => {}, onContextLost =
       const ratio = Math.min(window.devicePixelRatio || 1, 1.7, Math.sqrt(1500000 / (width * height)));
       renderer.setPixelRatio(ratio); renderer.setSize(width, height, false);
       camera.aspect = width / height;
-      const viewHeight = Math.max(2.85, 3.85 / camera.aspect);
+      const viewHeight = Math.max(2.8, 3.65 / camera.aspect);
       camera.fov = THREE.MathUtils.radToDeg(2 * Math.atan(viewHeight / (2 * camera.position.z)));
       camera.updateProjectionMatrix(); render();
     }
@@ -233,7 +241,7 @@ export function createBookScene(host, { onInvalidate = () => {}, onContextLost =
         if (name === 'paper') {
           const relief = new THREE.Texture(image); relief.needsUpdate = true; textures.add(relief);
           relief.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
-          paperMaterials.forEach(material => { material.bumpMap = relief; material.bumpScale = .006; material.needsUpdate = true; });
+          paperMaterials.forEach(material => { material.bumpMap = relief; material.bumpScale = .002; material.needsUpdate = true; });
         }
         prints.forEach((repaint) => repaint()); onInvalidate();
       };

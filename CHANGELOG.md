@@ -4,6 +4,22 @@ All notable changes to Yanxu Training OS. Dates follow the production release hi
 
 ## [1.9.0] — 2026-09-06 · Clarity & Native-feeling Workspace
 
+### R8 preview iteration
+- Replaced the finite page-flip introduction with one fixed open book. The left
+  headline cycles through training operations, faculty recommendations, course
+  delivery and project management; “就用 →” and the right-page Yanxu brand stay fixed.
+- Enlarged and realigned the printed type. Retained subtle perspective interaction,
+  local paper texture, click/Space/Enter pause, typing/visibility/authentication
+  suspension, reduced-motion support and independent visual failure handling.
+- Removed page navigation, hover curling and replay semantics. The scene now owns
+  only two print textures instead of the animated page stack; RAF sleeps between
+  text transitions. Added three-cycle and lifecycle regressions.
+- Replaced the lower default-text arrow with one ImageGen navy Chinese wordmark
+  and cobalt directional mark. Preserved its transparent original; the 960px PNG
+  is uniformly downscaled, losslessly compressed and shared by WebGL/fallback.
+- Added the 19th recorded history entry. Local preview only; no GitHub push or
+  production deployment is claimed.
+
 ### R7 preview iteration
 - Replaced the ink-blue login stage and sidebar with a continuous silver-white
   workspace, restrained moving light, a focused credential panel and local clock.

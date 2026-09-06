@@ -794,10 +794,10 @@
           <nav class="login-public-nav" aria-label="公共页面"><a class="login-materials" href="/materials.html">${businessArt('materials')}<span>培训资料下载</span>${icon('arrow-up-right')}</a><a class="login-history" href="/updates.html">往期更新</a></nav>
         </header>
         <div class="login-layout">
-          <section class="login-visual" data-login-visual aria-label="研序功能翻页介绍">
-            <div class="book-stage" data-login-book role="button" tabindex="0" aria-label="研序培训运营" title="拖动查看 · 点击左右书页翻动">
+          <section class="login-visual" data-login-visual aria-label="培训运营，就用研序">
+            <div class="book-stage" data-login-book role="button" tabindex="0" aria-label="培训运营，就用研序。点击暂停文字轮播" title="点击暂停 / 继续 · 拖动查看">
               <div class="book-fallback" aria-hidden="true">
-                <div class="book-fallback-left">培训运营<br>从容有序。</div>
+                <div class="book-fallback-left"><strong>培训运营</strong><span class="book-endorsement"><img src="/assets/book-endorsement-v13r8.png" alt="就用 →" width="960" height="320"></span></div>
                 <div class="book-fallback-right">${brandSymbol()}<b>研序</b></div>
               </div>
             </div>

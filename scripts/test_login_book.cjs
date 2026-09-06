@@ -424,7 +424,7 @@ function pointer(target, type, values = {}) {
   });
 }
 
-function page(harness) { return Number(harness.root.dataset.bookPage); }
+function topic(harness) { return Number(harness.root.dataset.bookTopic); }
 function state(harness) { return harness.root.dataset.motionState; }
 function latestRender(harness) { return harness.kit.scene?.renders.at(-1) || null; }
 async function microtasks(count = 4) { for (let index = 0; index < count; index += 1) await Promise.resolve(); }
@@ -531,7 +531,7 @@ async function main() {
     check('rejected import becomes unavailable', state(rejected) === 'unavailable', state(rejected));
     check('rejected import keeps login DOM connected', rejected.root.isConnected && rejected.form.isConnected && rejected.book.isConnected);
     check('rejected import leaves no listener/timer/RAF', listenerTotal(rejected) === 0 && rejected.scheduler.pendingTimers() === 0 && rejected.scheduler.pendingFrames() === 0, listenerTotal(rejected));
-    check('rejected import has stable fallback ARIA', rejected.book.getAttribute('aria-disabled') === 'true' && rejected.book.getAttribute('aria-label') === '研序培训运营');
+    check('rejected import has stable fallback ARIA', rejected.book.getAttribute('aria-disabled') === 'true' && rejected.book.getAttribute('aria-label') === '培训运营，就用研序');
     const retryKit = createSceneKit();
     const retry = rejected.api.mount(rejected.root, { loadScene: () => retryKit.module });
     await retry.ready;
@@ -550,245 +550,163 @@ async function main() {
     }
   });
 
-  await group('successful load and automatic finite sequence', async () => {
-    const harness = createHarness(motion);
-    const controller = await boot(harness);
-    check('scene created exactly once against book host', harness.kit.stats.createCalls === 1 && harness.kit.stats.hosts[0] === harness.book);
-    check('ready flags expose Three revision', harness.root.dataset.bookReady === 'true' && harness.root.dataset.bookEngine === 'three-r171', JSON.stringify(harness.root.dataset));
-    check('ready starts on page zero in playing state', page(harness) === 0 && state(harness) === 'playing', `${page(harness)}/${state(harness)}`);
-    check('ready enables accessible book', harness.book.getAttribute('aria-disabled') === 'false' && /培训运营/.test(harness.book.getAttribute('aria-label') || ''));
-    check('initial state renders once and idles at 0 RAF', harness.kit.scene.renders.length >= 1 && harness.scheduler.pendingFrames() === 0);
-    check('initial wait is exactly 1900ms', harness.scheduler.pendingTimers() === 1 && harness.scheduler.nextTimerDueIn() === 1900, harness.scheduler.nextTimerDueIn());
-    const seenPages = [page(harness)];
-    for (let expected = 1; expected <= 3; expected += 1) {
-      const wait = expected === 1 ? 1900 : 1300;
-      harness.scheduler.advanceTimers(wait);
-      check(`turn ${expected} begins with one RAF and no timer`, harness.scheduler.pendingFrames() === 1 && harness.scheduler.pendingTimers() === 0, `${harness.scheduler.pendingFrames()}/${harness.scheduler.pendingTimers()}`);
-      check(`turn ${expected} does not commit before animation`, page(harness) === expected - 1, page(harness));
-      const turnRendersBefore = harness.kit.scene.renders.length;
-      harness.scheduler.runFrames();
-      seenPages.push(page(harness));
-      check(`turn ${expected} commits exactly one page`, page(harness) === expected, page(harness));
-      const frames = harness.kit.scene.renders.slice(turnRendersBefore).filter((item) => item.turn);
-      check(`turn ${expected} reports bounded progress`, frames.length > 1 && frames.every((item) => item.turn.progress >= 0 && item.turn.progress <= 1), frames.map((item) => item.turn?.progress).join(','));
-      check(`turn ${expected} settles to zero RAF`, harness.scheduler.pendingFrames() === 0, harness.scheduler.pendingFrames());
-      check(`turn ${expected} schedules only expected continuation`, harness.scheduler.pendingTimers() === (expected === 3 ? 0 : 1), harness.scheduler.pendingTimers());
+  await group('fixed spread and repeating headline', async () => {
+    const h = createHarness(motion), controller = await boot(h);
+    check('scene mounts exactly once on the book', h.kit.stats.createCalls === 1 && h.kit.stats.hosts[0] === h.book);
+    check('ready flags expose Three revision', h.root.dataset.bookReady === 'true' && h.root.dataset.bookEngine === 'three-r171');
+    check('starts with first topic and no idle RAF', topic(h) === 0 && state(h) === 'playing' && h.scheduler.pendingFrames() === 0);
+    check('first hold is 2600ms', h.scheduler.nextTimerDueIn() === 2600);
+    const stableLabel = h.book.getAttribute('aria-label'), seen = [topic(h)];
+    for (let index = 1; index <= 12; index++) {
+      const expected = index % 4;
+      h.scheduler.advanceTimers(index === 1 ? 2600 : 3000);
+      check('swap starts one RAF, no waiting timer: ' + index, h.scheduler.pendingFrames() === 1 && h.scheduler.pendingTimers() === 0);
+      check('swap does not immediately replace headline: ' + index, topic(h) === (index - 1) % 4);
+      const before = h.kit.scene.renders.length;
+      h.scheduler.runFrames(); seen.push(topic(h));
+      const transitions = h.kit.scene.renders.slice(before).filter(x => x.transition);
+      check('topic order: ' + index, topic(h) === expected);
+      check('bounded monotonic text transition: ' + index, transitions.length > 1 && transitions.every((x,i) => x.transition.next === expected && x.transition.progress >= 0 && x.transition.progress <= 1 && (!i || x.transition.progress >= transitions[i-1].transition.progress)));
+      check('each hold sleeps with one timer, zero RAF: ' + index, h.scheduler.pendingFrames() === 0 && h.scheduler.pendingTimers() === 1 && h.scheduler.nextTimerDueIn() === 3000);
+      check('accessible description does not churn with topic: ' + index, h.book.getAttribute('aria-label') === stableLabel);
     }
-    check('automatic page order is strictly 0-1-2-3', seenPages.join(',') === '0,1,2,3', seenPages.join(','));
-    check('final page is complete and named 研序', state(harness) === 'complete' && /^研序。/.test(harness.book.getAttribute('aria-label') || ''), `${state(harness)}/${harness.book.getAttribute('aria-label')}`);
-    check('entire run never stacks timer or RAF', harness.scheduler.maxTimers === 1 && harness.scheduler.maxFrames === 1, `${harness.scheduler.maxTimers}/${harness.scheduler.maxFrames}`);
-    const counts = [harness.scheduler.timerSets, harness.scheduler.frameRequests, harness.kit.scene.renders.length];
-    harness.scheduler.advanceTimers(100000);
-    harness.scheduler.stepFrame(100000);
-    check('final page never loops or schedules again', page(harness) === 3 && harness.scheduler.pendingTimers() === 0 && harness.scheduler.pendingFrames() === 0 && counts[0] === harness.scheduler.timerSets && counts[1] === harness.scheduler.frameRequests && counts[2] === harness.kit.scene.renders.length);
+    check('loops through three full cycles', seen.join(',') === '0,1,2,3,0,1,2,3,0,1,2,3,0');
+    check('never sends page-turn or hover/curl state', h.kit.scene.renders.every(x => !('page' in x) && !('turn' in x) && !('hover' in x)));
+    check('no duplicate timers or RAF', h.scheduler.maxTimers === 1 && h.scheduler.maxFrames === 1);
+    check('renderer contains fixed two-sided spread', /leftBaseBack.set\(1\)/.test(renderer) && /rightBase.set\(0\)/.test(renderer));
+    check('renderer has no animated page stack', !/const pages =|state\.turn|state\.page|easeBookProgress/.test(renderer));
+    check('right brand and second line are fixed print', renderer.includes("ctx.fillText('研序', 384, 625)") && renderer.includes("ctx.fillText('就用', 138, 625)"));
+    check('only left print is repainted during transition', renderer.includes('if (textChanged) leftPrint.repaint()') && !renderer.includes('rightPrint.repaint()'));
     controller.destroy();
   });
 
-  await group('pause and resume preserve progress', async () => {
-    const waiting = createHarness(motion);
-    const waitingController = await boot(waiting);
-    const staleTimer = waiting.scheduler.timerIds()[0];
-    waiting.scheduler.advanceTimers(700);
-    const pause = key(waiting.book, ' ');
-    check('Space pauses wait and prevents default', pause.defaultPrevented && state(waiting) === 'paused');
-    check('waiting pause clears timer and saves 1200ms', waiting.scheduler.pendingTimers() === 0 && waiting.scheduler.pendingFrames() === 0);
-    waiting.scheduler.forceTimer(staleTimer);
-    check('stale timer cannot start a turn', page(waiting) === 0 && waiting.scheduler.pendingFrames() === 0);
-    waiting.scheduler.advanceTimers(10000);
-    key(waiting.book, ' ');
-    check('resume restores exact wait remainder', state(waiting) === 'playing' && waiting.scheduler.nextTimerDueIn() === 1200, `${state(waiting)}/${waiting.scheduler.nextTimerDueIn()}`);
-    const repeated = key(waiting.book, ' ', true);
-    check('repeat key is ignored after preventDefault', repeated.defaultPrevented && state(waiting) === 'playing');
-    waitingController.destroy();
-
-    const turning = createHarness(motion);
-    const turningController = await boot(turning);
-    turning.scheduler.advanceTimers(1900);
-    for (let index = 0; index < 8; index += 1) turning.scheduler.stepFrame(50);
-    const progress = latestRender(turning).turn.progress;
-    const staleFrame = turning.scheduler.frameIds()[0];
-    key(turning.book, ' ');
-    check('Space pauses an active turn', state(turning) === 'paused' && turning.scheduler.pendingFrames() === 0 && page(turning) === 0, `${state(turning)}/${turning.scheduler.pendingFrames()}`);
-    const renders = turning.kit.scene.renders.length;
-    turning.scheduler.forceFrame(staleFrame, turning.scheduler.now + 500);
-    check('stale cancelled RAF cannot render or commit', turning.kit.scene.renders.length === renders && page(turning) === 0);
-    key(turning.book, ' ');
-    check('active turn resumes with one RAF', state(turning) === 'turning' && turning.scheduler.pendingFrames() === 1);
-    turning.scheduler.stepFrame(16);
-    check('resumed turn continues from saved progress', latestRender(turning).turn.progress >= progress, `${progress}/${latestRender(turning).turn.progress}`);
-    turning.scheduler.runFrames();
-    check('resumed turn reaches next page', page(turning) === 1);
-    turningController.destroy();
+  await group('user pause, remaining wait and stale callbacks', async () => {
+    const h = createHarness(motion), c = await boot(h);
+    const stale = h.scheduler.timerIds()[0];
+    h.scheduler.advanceTimers(700);
+    check('Space prevents default and pauses', key(h.book,' ').defaultPrevented && state(h) === 'paused');
+    check('explicit paused state is accessible', h.book.getAttribute('aria-pressed') === 'true' && /继续文字轮播/.test(h.book.getAttribute('aria-label')));
+    check('paused has no work', h.scheduler.pendingTimers() === 0 && h.scheduler.pendingFrames() === 0);
+    h.scheduler.forceTimer(stale); h.scheduler.advanceTimers(60000);
+    check('no catch-up or stale timer transition', topic(h) === 0 && h.scheduler.pendingFrames() === 0);
+    key(h.book,' ');
+    check('resume uses saved 1900ms', h.scheduler.nextTimerDueIn() === 1900 && h.book.getAttribute('aria-pressed') === 'false');
+    check('held key ignored', key(h.book,' ',true).defaultPrevented && state(h) === 'playing');
+    h.scheduler.advanceTimers(1900);
+    for(let i=0;i<9;i++) h.scheduler.stepFrame(50);
+    const staleFrame = h.scheduler.frameIds()[0];
+    key(h.book,' ');
+    check('mid-swap pause settles readable incoming headline', topic(h) === 1 && !latestRender(h).transition && state(h) === 'paused');
+    const renders=h.kit.scene.renders.length;
+    h.scheduler.forceFrame(staleFrame, h.scheduler.now+5000);
+    check('cancelled RAF cannot render', h.kit.scene.renders.length === renders);
+    c.setPhase('loading'); c.setPhase('error');
+    check('failed login preserves user pause', state(h) === 'paused' && h.scheduler.pendingTimers() === 0);
+    key(h.book,'Enter');
+    check('Enter resumes with full hold after settled transition', state(h) === 'playing' && h.scheduler.nextTimerDueIn() === 3000);
+    c.destroy();
   });
 
-  await group('manual backward turn and replay', async () => {
-    const harness = createHarness(motion);
-    const controller = await boot(harness);
-    const forward = key(harness.book, 'ArrowRight');
-    check('ArrowRight starts manual forward turn', forward.defaultPrevented && harness.scheduler.pendingFrames() === 1 && page(harness) === 0);
-    harness.scheduler.runFrames();
-    check('manual forward commits page one', page(harness) === 1);
-    const before = harness.kit.scene.renders.length;
-    const backward = key(harness.book, 'ArrowLeft');
-    check('ArrowLeft begins reverse turn and clears auto timer', backward.defaultPrevented && harness.scheduler.pendingTimers() === 0 && harness.scheduler.pendingFrames() === 1);
-    harness.scheduler.runFrames();
-    const reverse = harness.kit.scene.renders.slice(before).filter((item) => item.turn).map((item) => item.turn.progress);
-    check('reverse progress moves from one toward zero', reverse.length > 2 && reverse[0] >= reverse.at(-1), `${reverse[0]}/${reverse.at(-1)}`);
-    check('reverse commits page zero and disables autoplay', page(harness) === 0 && state(harness) === 'manual' && harness.scheduler.pendingTimers() === 0, `${page(harness)}/${state(harness)}`);
-    key(harness.book, 'ArrowLeft');
-    check('backward boundary at page zero is stable', page(harness) === 0 && harness.scheduler.pendingFrames() === 0 && harness.scheduler.pendingTimers() === 0);
-    const home = key(harness.book, 'Home');
-    check('Home replay restores automatic initial wait', home.defaultPrevented && page(harness) === 0 && state(harness) === 'playing' && harness.scheduler.nextTimerDueIn() === 1900, `${state(harness)}/${harness.scheduler.nextTimerDueIn()}`);
-    controller.setPhase('success');
-    check('success moves directly to final page', page(harness) === 3 && harness.scheduler.pendingTimers() === 0 && harness.scheduler.pendingFrames() === 0);
-    key(harness.book, 'ArrowRight');
-    check('success phase blocks final-page replay', page(harness) === 3 && harness.scheduler.pendingTimers() === 0 && harness.scheduler.pendingFrames() === 0);
-    controller.destroy();
-  });
-
-  await group('pointer tap, drag threshold, capture and cancellation', async () => {
-    const tap = createHarness(motion);
-    const tapController = await boot(tap);
-    pointer(tap.book, 'pointerdown', { pointerId: 7, clientX: 30, clientY: 20 });
-    check('valid hit captures pointer and pauses waiting', tap.book.capturedPointers.has(7) && state(tap) === 'dragging' && tap.scheduler.pendingTimers() === 0, `${state(tap)}/${tap.book.captureHistory}`);
-    const thresholdMove = pointer(tap.book, 'pointermove', { pointerId: 7, clientX: 36, clientY: 20 });
-    check('exact six-pixel movement remains a tap', !thresholdMove.defaultPrevented && !tap.book.classList.contains('is-dragging') && tap.scheduler.pendingFrames() === 0);
-    pointer(tap.book, 'pointerup', { pointerId: 7, clientX: 36, clientY: 20 });
-    check('tap releases capture and begins hit-side turn', !tap.book.capturedPointers.has(7) && tap.book.releaseHistory.includes(7) && tap.scheduler.pendingFrames() === 1);
-    tap.scheduler.runFrames();
-    check('right-page tap advances exactly once', page(tap) === 1);
-    tapController.destroy();
-
-    const drag = createHarness(motion);
-    const dragController = await boot(drag);
-    pointer(drag.book, 'pointerdown', { pointerId: 8, clientX: 10, clientY: 10 });
-    const moved = pointer(drag.book, 'pointermove', { pointerId: 8, clientX: 1010, clientY: 1010 });
-    check('movement beyond threshold prevents default and enters drag class', moved.defaultPrevented && drag.book.classList.contains('is-dragging'));
-    drag.scheduler.runFrames();
-    const pose = latestRender(drag);
-    check('dragged camera pose is clamped', pose.yaw > 0 && pose.yaw <= .4801 && pose.pitch > 0 && pose.pitch <= .2601, `${pose.yaw}/${pose.pitch}`);
-    check('drag never turns a page', page(drag) === 0 && !pose.turn);
-    pointer(drag.book, 'pointerup', { pointerId: 8, clientX: 1010, clientY: 1010 });
-    check('drag release does not turn and releases capture', page(drag) === 0 && !drag.book.capturedPointers.has(8) && !drag.book.classList.contains('is-dragging'));
-    check('drag release resumes finite auto wait', drag.scheduler.pendingTimers() === 1);
-    dragController.destroy();
-
-    const miss = createHarness(motion, { scene: { pick: null } });
-    const missController = await boot(miss);
-    pointer(miss.book, 'pointerdown', { pointerId: 9 });
-    check('missed raycast does not capture or pause', miss.book.capturedPointers.size === 0 && state(miss) === 'playing' && miss.scheduler.pendingTimers() === 1);
-    pointer(miss.book, 'pointerdown', { pointerId: 10, button: 2 });
-    check('non-primary button is ignored', miss.book.capturedPointers.size === 0 && miss.kit.scene.pickCalls.length === 1);
-    missController.destroy();
-
-    const cancel = createHarness(motion);
-    const cancelController = await boot(cancel);
-    pointer(cancel.book, 'pointerdown', { pointerId: 11 });
-    pointer(cancel.book, 'pointercancel', { pointerId: 12 });
-    check('unrelated pointercancel does not cancel active capture', cancel.book.capturedPointers.has(11) && state(cancel) === 'dragging', `${[...cancel.book.capturedPointers]}/${state(cancel)}`);
-    pointer(cancel.book, 'pointercancel', { pointerId: 11 });
-    check('matching pointercancel releases without turning', !cancel.book.capturedPointers.has(11) && page(cancel) === 0 && !cancel.book.classList.contains('is-dragging'));
-    check('matching pointercancel resumes auto wait', cancel.scheduler.pendingTimers() === 1 && cancel.scheduler.pendingFrames() === 0);
-    cancelController.destroy();
-
-    const lost = createHarness(motion);
-    const lostController = await boot(lost);
-    pointer(lost.book, 'pointerdown', { pointerId: 21 });
-    pointer(lost.book, 'lostpointercapture', { pointerId: 20 });
-    check('stale lostpointercapture does not cancel current pointer', lost.book.capturedPointers.has(21) && state(lost) === 'dragging', `${[...lost.book.capturedPointers]}/${state(lost)}`);
-    pointer(lost.book, 'lostpointercapture', { pointerId: 21 });
-    check('matching lostpointercapture returns to waiting without a turn', page(lost) === 0 && state(lost) === 'playing' && lost.scheduler.pendingTimers() === 1);
-    lostController.destroy();
-  });
-
-  await group('visibility, focus and reduced motion', async () => {
-    const visibility = createHarness(motion);
-    const visibilityController = await boot(visibility);
-    visibility.scheduler.advanceTimers(500);
-    visibility.document.setHidden(true);
-    check('hidden page pauses with no active scheduling', state(visibility) === 'hidden' && visibility.scheduler.pendingTimers() === 0 && visibility.scheduler.pendingFrames() === 0, state(visibility));
-    const hiddenRenders = visibility.kit.scene.renders.length;
-    visibility.kit.scene.invalidate();
-    check('scene invalidation cannot render while hidden', visibility.kit.scene.renders.length === hiddenRenders);
-    visibility.scheduler.advanceTimers(5000);
-    visibility.document.setHidden(false);
-    check('visibility restore resizes scene', visibility.kit.scene.resizeCalls === 1, visibility.kit.scene.resizeCalls);
-    check('visibility restore resumes exact 1400ms wait', visibility.scheduler.nextTimerDueIn() === 1400, visibility.scheduler.nextTimerDueIn());
-    visibilityController.destroy();
-
-    const focus = createHarness(motion);
-    const focusController = await boot(focus);
-    focus.scheduler.advanceTimers(400);
-    event(focus.form, 'focusin', { target: focus.input });
-    check('form focus pauses auto sequence', state(focus) === 'focused' && focus.scheduler.pendingTimers() === 0, state(focus));
-    event(focus.form, 'focusout', { target: focus.input, relatedTarget: focus.input });
-    check('focus movement within form remains paused', state(focus) === 'focused' && focus.scheduler.pendingTimers() === 0);
-    event(focus.form, 'focusout', { target: focus.input, relatedTarget: null });
-    check('focus leaving form resumes exact remainder', state(focus) === 'playing' && focus.scheduler.nextTimerDueIn() === 1500, `${state(focus)}/${focus.scheduler.nextTimerDueIn()}`);
-    focusController.destroy();
-
-    const reduced = createHarness(motion, { reduced: true });
-    const reducedController = await boot(reduced);
-    check('initial reduced motion snaps to final page', page(reduced) === 3 && state(reduced) === 'reduced', `${page(reduced)}/${state(reduced)}`);
-    check('initial reduced motion has no timer or RAF', reduced.scheduler.pendingTimers() === 0 && reduced.scheduler.pendingFrames() === 0);
-    key(reduced.book, 'ArrowLeft');
-    check('reduced keyboard backward navigation is instantaneous', page(reduced) === 2 && reduced.scheduler.pendingFrames() === 0 && reduced.scheduler.pendingTimers() === 0);
-    pointer(reduced.book, 'pointerdown', { pointerId: 31, clientX: 10 });
-    pointer(reduced.book, 'pointerup', { pointerId: 31, clientX: 10 });
-    check('reduced pointer tap is instantaneous', page(reduced) === 3 && reduced.scheduler.pendingFrames() === 0 && reduced.scheduler.pendingTimers() === 0);
-    reducedController.destroy();
-
-    const changing = createHarness(motion);
-    const changingController = await boot(changing);
-    changing.scheduler.advanceTimers(1900);
-    changing.scheduler.stepFrame(100);
-    changing.reduced.setMatches(true);
-    check('enabling reduced motion mid-turn snaps final and clears work', page(changing) === 3 && state(changing) === 'reduced' && changing.scheduler.pendingTimers() === 0 && changing.scheduler.pendingFrames() === 0, `${page(changing)}/${state(changing)}`);
-    changing.reduced.setMatches(false);
-    check('disabling reduced motion does not restart completed sequence', page(changing) === 3 && state(changing) === 'complete' && changing.scheduler.pendingTimers() === 0 && changing.scheduler.pendingFrames() === 0);
-    changingController.destroy();
-  });
-
-  await group('phase buffering and transitions', async () => {
-    const deferred = createDeferred();
-    const harness = createHarness(motion, { loadScene: () => deferred.promise });
-    const controller = harness.mount();
-    controller.setPhase('loading');
-    check('loading phase is recorded before scene resolves', harness.root.dataset.motionPhase === 'loading' && state(harness) === 'loading-visual', `${harness.root.dataset.motionPhase}/${state(harness)}`);
-    await microtasks();
-    deferred.resolve(harness.kit.module);
-    await controller.ready;
-    check('latest buffered loading phase stops initial timer', state(harness) === 'loading' && harness.scheduler.pendingTimers() === 0 && harness.scheduler.pendingFrames() === 0, state(harness));
-    controller.setPhase('error');
-    check('error phase resumes auto sequence', harness.root.dataset.motionPhase === 'error' && state(harness) === 'playing' && harness.scheduler.nextTimerDueIn() === 1900, `${state(harness)}/${harness.scheduler.nextTimerDueIn()}`);
-    controller.setPhase('nonsense');
-    check('unknown phase normalizes to idle', harness.root.dataset.motionPhase === 'idle' && state(harness) === 'playing');
-    controller.setPhase('success');
-    check('success phase finishes immediately with no work', page(harness) === 3 && harness.root.dataset.motionPhase === 'success' && harness.scheduler.pendingTimers() === 0 && harness.scheduler.pendingFrames() === 0);
-    pointer(harness.book, 'pointerdown', { pointerId: 40 });
-    check('success phase rejects pointer interaction', harness.book.capturedPointers.size === 0 && page(harness) === 3);
-    controller.destroy();
-
-    const earlySuccess = createHarness(motion, { loadScene: () => Promise.resolve(createSceneKit().module) });
-    const earlyController = earlySuccess.mount();
-    earlyController.setPhase('success');
-    await earlyController.ready;
-    check('success before module load applies after readiness', page(earlySuccess) === 3 && earlySuccess.scheduler.pendingTimers() === 0 && earlySuccess.scheduler.pendingFrames() === 0, page(earlySuccess));
-    earlyController.destroy();
-
-    const guarded = createHarness(motion);
-    const guardedController = await boot(guarded);
-    pointer(guarded.book, 'pointerdown', { pointerId: 41 });
-    check('phase guard fixture owns a pointer before loading', guarded.book.capturedPointers.has(41));
-    guardedController.setPhase('loading');
-    check('loading phase releases active pointer and clears schedules', guarded.book.capturedPointers.size === 0 && state(guarded) === 'loading' && guarded.scheduler.pendingTimers() === 0 && guarded.scheduler.pendingFrames() === 0, `${state(guarded)}/${guarded.scheduler.pendingTimers()}/${guarded.scheduler.pendingFrames()}`);
-    for (const guardedKey of [' ', 'Enter', 'ArrowLeft', 'ArrowRight', 'Home']) {
-      const pressed = key(guarded.book, guardedKey);
-      check(`loading phase prevents ${JSON.stringify(guardedKey)} without changing page`, pressed.defaultPrevented && page(guarded) === 0 && guarded.scheduler.pendingTimers() === 0 && guarded.scheduler.pendingFrames() === 0, `${page(guarded)}/${guarded.scheduler.pendingTimers()}/${guarded.scheduler.pendingFrames()}`);
+  await group('tap toggles text, drag only changes perspective', async () => {
+    const h=createHarness(motion), c=await boot(h);
+    pointer(h.book,'pointerdown',{pointerId:7});
+    check('hit captures pointer and stops timer', h.book.capturedPointers.has(7) && state(h)==='dragging' && !h.scheduler.pendingTimers());
+    const small=pointer(h.book,'pointermove',{pointerId:7,clientX:26});
+    check('six pixels still a tap', !small.defaultPrevented && !h.book.classList.contains('is-dragging'));
+    pointer(h.book,'pointerup',{pointerId:7,clientX:26});
+    check('tap pauses without changing topic', state(h)==='paused' && topic(h)===0 && !h.book.capturedPointers.has(7));
+    event(h.book,'click',{detail:1});
+    check('native follow-up click does not toggle twice', state(h)==='paused');
+    event(h.book,'click',{detail:0});
+    check('assistive click resumes', state(h)==='playing');
+    for(const k of ['ArrowLeft','ArrowRight','Home']){
+      const ev=key(h.book,k);
+      check('removed page key has no action: '+k, !ev.defaultPrevented && topic(h)===0 && !h.scheduler.pendingFrames());
     }
-    guardedController.setPhase('error');
-    check('failed login resumes rather than inheriting hidden pause state', state(guarded) === 'playing' && guarded.scheduler.nextTimerDueIn() === 1900, `${state(guarded)}/${guarded.scheduler.nextTimerDueIn()}`);
-    guardedController.destroy();
+    pointer(h.book,'pointerdown',{pointerId:8});
+    const moved=pointer(h.book,'pointermove',{pointerId:8,clientX:1020,clientY:1020});
+    h.scheduler.runFrames();
+    const pose=latestRender(h);
+    check('drag enters grabbing state', moved.defaultPrevented && h.book.classList.contains('is-dragging'));
+    check('viewpoint stays subtle and bounded', pose.yaw>0 && pose.yaw<=.1801 && pose.pitch>0 && pose.pitch<=.1201);
+    check('drag never changes topic or flips page', topic(h)===0 && !pose.transition && !pose.turn);
+    pointer(h.book,'pointerup',{pointerId:8}); h.scheduler.runFrames();
+    check('release eases view back to neutral', Math.abs(latestRender(h).yaw)<.0005 && Math.abs(latestRender(h).pitch)<.0005);
+    check('drag release resumes one timer', h.scheduler.pendingTimers()===1 && !h.book.capturedPointers.has(8));
+    for(const cancel of ['pointercancel','lostpointercapture']){
+      pointer(h.book,'pointerdown',{pointerId:9});
+      pointer(h.book,cancel,{pointerId:9});
+      check(cancel+' releases ownership', !h.book.capturedPointers.has(9) && state(h)==='playing');
+    }
+    c.destroy();
+    const miss=createHarness(motion,{scene:{pick:null}}), mc=await boot(miss);
+    pointer(miss.book,'pointerdown');
+    check('miss leaves no capture and does not pause', miss.book.capturedPointers.size===0 && state(miss)==='playing');
+    mc.destroy();
+  });
+
+  await group('form focus and background visibility', async () => {
+    const h=createHarness(motion), c=await boot(h);
+    h.scheduler.advanceTimers(600);
+    event(h.form,'focusin');
+    check('form focus suspends animation', state(h)==='focused' && !h.scheduler.pendingTimers() && !h.scheduler.pendingFrames());
+    event(h.form,'focusout',{relatedTarget:h.input});
+    check('moving between form controls remains paused', state(h)==='focused' && !h.scheduler.pendingTimers());
+    c.setPhase('loading'); c.setPhase('error');
+    check('failed login does not animate while typing', state(h)==='focused' && !h.scheduler.pendingTimers());
+    event(h.form,'focusout',{relatedTarget:h.book});
+    check('leaving form resumes remaining hold', h.scheduler.nextTimerDueIn()===2000);
+    h.document.hidden=true; event(h.document,'visibilitychange');
+    const renders=h.kit.scene.renders.length;
+    h.scheduler.advanceTimers(50000); h.kit.scene.invalidate(); h.window.dispatchEvent({type:'resize'});
+    check('hidden page does not render or advance', state(h)==='hidden' && topic(h)===0 && h.kit.scene.renders.length===renders && !h.scheduler.pendingTimers() && !h.scheduler.pendingFrames());
+    h.document.hidden=false; event(h.document,'visibilitychange');
+    check('visible resumes saved wait, no backlog', state(h)==='playing' && h.scheduler.nextTimerDueIn()===2000);
+    h.scheduler.advanceTimers(2000); h.scheduler.stepFrame(16);
+    const progress=latestRender(h).transition.progress;
+    h.document.hidden=true; event(h.document,'visibilitychange');
+    h.scheduler.advanceTimers(100000);
+    h.document.hidden=false; event(h.document,'visibilitychange');
+    check('hidden mid-transition resumes bounded progress', latestRender(h).transition.progress===progress && h.scheduler.pendingFrames()===1);
+    h.scheduler.runFrames();
+    check('resumed transition commits once', topic(h)===1 && h.scheduler.pendingTimers()===1);
+    c.destroy();
+  });
+
+  await group('reduced motion uses fixed spread and no automatic work', async () => {
+    const h=createHarness(motion,{reduced:true}), c=await boot(h);
+    check('reduced starts on first headline', topic(h)===0 && state(h)==='reduced');
+    check('reduced has no timers/RAF and labels unavailable animation', !h.scheduler.pendingTimers() && !h.scheduler.pendingFrames() && h.book.getAttribute('aria-disabled')==='true');
+    key(h.book,'Enter'); pointer(h.book,'pointerdown'); pointer(h.book,'pointerup');
+    check('reduced clicks cannot animate or change text', topic(h)===0 && !h.scheduler.pendingTimers() && !h.scheduler.pendingFrames());
+    h.reduced.setMatches(false);
+    check('motion preference re-enable permits carousel', state(h)==='playing' && h.scheduler.pendingTimers()===1);
+    h.scheduler.advanceTimers(2600); h.scheduler.stepFrame(16);
+    h.reduced.setMatches(true);
+    check('reduced mid-transition settles complete text', state(h)==='reduced' && !latestRender(h).transition && !h.scheduler.pendingFrames() && !h.scheduler.pendingTimers());
+    c.destroy();
+  });
+
+  await group('phase buffering, auth locks and lifecycle ordering', async () => {
+    const deferred=createDeferred(), h=createHarness(motion,{loadScene:()=>deferred.promise}), c=h.mount();
+    c.setPhase('loading'); await microtasks(); deferred.resolve(h.kit.module); await c.ready;
+    check('buffered loading blocks first timer', state(h)==='loading' && !h.scheduler.pendingTimers() && !h.scheduler.pendingFrames());
+    for(const k of [' ','Enter']) check('loading guards '+k, key(h.book,k).defaultPrevented && !h.scheduler.pendingTimers());
+    pointer(h.book,'pointerdown'); check('loading guards capture', h.book.capturedPointers.size===0);
+    c.setPhase('error'); check('error resumes intended remaining hold', state(h)==='playing' && h.scheduler.nextTimerDueIn()===2600);
+    c.setPhase('nonsense'); check('unknown phase normalizes', h.root.dataset.motionPhase==='idle');
+    c.setPhase('success'); check('success stops without changing headline', topic(h)===0 && state(h)==='success' && !h.scheduler.pendingTimers() && !h.scheduler.pendingFrames());
+    key(h.book,'Enter'); check('success cannot restart', state(h)==='success' && !h.scheduler.pendingTimers());
+    c.destroy();
+    const early=createHarness(motion), ec=early.mount();
+    ec.setPhase('success'); await ec.ready;
+    check('early success stays static after module resolves', topic(early)===0 && state(early)==='success' && !early.scheduler.pendingTimers());
+    ec.destroy();
+    const dragged=createHarness(motion), dc=await boot(dragged);
+    pointer(dragged.book,'pointerdown',{pointerId:41}); dc.setPhase('loading');
+    check('loading releases active pointer', dragged.book.capturedPointers.size===0 && !dragged.scheduler.pendingTimers());
+    dc.setPhase('error'); check('error resumes after capture release', state(dragged)==='playing' && dragged.scheduler.pendingTimers()===1);
+    dc.destroy();
   });
 
   await group('context loss and scene runtime failures', async () => {
@@ -826,7 +744,7 @@ async function main() {
   await group('destroy releases every owned lifecycle resource', async () => {
     const harness = createHarness(motion);
     const controller = await boot(harness);
-    harness.scheduler.advanceTimers(1900);
+    harness.scheduler.advanceTimers(2600);
     harness.scheduler.stepFrame(200);
     const staleFrame = harness.scheduler.frameIds()[0];
     pointer(harness.book, 'pointerdown', { pointerId: 51 });
