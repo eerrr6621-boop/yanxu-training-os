@@ -6,7 +6,7 @@ const context = {};
 vm.runInNewContext(fs.readFileSync('web/releases.js', 'utf8'), context);
 vm.runInNewContext(fs.readFileSync('web/updates.js', 'utf8'), context);
 const entries = context.YanxuReleases;
-const { selectDays, formatRecordTime, latestRecord, summaryCount } = context.YanxuReleaseView;
+const { selectDays, formatRecordTime, latestRecord } = context.YanxuReleaseView;
 check(entries.length >= 7, 'retained recorded days and month archive');
 check(new Set(entries.map(entry => entry.date)).size === entries.length, 'one public entry per date');
 check(Object.isFrozen(entries), 'immutable source');
@@ -35,8 +35,6 @@ const publicOnly = selectDays(mixed);
 check(publicOnly[0].sections.length === 1 && publicOnly[0].sections[0].status === 'published', 'future draft and unknown states fail closed');
 check(mixed[0].sections.length === 3, 'selection never mutates source');
 check(selectDays([{sections:[{status:'preview'}]}]).length === 0, 'unreleased-only day never renders');
-check(summaryCount(all) === `${entries.length - 1} 天更新 · 1 份早期归档`, 'count describes days, not iterations');
-check(summaryCount([]) === '暂无更新', 'empty count');
 check(latestRecord(publicOnly[0]) === '2026-09-07T01:00:00+08:00', 'draft timestamp cannot leak into public record');
 check(latestRecord(entries.find(x => x.date === '2026-09-06')) === '2026-09-06T22:07:48+08:00', 'actual weather activation recorded in same-day entry');
 check(latestRecord(entries.find(x => x.date === '2026-08-22')) === '2026-08-22T02:16:07+08:00', 'August 22 verified merge timestamp');
@@ -55,8 +53,36 @@ check(!archive.some(entry => entry.id === 'v13-r2'), 'no invented iteration');
 const renderer = fs.readFileSync('web/updates.js', 'utf8');
 check(!/innerHTML|Date\.now|setInterval/.test(renderer), 'safe text rendering and no fake live update time');
 check(renderer.includes("element('details', 'release-detail')") && renderer.includes("element('summary', 'release-summary')"), 'native keyboard-operable disclosure');
-check(renderer.includes("content.append(detail, stamp)"), 'exact time visible even when detail is closed');
-check(renderer.includes('仅留存日期，未记录时分秒') && renderer.includes('早期归档，仅留存月份'), 'honest unknown-time labels');
+check(!/仅留存日期|未记录时分秒|早期归档|当日汇总|updates-count|summaryCount/.test(renderer), 'no maintenance labels or removed count dependency');
+function renderNotes(notes) {
+  function node(tagName) {
+    return { tagName, className: '', children: [], textContent: '',
+      append(...children) { this.children.push(...children); },
+      replaceChildren(...children) { this.children = children; },
+      setAttribute(name, value) { this[name] = value; } };
+  }
+  const root = node('section');
+  const document = { createElement: node, getElementById(id) {
+    check(id === 'release-timeline', 'renderer only requests existing timeline'); return root;
+  } };
+  let icons = 0;
+  vm.runInNewContext(renderer, { YanxuReleases: notes, document, lucide: { createIcons() { icons++; } } });
+  check(icons === 1, 'renderer finishes icon refresh');
+  return root;
+}
+const rendered = renderNotes(entries);
+check(rendered.children.length === entries.length, 'all actual release days rendered');
+for (const [index, entry] of entries.entries()) {
+  const [meta, content] = rendered.children[index].children;
+  check(meta.children.length === 1 && meta.children[0].tagName === 'time', 'date column has no internal caption');
+  check(meta.children[0].dateTime === entry.date && meta.children[0].textContent === entry.date.replaceAll('-', '.'), 'known date precision retained');
+  const hasStamp = Boolean(latestRecord(entry));
+  check(content.children.length === (hasStamp ? 2 : 1), 'unknown time leaves no empty footer or gap');
+  check(content.children[0].tagName === 'details' && content.children[0].open === (index === 0), 'only newest day expanded');
+  if (hasStamp) check(content.children[1].tagName === 'footer' && content.children[1].children[1].dateTime === latestRecord(entry), 'exact time is outside collapsible details');
+}
+check(renderNotes([]).children.length === 0, 'empty history renders without missing-node errors');
+check(renderNotes([{ sections: [{ status: 'preview' }] }]).children.length === 0, 'unreleased history never creates DOM');
 const asset = fs.readFileSync('web/assets/new-wordmark-v13r11.webp');
 check(asset.toString('ascii', 0, 4) === 'RIFF' && asset.toString('ascii', 8, 12) === 'WEBP', 'NEW uses local WebP');
 check(asset.length < 10000, 'NEW browser budget under 10KB');
@@ -69,10 +95,17 @@ check(submit.includes('justify-content: center') && submit.includes('position: r
 check(css.includes('.orbit-panel .login-submit > svg { position: absolute; right: 22px;'), 'arrow does not displace centered label');
 for (const page of ['index', 'answer', 'materials', 'updates']) {
   const html = fs.readFileSync('web/' + page + '.html', 'utf8');
-  check(html.includes('yanxu-v13-release-r1') && html.includes('v13.css?v=20260907v13r1'), 'current release and shared CSS cache: ' + page);
+  check(html.includes('yanxu-v13-release-r1') && html.includes('v13.css?v=20260907v13r1-notes2'), 'current release and shared CSS cache: ' + page);
 }
 const updateHtml = fs.readFileSync('web/updates.html', 'utf8');
-check(updateHtml.includes('releases.js?v=20260907v13r1') && updateHtml.includes('updates.js?v=20260907v13r1'), 'release data and renderer caches move together');
+check(updateHtml.includes('releases.js?v=20260907v13r1-notes2') && updateHtml.includes('updates.js?v=20260907v13r1-notes2'), 'release data and renderer caches move together');
 check(!/本地预览|已发布|发布与历史|预览迭代|data-release-filter/.test(updateHtml + renderer), 'no internal deployment labels or filters on user-facing page');
 check(updateHtml.includes('<h1>更新记录</h1>'), 'plain-language page name');
+check(!/updates-toolbar|updates-note|updates-count|同一天的更新|记录来源/.test(updateHtml), 'no public maintenance counters or explanations');
+check(css.includes('grid-template-columns: 184px minmax(0,1fr)') && css.includes('font-size: 28px; line-height: 1.25'), 'prominent dates have sufficient column width');
+check(css.includes('.release-meta > time { font-size: 24px; min-height: 32px; }'), 'mobile date remains readable');
+check(updateHtml.includes('href="mailto:ttttyq0531@qq.com">联系作者：ttttyq0531@qq.com</a>'), 'author address is a mail link inside update records');
+check(!app.includes('ttttyq0531@qq.com') && !app.includes('联系作者') && !app.includes('项目已开源'), 'author contact and source link are not on the login homepage');
+check(updateHtml.includes('href="https://github.com/eerrr6621-boop/yanxu-training-os" target="_blank" rel="noopener noreferrer">项目已开源'), 'verified public repository link opens safely within update records');
+check(css.includes('.project-links { display: flex; flex-wrap: wrap;') && css.includes('overflow-wrap: anywhere'), 'project links wrap on narrow viewports');
 console.log(JSON.stringify({ ok: true, suite: 'R11 daily release grouping and exact timestamps', checks }));

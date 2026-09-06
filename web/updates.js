@@ -25,12 +25,7 @@
       .filter(value => formatRecordTime(value) && value.slice(0, 10) === entry.date).sort();
     return times.length ? times[times.length - 1] : null;
   }
-  function summaryCount(entries) {
-    const days = entries.filter(entry => entry.date.length === 10).length;
-    const early = entries.length - days;
-    return [days && `${days} 天更新`, early && `${early} 份早期归档`].filter(Boolean).join(' · ') || '暂无更新';
-  }
-  scope.YanxuReleaseView = Object.freeze({ selectDays, formatRecordTime, latestRecord, summaryCount });
+  scope.YanxuReleaseView = Object.freeze({ selectDays, formatRecordTime, latestRecord });
 
   const document = scope.document;
   const root = document?.getElementById('release-timeline');
@@ -47,7 +42,7 @@
       const article = element('article', 'release-entry'); article.id = entry.id;
       const meta = element('div', 'release-meta');
       const date = element('time', '', entry.date.replaceAll('-', '.')); date.dateTime = entry.date;
-      meta.append(date, element('span', 'release-day-label', entry.date.length === 10 ? '当日汇总' : '早期归档'));
+      meta.append(date);
       const content = element('div', 'release-content');
       const detail = element('details', 'release-detail'); detail.open = index === 0;
       const summary = element('summary', 'release-summary');
@@ -63,17 +58,16 @@
         [...new Set(section.changes)].forEach(change => list.append(element('li', '', change)));
         group.append(subheading, list); detail.append(group);
       });
-      const stamp = element('footer', 'release-record-time');
+      content.append(detail);
       const recordedAt = latestRecord(entry);
       if (recordedAt) {
+        const stamp = element('footer', 'release-record-time');
         const time = element('time', '', formatRecordTime(recordedAt)); time.dateTime = recordedAt;
         stamp.append(element('span', '', '记录更新于'), time, element('span', '', '北京时间'));
-      } else {
-        stamp.textContent = entry.date.length === 10 ? '仅留存日期，未记录时分秒' : '早期归档，仅留存月份';
+        content.append(stamp);
       }
-      content.append(detail, stamp); article.append(meta, content); root.append(article);
+      article.append(meta, content); root.append(article);
     });
-    document.getElementById('updates-count').textContent = summaryCount(entries);
     scope.lucide?.createIcons();
   }
   render();

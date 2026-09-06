@@ -24,6 +24,9 @@ All notable changes to Yanxu Training OS. Dates follow the production release hi
   removed the standalone numbered source label without implying sponsorship.
 - GitHub synchronization is separate and remains pending workflow authorization
   until a remote push and CI are independently verified.
+- Simplified the public update timeline: larger aligned dates, no internal counters
+  or missing-time captions, with verified timestamps retained. Added author email
+  and a public source link in the notes footer only, leaving login navigation unchanged.
 
 ### R11 preview iteration
 - Enlarged login public navigation to 17px on desktop / 16px on mobile. Added one

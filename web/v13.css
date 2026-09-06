@@ -609,6 +609,11 @@ html body.yx-v13 .login-public-nav { display: flex; align-items: center; gap: 24
 html body.yx-v13 .login-history { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; font-size: 1.0625rem; font-weight: 500; color: #405773; padding: 10px 4px; white-space: nowrap; text-decoration: none; }
 html body.yx-v13 .login-history:hover { color: #304f8d; }
 html body.yx-v13 .login-new { display: block; width: 38px; height: auto; flex: 0 0 38px; }
+html body.yx-v13 .project-links { display: flex; flex-wrap: wrap; align-items: center; gap: 0 22px; min-width: 0; }
+html body.yx-v13 .project-links a { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; color: #526983; font-size: 14px; text-decoration: none; overflow-wrap: anywhere; }
+html body.yx-v13 .project-links a:hover { color: #304f8d; text-decoration: underline; text-underline-offset: 4px; }
+html body.yx-v13 .project-links a:focus-visible { outline: 2px solid #507bbc; outline-offset: 4px; border-radius: 3px; }
+html body.yx-v13 .project-links svg { width: 14px; height: 14px; flex-shrink: 0; }
 html body.yx-v13 .login-environment { width: 100%; max-width: 384px; padding: 0 0 24px; margin: 0 0 28px; border-bottom: 1px solid #e7ebf2; }
 html body.yx-v13 .environment-time { display: flex; align-items: baseline; gap: 14px; color: #677991; }
 html body.yx-v13 .environment-time time { font-size: 30px; font-weight: 400; letter-spacing: -.04em; line-height: 1.15; font-variant-numeric: tabular-nums; color: #344b69; }
@@ -634,29 +639,18 @@ html body.yx-v13 .updates-main { width: min(1040px,calc(100% - 80px)); margin: 4
 html body.yx-v13 .updates-heading { margin-bottom: 42px; }
 html body.yx-v13 .updates-heading h1 { font-size: clamp(30px,4vw,44px); color: #263b56; letter-spacing: -.035em; font-weight: 600; margin: 18px 0 12px; }
 html body.yx-v13 .updates-heading p { font-size: 16px; color: #63778f; }
-html body.yx-v13 .updates-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
-html body.yx-v13 .updates-filters { display: flex; padding: 4px; border-radius: 10px; background: #eaf0f6; }
-html body.yx-v13 .updates-filters button { min-height: 40px; border: 0; border-radius: 7px; padding: 0 18px; background: transparent; color: #647891; font-size: 13px; cursor: pointer; }
-html body.yx-v13 .updates-filters button[aria-pressed="true"] { background: #fff; color: #345a8c; box-shadow: 0 2px 6px #2d486212; }
-html body.yx-v13 #updates-count { font-size: 12px; color: #6b7e95; white-space: nowrap; }
-html body.yx-v13 .updates-note { margin: 20px 0 30px; font-size: 12px; color: #6c7d93; line-height: 1.7; }
-html body.yx-v13 .release-entry { display: grid; grid-template-columns: 166px minmax(0,1fr); gap: 32px; padding: 30px 0; border-top: 1px solid #dfe7ef; }
-html body.yx-v13 .release-meta { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding-top: 6px; font-size: 14px; color: #60748b; font-variant-numeric: tabular-nums; }
-html body.yx-v13 .release-status { font-size: 11px; color: #66798e; }
-html body.yx-v13 .release-status.preview { color: #6475ac; }
-html body.yx-v13 .release-status.published { color: #368073; }
-html body.yx-v13 .release-summary { display: flex; align-items: center; justify-content: space-between; gap: 20px; cursor: pointer; list-style: none; min-height: 58px; }
+html body.yx-v13 .release-entry { display: grid; grid-template-columns: 184px minmax(0,1fr); gap: 32px; padding: 30px 0; border-top: 1px solid #dfe7ef; }
+html body.yx-v13 .release-meta { display: flex; align-items: flex-start; font-variant-numeric: tabular-nums; }
+html body.yx-v13 .release-meta > time { display: flex; align-items: center; min-height: 44px; font-size: 28px; line-height: 1.25; font-weight: 500; letter-spacing: -.04em; color: #344e6d; white-space: nowrap; }
+html body.yx-v13 .release-summary { display: flex; align-items: center; justify-content: space-between; gap: 20px; cursor: pointer; list-style: none; min-height: 44px; }
 html body.yx-v13 .release-summary::-webkit-details-marker { display: none; }
 html body.yx-v13 .release-version { color: #657b9a; font-size: 12px; }
-html body.yx-v13 .release-summary h2 { color: #2c425e; font-size: 20px; font-weight: 550; margin: 7px 0 0; line-height: 1.5; }
+html body.yx-v13 .release-summary h2 { color: #2c425e; font-size: 20px; font-weight: 550; margin: 0; line-height: 1.5; }
 html body.yx-v13 .release-chevron { color: #71849b; font-size: 20px; transition: transform .2s; }
 html body.yx-v13 .release-detail[open] .release-chevron { transform: rotate(180deg); }
 html body.yx-v13 .release-changes { padding: 0 0 0 18px; margin: 20px 0 4px; color: #5c7089; font-size: 14px; line-height: 1.85; }
 html body.yx-v13 .release-changes li + li { margin-top: 8px; }
-html body.yx-v13 .release-day-label { font-size: 11px; color: #77889c; }
 html body.yx-v13 .release-content { min-width: 0; }
-html body.yx-v13 .release-statuses { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; }
-html body.yx-v13 .release-statuses .release-status::before { content: ''; display: inline-block; width: 5px; height: 5px; border-radius: 50%; margin: 0 6px 2px 0; background: currentColor; }
 html body.yx-v13 .release-group { margin-top: 26px; }
 html body.yx-v13 .release-group + .release-group { padding-top: 24px; border-top: 1px solid #e3eaf2; }
 html body.yx-v13 .release-group-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 0; font-weight: 500; }
@@ -675,10 +669,8 @@ html body.yx-v13 .updates-page :focus-visible { outline: 3px solid #507bbc55; ou
   html body.yx-v13 .environment-time time { font-size: 25px; }
   html body.yx-v13 .topbar-environment { display: none; }
   html body.yx-v13 .updates-main { width: calc(100% - 40px); margin-top: 28px; }
-  html body.yx-v13 .updates-toolbar { flex-wrap: wrap; gap: 10px; }
-  html body.yx-v13 .updates-filters button { min-height: 44px; padding: 0 12px; }
-  html body.yx-v13 .release-entry { grid-template-columns: minmax(0,1fr); gap: 14px; padding: 25px 0; }
-  html body.yx-v13 .release-meta { flex-direction: row; gap: 14px; align-items: center; }
+  html body.yx-v13 .release-entry { grid-template-columns: minmax(0,1fr); gap: 8px; padding: 25px 0; }
+  html body.yx-v13 .release-meta > time { font-size: 24px; min-height: 32px; }
   html body.yx-v13 .release-summary h2 { font-size: 18px; }
 }
 /* R7: silver navigation and continuous light work surfaces. */
