@@ -5,6 +5,7 @@ cd "$(dirname "$0")/.."
 node scripts/check_frontend.cjs
 node scripts/test_local_esm.cjs
 node scripts/test_frontend.cjs
+node scripts/test_regions.cjs
 node scripts/test_login_book.cjs
 node scripts/test_book_geometry.mjs
 node scripts/test_book_binding.cjs
@@ -22,6 +23,8 @@ trap cleanup EXIT
 mkdir -p "$check_root/out"
 "$check_java" -jar lib/ecj.jar -17 -encoding UTF-8 \
   -cp 'lib/h2.jar:lib/pdfbox-app-3.0.8.jar' -d "$check_root/out" src/com/training/*.java
+"$check_java" -jar lib/ecj.jar -17 -encoding UTF-8 -cp "$check_root/out:lib/h2.jar:lib/pdfbox-app-3.0.8.jar" -d "$check_root/out" scripts/DispatchPreferenceTest.java
+"$check_java" -cp "$check_root/out:lib/h2.jar:lib/pdfbox-app-3.0.8.jar" com.training.DispatchPreferenceTest
 for check_file in web/app.js web/materials.js test.js test_integrity.js test_faculty.js; do
   node --check "$check_file"
 done

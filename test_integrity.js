@@ -686,6 +686,7 @@ async function waitForResumeItem(teacherId, auth, timeoutMs = 8000) {
 
   const resumeTeacher = (name, gender, field, intro) => ({
     name, gender, org: '研序完整性测试学院', title: '高级讲师', field,
+    base_province: '浙江', base_city: '杭州',
     phone: '', email: '', fee_rate: 1800, intro, status: '在库',
     in_date: '2026-09-01', out_date: '',
   });

@@ -93,6 +93,13 @@ public class Db {
                     "ON teacher_resumes(parse_status,created_at)");
             st.execute("ALTER TABLE teacher_resumes ADD COLUMN IF NOT EXISTS manual_profile CLOB");
             // 兼容已有本地数据库：以非破坏方式补齐运营字段。
+            // 不从单位/简历推断常驻地；历史未知值保留，首次编辑时由管理员补录。
+            st.execute("ALTER TABLE teachers ADD COLUMN IF NOT EXISTS base_province VARCHAR(64)");
+            st.execute("ALTER TABLE teachers ADD COLUMN IF NOT EXISTS base_city VARCHAR(64)");
+            st.execute("ALTER TABLE demands ADD COLUMN IF NOT EXISTS training_province VARCHAR(64)");
+            st.execute("ALTER TABLE demands ADD COLUMN IF NOT EXISTS training_city VARCHAR(64)");
+            st.execute("ALTER TABLE demands ADD COLUMN IF NOT EXISTS training_mode VARCHAR(16)");
+            st.execute("ALTER TABLE demands ADD COLUMN IF NOT EXISTS training_period VARCHAR(16)");
             st.execute("ALTER TABLE projects ADD COLUMN IF NOT EXISTS owner VARCHAR(64)");
             st.execute("ALTER TABLE projects ADD COLUMN IF NOT EXISTS participant_count INT DEFAULT 0");
             st.execute("ALTER TABLE projects ADD COLUMN IF NOT EXISTS delivery_mode VARCHAR(32)");
@@ -154,6 +161,11 @@ public class Db {
         exec("INSERT INTO teachers(name,gender,org,title,field,phone,email,fee_rate,intro,status,in_date) VALUES(?,?,?,?,?,?,?,?,?,'在库',?)",
                 "刘晓芸", "女", "某咨询公司", "资深顾问", "市场营销、客户服务", "13800000005", "liuxy@example.com", 2000,
                 "十余年营销咨询经验，案例丰富，互动性强。", "2025-02-15");
+
+        // Synthetic demo locations only, never a migration/backfill for existing teachers.
+        exec("UPDATE teachers SET base_province='北京',base_city='北京' WHERE id IN (1,2)");
+        exec("UPDATE teachers SET base_province='浙江',base_city='杭州' WHERE id IN (3,5)");
+        exec("UPDATE teachers SET base_province='江苏',base_city='南京' WHERE id=4");
 
         exec("INSERT INTO demands(title,unit,contact,phone,hours,content,teacher_req,expect_date,status,remark) VALUES(?,?,?,?,?,?,?,?,?,?)",
                 "中层干部领导力提升培训班", "某市国资委", "周主任", "0571-88000001", 24,

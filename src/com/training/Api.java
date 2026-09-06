@@ -37,10 +37,10 @@ public class Api {
             "hours", "amount", "received", "fee_rate", "score", "rate", "demand_id", "project_id",
             "teacher_id", "bid_id", "send_count", "participant_count"));
     static {
-        FIELDS.put("demands", new String[]{"title","unit","contact","phone","hours","content","teacher_req","expect_date","status","remark"});
+        FIELDS.put("demands", new String[]{"title","unit","contact","phone","hours","content","teacher_req","expect_date","status","remark","training_province","training_city","training_mode","training_period"});
         FIELDS.put("bids", new String[]{"demand_id","amount","proposal","bid_date","status","review"});
         FIELDS.put("projects", new String[]{"demand_id","bid_id","title","unit","hours","amount","start_date","end_date","owner","participant_count","delivery_mode","venue","contract_no","status","remark"});
-        FIELDS.put("teachers", new String[]{"name","gender","org","title","field","phone","email","fee_rate","intro","status","in_date","out_date"});
+        FIELDS.put("teachers", new String[]{"name","gender","org","title","field","phone","email","fee_rate","intro","status","in_date","out_date","base_province","base_city"});
         FIELDS.put("teacher_evals", new String[]{"teacher_id","project_id","score","comment","evaluator","eval_date"});
         FIELDS.put("dispatches", new String[]{"project_id","teacher_id","subject","teach_date","start_time","end_time","venue","confirm_deadline","material_status","hours","status","sent_at","confirmed_at","msg_log","remark"});
         FIELDS.put("questionnaires", new String[]{"title","target","project_id","questions","status"});
@@ -113,6 +113,7 @@ public class Api {
         if (path.equals("/api/charges/receive")) { requireMethod(ex, "POST"); requireWrite(s); chargeReceive(ex); return; }
         if (path.equals("/api/teachers/checkout")) { requireMethod(ex, "POST"); requireWrite(s); teacherOut(ex, "出库"); return; }
         if (path.equals("/api/teachers/checkin")) { requireMethod(ex, "POST"); requireWrite(s); teacherOut(ex, "在库"); return; }
+        if (path.equals("/api/teachers/residence")) { requireMethod(ex, "POST"); requireWrite(s); teacherResidence(ex); return; }
 
         // 通用模块 CRUD：/api/{module}  /api/{module}/delete
         if (path.startsWith("/api/")) {
@@ -345,9 +346,27 @@ public class Api {
      * 普通保存只能改业务资料，不能改写已经被发送、收款、发放或归档确认过的事实。
      * 这样项目状态与支撑该状态的交付/财务记录始终一致。
      */
+    private static void preserveMissing(Map<String, Object> body, Map<String, Object> existing, String... fields) {
+        if (existing == null) return;
+        for (String field : fields) if (!body.containsKey(field)) body.put(field, existing.get(field));
+    }
+
     private static void validateSave(String mod, Map<String, Object> body, long id,
                                      Map<String, Object> existing) throws Exception {
         if (id > 0 && existing == null) throw new ApiException(404, "要修改的记录不存在或已被删除");
+
+        // Old clients must not erase newly added scheduling fields on full-row updates.
+        if ("teachers".equals(mod)) {
+            preserveMissing(body, existing, "base_province", "base_city");
+            DispatchPreference.validateRegion(body, "base_province", "base_city", true);
+        }
+        if ("demands".equals(mod)) {
+            body.put("expect_date", ScheduleDates.canonical(body.get("expect_date")));
+            preserveMissing(body, existing, "training_province", "training_city", "training_mode", "training_period");
+            DispatchPreference.validateRegion(body, "training_province", "training_city", false);
+            DispatchPreference.validateChoice(body, "training_mode", "", "线下", "线上", "待定");
+            DispatchPreference.validateChoice(body, "training_period", "", "上午", "下午", "全天", "待定");
+        }
 
         if ("demands".equals(mod)) demandStatusForSave(existing, body);
 
@@ -404,6 +423,9 @@ public class Api {
             requireUnchanged(existing, body, "授课安排已发送或确认，不能修改讲师、日期、课时和授课内容；如需变更请重新调度",
                     "project_id", "teacher_id", "subject", "teach_date", "start_time", "end_time",
                     "venue", "confirm_deadline", "hours");
+
+        // Validate after the immutable-field guard so old confirmed dates cannot be edited.
+        if ("dispatches".equals(mod)) body.put("teach_date", ScheduleDates.canonical(body.get("teach_date")));
 
         if ("charges".equals(mod) && existing != null && dbl(existing, "received") > 0.005)
             requireUnchanged(existing, body, "该应收已有收款记录，不能再修改所属项目或应收金额",
@@ -1316,6 +1338,15 @@ public class Api {
     }
 
     /** 师资出库/重新入库 */
+    private static void teacherResidence(HttpExchange ex) throws Exception {
+        Map<String, Object> input = body(ex);
+        long id = Json.lng(input, "id");
+        if (Db.one("SELECT id FROM teachers WHERE id=?", id) == null) throw new ApiException(404, "师资记录不存在");
+        DispatchPreference.validateRegion(input, "base_province", "base_city", true);
+        Db.exec("UPDATE teachers SET base_province=?,base_city=? WHERE id=?", input.get("base_province"), input.get("base_city"), id);
+        ok(ex, "常驻地区已保存；未改动其他师资资料");
+    }
+
     private static void teacherOut(HttpExchange ex, String st) throws Exception {
         long id = Json.lng(body(ex), "id");
         Map<String, Object> teacher = Db.one("SELECT * FROM teachers WHERE id=?", id);

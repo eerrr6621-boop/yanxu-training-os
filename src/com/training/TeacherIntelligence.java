@@ -34,6 +34,7 @@ public final class TeacherIntelligence {
     private static final int MAX_REQUIREMENT_CHARS = 10_000;
     private static final long PARSE_TIMEOUT_SECONDS = 12;
     private static final String PROFILE_VERSION = "local-rules-v2";
+    private static final String RECOMMENDATION_VERSION = "local-rules-v3-prebid-locality";
 
     private static final Set<Long> SCHEDULED = ConcurrentHashMap.newKeySet();
     /** Upload validation and queued reparses share the same two extraction slots. */
@@ -212,8 +213,9 @@ public final class TeacherIntelligence {
         if (fileName.isEmpty()) throw new TalentException(400, "请选择讲师简历文件");
         if (fileName.length() > 180) throw new TalentException(400, "文件名不能超过180个字符");
         synchronized (Api.MUTATION_LOCK) {
-            if (Db.one("SELECT id FROM teachers WHERE id=?", teacherId) == null)
-                throw new TalentException(404, "讲师不存在或已被删除");
+            Map<String, Object> residence = Db.one("SELECT id,base_province,base_city FROM teachers WHERE id=?", teacherId);
+            if (residence == null) throw new TalentException(404, "讲师不存在或已被删除");
+            DispatchPreference.validateRegion(residence, "base_province", "base_city", true);
         }
 
         long uploadLimit = uploadLimit(extension);
@@ -295,8 +297,9 @@ public final class TeacherIntelligence {
                 id = Db.transaction(() -> {
                     Auth.Session active = Auth.get(Api.token(ex));
                     if (active == null || !Auth.canWrite(active)) throw new TalentException(403, "账号权限已变更，请重新登录后重试");
-                    Map<String, Object> currentTeacher = Db.one("SELECT id,name,org,title,field,intro FROM teachers WHERE id=?", teacherId);
+                    Map<String, Object> currentTeacher = Db.one("SELECT id,name,org,title,field,intro,base_province,base_city FROM teachers WHERE id=?", teacherId);
                     if (currentTeacher == null) throw new TalentException(404, "讲师已被删除，请刷新后重试");
+                    DispatchPreference.validateRegion(currentTeacher, "base_province", "base_city", true);
                     List<Map<String, Object>> old = Db.query("SELECT storage_name,manual_profile,profile_json,reviewed_by,reviewed_at FROM teacher_resumes WHERE teacher_id=? ORDER BY id DESC", teacherId);
                     for (Map<String, Object> item : old) oldStorageNames.add(value(item, "storage_name"));
                     Map<String, Object> previous = old.isEmpty() ? Collections.emptyMap() : old.get(0);
@@ -391,12 +394,20 @@ public final class TeacherIntelligence {
         synchronized (Api.MUTATION_LOCK) {
             Auth.Session active = Auth.get(Api.token(ex));
             if (active == null || !Auth.canWrite(active)) throw new TalentException(403, "账号权限已变更，请重新登录后重试");
-            Map<String, Object> current = Db.one("SELECT r.id FROM teacher_resumes r JOIN teachers t ON t.id=r.teacher_id WHERE r.id=? AND r.is_current=TRUE", id);
+            Map<String, Object> current = Db.one("SELECT r.id,t.base_province,t.base_city FROM teacher_resumes r JOIN teachers t ON t.id=r.teacher_id WHERE r.id=? AND r.is_current=TRUE", id);
             if (current == null) throw new TalentException(409, "简历已被替换或删除，请刷新后重新编辑");
-            Db.exec("UPDATE teacher_resumes SET profile_json=?,manual_profile=?,profile_source='manual',parse_status='ready'," +
-                            "parse_error=NULL,is_current=TRUE,reviewed_by=?,reviewed_at=CURRENT_TIMESTAMP," +
-                            "updated_at=CURRENT_TIMESTAMP WHERE id=?",
-                    profileJson, manualProfile, session.uid, id);
+            if (body.containsKey("base_province")) current.put("base_province", body.get("base_province"));
+            if (body.containsKey("base_city")) current.put("base_city", body.get("base_city"));
+            DispatchPreference.validateRegion(current, "base_province", "base_city", true);
+            final String profileText = manualProfile;
+            Db.transaction(() -> {
+                Db.exec("UPDATE teachers SET base_province=?,base_city=? WHERE id=?", current.get("base_province"), current.get("base_city"), row.get("teacher_id"));
+                Db.exec("UPDATE teacher_resumes SET profile_json=?,manual_profile=?,profile_source='manual',parse_status='ready'," +
+                                "parse_error=NULL,is_current=TRUE,reviewed_by=?,reviewed_at=CURRENT_TIMESTAMP," +
+                                "updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                        profileJson, profileText, session.uid, id);
+                return null;
+            });
         }
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("teacher_id", row.get("teacher_id"));
@@ -519,7 +530,7 @@ public final class TeacherIntelligence {
         if (manual.length() > MAX_REQUIREMENT_CHARS)
             throw new TalentException(413, "客户需求不能超过" + MAX_REQUIREMENT_CHARS + "个字符");
         Object rawTopK = body.containsKey("max_results") ? body.get("max_results") : body.get("top_k");
-        int topK = rawTopK != null ? (int) integer(rawTopK, "推荐数量", 1, 20) : 5;
+        int topK = rawTopK != null ? (int) integer(rawTopK, "推荐数量（至少3位）", 3, 20) : 3;
         double explicitBudget = body.containsKey("max_fee_rate") ? finiteNumber(body.get("max_fee_rate"), "最高课酬") : 0;
         if (explicitBudget < 0) throw new TalentException(400, "最高课酬不能为负数");
         boolean hardBudget = truthy(body.get("hard_budget"));
@@ -528,23 +539,26 @@ public final class TeacherIntelligence {
         List<Map<String, Object>> teachers;
         synchronized (Api.MUTATION_LOCK) {
             if (demandId > 0) {
-                demand = Db.one("SELECT id,title,unit,hours,content,teacher_req,expect_date,remark FROM demands WHERE id=?", demandId);
+                demand = Db.one("SELECT id,title,unit,hours,content,teacher_req,expect_date,remark,training_province,training_city,training_mode,training_period FROM demands WHERE id=?", demandId);
                 if (demand == null) throw new TalentException(404, "培训需求不存在或已被删除");
             }
-            teachers = Db.query("SELECT t.id,t.name,t.org,t.title,t.field,t.fee_rate,t.intro," +
+            teachers = Db.query("SELECT t.id,t.name,t.org,t.title,t.field,t.fee_rate,t.intro,t.base_province,t.base_city," +
                     "r.id resume_id,r.profile_json,r.manual_profile,r.profile_source,r.parse_status,r.extracted_text," +
                     "(SELECT AVG(e.score) FROM teacher_evals e WHERE e.teacher_id=t.id) eval_avg," +
                     "(SELECT COUNT(*) FROM teacher_evals e WHERE e.teacher_id=t.id) eval_count," +
                     "(SELECT COUNT(*) FROM dispatches d WHERE d.teacher_id=t.id AND d.status='已完成') delivered_sessions," +
                     "(SELECT COALESCE(SUM(d.hours),0) FROM dispatches d WHERE d.teacher_id=t.id AND d.status='已完成') delivered_hours " +
-                    "FROM teachers t LEFT JOIN teacher_resumes r ON r.teacher_id=t.id AND r.is_current=TRUE " +
+                    "FROM teachers t LEFT JOIN teacher_resumes r ON r.id=(SELECT MAX(r2.id) FROM teacher_resumes r2 WHERE r2.teacher_id=t.id AND r2.is_current=TRUE) " +
                     "WHERE t.status='在库' ORDER BY t.id");
         }
 
         String source = requirementSource(demand, manual);
         if (source.trim().isEmpty()) throw new TalentException(400, "请填写客户需求，或选择已有培训需求");
         Requirement requirement = Requirement.from(source, demand, explicitBudget);
+        DispatchPreference logistics = DispatchPreference.from(body, demand);
         Set<Long> conflicts = scheduleConflicts(requirement.date);
+        String arrivalDate = requirement.date.isEmpty() ? "" : LocalDate.parse(requirement.date).minusDays(1).toString();
+        Set<Long> arrivalConflicts = scheduleConflicts(arrivalDate);
 
         List<Map<String, Object>> candidates = new ArrayList<>();
         List<Map<String, Object>> excluded = new ArrayList<>();
@@ -577,42 +591,76 @@ public final class TeacherIntelligence {
                 excluded.add(item);
                 continue;
             }
-            candidates.add(match.toMap(teacher, profile));
+            Map<String, Object> candidate = match.toMap(teacher, profile);
+            Map<String, Object> dispatchFit = logistics.describe(teacher, requirement.date);
+            if (Boolean.TRUE.equals(dispatchFit.get("arrival_day_before")) && arrivalConflicts.contains(teacherId)) {
+                // A prior-day course may still allow evening travel. Flag, never claim impossible.
+                List<Object> notes = new ArrayList<>((List<?>) dispatchFit.get("notes"));
+                notes.add("提前到达日 " + arrivalDate + " 已有系统授课记录，须核实结束时间与交通衔接");
+                dispatchFit.put("notes", notes);
+                dispatchFit.put("arrival_day_conflict", true);
+            }
+            candidate.put("dispatch_fit", dispatchFit);
+            candidate.put("base_province", teacher.get("base_province"));
+            candidate.put("base_city", teacher.get("base_city"));
+            candidates.add(candidate);
         }
-        candidates.sort((left, right) -> {
-            int byScore = Double.compare(number(right, "score"), number(left, "score"));
-            return byScore != 0 ? byScore : Long.compare(asLong(left.get("teacher_id")), asLong(right.get("teacher_id")));
-        });
+        candidates.sort((left, right) -> compareCandidates(left, right, logistics.localPreferenceActive()));
         for (int i = 0; i < candidates.size(); i++) candidates.get(i).put("rank", i + 1);
+        int eligibleCount = candidates.size();
         if (candidates.size() > topK) candidates = new ArrayList<>(candidates.subList(0, topK));
 
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("demand_id", demandId > 0 ? demandId : null);
         Map<String, Object> analysis = requirement.toMap();
         analysis.put("summary", requirement.summary());
+        analysis.put("dispatch_preferences", logistics.toMap());
         analysis.put("needs_manual_review", Arrays.asList("所在地、出差范围、授课形式及复杂或否定条件请人工核实", "仅明确填写的每课时上限参与预算匹配；需求正文中的总预算不换算为课酬"));
         data.put("analysis", analysis);
         data.put("recognized_requirement", analysis);
         data.put("total_in_library", teachers.size());
+        data.put("minimum_required", 3);
+        data.put("eligible_count", eligibleCount);
+        data.put("returned_count", candidates.size());
+        data.put("shortfall", Math.max(0, 3 - candidates.size()));
+        data.put("residence_pending_count", candidates.stream().filter(item -> !Boolean.TRUE.equals(((Map<?, ?>) item.get("dispatch_fit")).get("residence_complete"))).count());
+        data.put("stage", "投标前师资推荐");
         data.put("recommendations", candidates);
         data.put("results", candidates);
         data.put("excluded", excluded);
-        data.put("algorithm_version", PROFILE_VERSION);
+        data.put("algorithm_version", RECOMMENDATION_VERSION);
         data.put("notice", candidates.isEmpty()
                 ? "当前没有找到足够相关的讲师。可补充课程主题、具体案例或校准专业画像后再试；请勿把空结果理解为已核实无人具备能力。"
                 : "这是基于档案文字与专业标签的本地规则匹配，分数不是胜任概率。地点、授课形式及复杂条件需人工核实，最终人选由运营人员确认。");
         sendOk(ex, data);
     }
 
-    private static Set<Long> scheduleConflicts(String date) throws Exception {
+    static int compareCandidates(Map<String, Object> left, Map<String, Object> right, boolean localPreferenceActive) {
+            if (localPreferenceActive) {
+                int byBand = Integer.compare(Math.min(9, (int) (number(right, "professional_score") / 10)), Math.min(9, (int) (number(left, "professional_score") / 10)));
+                if (byBand != 0) return byBand;
+                boolean leftLocal = Boolean.TRUE.equals(((Map<?, ?>) left.get("dispatch_fit")).get("local_priority"));
+                boolean rightLocal = Boolean.TRUE.equals(((Map<?, ?>) right.get("dispatch_fit")).get("local_priority"));
+                if (leftLocal != rightLocal) return leftLocal ? -1 : 1;
+            }
+            int byScore = Double.compare(number(right, "score"), number(left, "score"));
+            return byScore != 0 ? byScore : Long.compare(asLong(left.get("teacher_id")), asLong(right.get("teacher_id")));
+    }
+
+    static Set<Long> scheduleConflicts(String date) throws Exception {
         Set<Long> ids = new LinkedHashSet<>();
         if (date == null || date.isEmpty()) return ids;
         List<Map<String, Object>> rows;
         synchronized (Api.MUTATION_LOCK) {
-            rows = Db.query("SELECT DISTINCT teacher_id FROM dispatches WHERE teach_date=? " +
-                    "AND status IN ('待发送','已发送','已确认','已完成')", date);
+            rows = Db.query("SELECT teacher_id,teach_date FROM dispatches WHERE " +
+                    "status IN ('待发送','已发送','已确认','已完成')");
         }
-        for (Map<String, Object> row : rows) ids.add(asLong(row.get("teacher_id")));
+        // Do not rewrite history: compare valid legacy non-padded/whitespace dates in memory.
+        // An unparseable date is not proof of availability; the UI always requires confirmation.
+        for (Map<String, Object> row : rows) {
+            try { if (date.equals(ScheduleDates.canonical(row.get("teach_date")))) ids.add(asLong(row.get("teacher_id"))); }
+            catch (IllegalArgumentException ignored) { /* Invalid history remains for manual correction. */ }
+        }
         return ids;
     }
 
@@ -714,6 +762,7 @@ public final class TeacherIntelligence {
             if (match.relevant && !matched.isEmpty()) match.reasons.add("专业档案中有与本次需求对应的文字，请结合下方证据核实具体课程和案例");
         }
 
+        match.professionalScore = match.possible <= 0 ? 0 : round(match.earned / match.possible * 100, 1);
         double avg = number(teacher, "eval_avg");
         long evalCount = asLong(teacher.get("eval_count"));
         long deliveredSessions = asLong(teacher.get("delivered_sessions"));
@@ -1535,6 +1584,10 @@ public final class TeacherIntelligence {
 
         static Requirement from(String source, Map<String, Object> demand, double explicitBudget) {
             String date = demand == null ? "" : cleanLine(value(demand, "expect_date"));
+            if (!date.isEmpty()) {
+                try { date = ScheduleDates.canonical(date); }
+                catch (Exception invalidDate) { throw new IllegalArgumentException("已有需求的培训日期无效，请先修正后再推荐"); }
+            }
             if (!date.matches("20\\d{2}-\\d{2}-\\d{2}")) {
                 Matcher match = DATE_PATTERN.matcher(source);
                 if (match.find()) {
@@ -1583,7 +1636,7 @@ public final class TeacherIntelligence {
     }
 
     private static final class Match {
-        double earned, possible, score;
+        double earned, possible, score, professionalScore;
         boolean relevant;
         String evidenceStrength = "insufficient";
         final Map<String, Object> breakdown = new LinkedHashMap<>();
@@ -1637,6 +1690,7 @@ public final class TeacherIntelligence {
             map.put("fee_rate", teacher.get("fee_rate"));
             map.put("match_score", score);
             map.put("score", score);
+            map.put("professional_score", professionalScore);
             map.put("evidence_strength", evidenceStrength);
             map.put("tags", profile.get("tags"));
             map.put("industries", profile.get("industries"));

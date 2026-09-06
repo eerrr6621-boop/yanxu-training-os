@@ -852,7 +852,8 @@ html body.yx-v13 .teacher-console-head .teacher-summary small { margin: 0; color
 html body.yx-v13 .teacher-console-head .teacher-summary b { margin: 0; font-size: 16px; line-height: 1.4; font-weight: 550; color: #485971; }
 html body.yx-v13 .teacher-console-head .teacher-summary em { margin-left: 3px; font-size: 10px; color: #8b96a8; }
 html body.yx-v13 .teacher-console .teacher-recommend-workbench { display: block; width: 100%; max-width: 1120px; margin: 0 auto; padding: 0 0 28px; }
-html body.yx-v13 .teacher-recommend-workbench .recommend-input-card { position: static; display: grid; grid-template-columns: minmax(0,1fr) auto; grid-template-areas: "heading modes" "import import" "guided guided" "raw raw" "settings settings" "submit submit" "foot foot"; width: 100%; padding: 28px 32px 22px; border: 1px solid #dfe6f0; border-radius: 14px; background: #fff; box-shadow: none; }
+html body.yx-v13 .teacher-recommend-workbench .recommend-input-card { position: static; display: grid; grid-template-columns: minmax(0,1fr) auto; grid-template-areas: "heading modes" "import import" "guided guided" "raw raw" "logistics logistics" "settings settings" "submit submit" "foot foot"; width: 100%; padding: 28px 32px 22px; border: 1px solid #dfe6f0; border-radius: 14px; background: #fff; box-shadow: none; }
+html body.yx-v13 .recommend-input-card > .recommend-logistics { grid-area: logistics; }
 html body.yx-v13 .recommend-input-card > .recommend-section-head { grid-area: heading; gap: 13px; margin-bottom: 22px; }
 html body.yx-v13 .recommend-input-card .recommend-section-head h2 { margin: 0; color: #203450; font-size: 23px; line-height: 1.5; font-weight: 600; letter-spacing: -.02em; }
 html body.yx-v13 .recommend-input-card .recommend-section-head small { margin-top: 5px; font-size: 13px; color: #758197; }
@@ -930,6 +931,37 @@ html body.yx-v13 .recommend-results-head { display: flex; justify-content: flex-
 html body.yx-v13 .recommend-results-head h2 { margin: 0; color: #203450; font-size: 17px; font-weight: 600; }
 html body.yx-v13 .recommend-results-head h2 em { color: #687e9e; font-size: 14px; font-style: normal; margin-left: 6px; }
 html body.yx-v13 .recommend-results-head > small { margin: 0; color: #6c7d96; font-size: 12px; }
+html body.yx-v13 .recommend-results-head h2 { flex: 0 0 auto; }
+html body.yx-v13 .recommend-logistics { padding: 20px 0; border-top: 1px solid #e8edf5; }
+html body.yx-v13 .recommend-logistics-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+html body.yx-v13 .recommend-logistics-heading h3 { margin: 0; font-size: 14px; font-weight: 600; color: #263e60; }
+html body.yx-v13 .recommend-logistics-heading label { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: #566e91; cursor: pointer; }
+html body.yx-v13 .recommend-logistics-heading input { width: 16px; height: 16px; accent-color: #4565db; }
+html body.yx-v13 .recommend-logistics .form-grid { grid-template-columns: repeat(4, minmax(0,1fr)); gap: 14px; }
+html body.yx-v13 .recommend-logistics .form-grid .form-item { display: flex; flex-direction: column; align-items: stretch; gap: 8px; margin: 0; }
+html body.yx-v13 .recommend-logistics .form-item label { font-size: 12px; }
+html body.yx-v13 .recommend-logistics > small { display: block; color: #6a7e9b; line-height: 1.7; font-size: 12px; margin-top: 8px; }
+html body.yx-v13 .recommend-shortage { display: flex; align-items: flex-start; gap: 12px; margin-top: 14px; padding: 15px 18px; border-left: 2px solid #d3a156; background: #faf8f2; color: #685439; border-radius: 4px 12px 12px 4px; }
+html body.yx-v13 .recommend-shortage > svg { width: 18px; height: 18px; flex: 0 0 auto; margin-top: 2px; }
+html body.yx-v13 .recommend-shortage b { font-size: 13px; font-weight: 600; }
+html body.yx-v13 .recommend-shortage p { margin: 4px 0 0; font-size: 12px; line-height: 1.7; }
+html body.yx-v13 .teacher-dispatch-fit { border-bottom: 1px solid #e8edf5; padding: 12px 0; }
+html body.yx-v13 .teacher-dispatch-fit summary { display: flex; align-items: center; gap: 9px; list-style: none; cursor: pointer; color: #526d97; font-size: 12px; }
+html body.yx-v13 .teacher-dispatch-fit summary::-webkit-details-marker { display: none; }
+html body.yx-v13 .teacher-dispatch-fit summary svg { width: 14px; height: 14px; flex: 0 0 auto; }
+html body.yx-v13 .teacher-dispatch-fit summary svg:last-child { margin-left: auto; }
+html body.yx-v13 .teacher-dispatch-fit summary b { font-weight: 500; color: #284e73; }
+html body.yx-v13 .teacher-dispatch-fit summary span { color: #73859e; }
+html body.yx-v13 .teacher-dispatch-fit ul { margin: 12px 0 0; padding-left: 22px; color: #637995; font-size: 12px; line-height: 1.8; }
+@media (max-width: 760px) {
+  html body.yx-v13 .recommend-logistics .form-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  html body.yx-v13 .recommend-logistics-heading { align-items: flex-start; flex-wrap: wrap; }
+  html body.yx-v13 .teacher-dispatch-fit summary { flex-wrap: wrap; }
+  html body.yx-v13 .teacher-dispatch-fit summary span { flex-basis: 100%; margin-left: 23px; }
+}
+@media (max-width: 480px) {
+  html body.yx-v13 .recommend-logistics .form-grid { grid-template-columns: minmax(0,1fr); }
+}
 html body.yx-v13 .recommend-results-head > span { padding: 0; border: 0; background: none; color: #72819a; font-size: 11px; }
 html body.yx-v13 .recommend-output .recommend-tag-groups { display: flex; flex-wrap: wrap; gap: 14px 24px; }
 html body.yx-v13 .recommend-output .recommend-tag-groups > div { display: flex; align-items: baseline; flex-wrap: wrap; gap: 7px 10px; }

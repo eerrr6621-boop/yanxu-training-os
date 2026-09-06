@@ -169,7 +169,7 @@
   }
   window.addEventListener('resize', debounce(() => chartInstances.forEach((chart) => chart.resize())));
 
-  const state = { user: null, page: 'dashboard', projectId: null, contextProjectId: null, focusId: null, initialFilter: null, filters: {}, cache: {}, teacherTab: 'library', teacherRequirementDraft: '', teacherRecommendationForm: { demandId: '', maxResults: '5', maxFeeRate: '', hardBudget: false } };
+  const state = { user: null, page: 'dashboard', projectId: null, contextProjectId: null, focusId: null, initialFilter: null, filters: {}, cache: {}, teacherTab: 'library', teacherRequirementDraft: '', teacherRecommendationForm: { demandId: '', maxResults: '3', maxFeeRate: '', hardBudget: false } };
   let routeEpoch = 0;
   let routeCleanups = [];
   let lastRenderedHash = '';
@@ -233,11 +233,13 @@
     state.cache = {};
     state.teacherTab = 'library';
     state.teacherRequirementDraft = '';
-    state.teacherRecommendationForm = { demandId: '', maxResults: '5', maxFeeRate: '', hardBudget: false };
+    state.teacherRecommendationForm = { demandId: '', maxResults: '3', maxFeeRate: '', hardBudget: false };
     localStorage.removeItem('token');
     clearTimeout(toastTimer);
     toastTimer = null;
     $('.toast')?.remove();
+    const sessionModal = $('#modal-mask');
+    if (sessionModal) sessionModal.dataset.locked = 'false';
     closeModal();
     if (!alreadyOnLogin) renderLogin();
   }
@@ -584,6 +586,10 @@
         input = `<textarea id="${id}" data-k="${f.k}" placeholder="${esc(f.placeholder || '')}" aria-describedby="${describedBy}" ${common}>${esc(v)}</textarea>`;
       } else {
         input = `<input id="${id}" data-k="${f.k}" type="${f.type === 'readonly' ? 'text' : (f.type || 'text')}" value="${esc(v)}" placeholder="${esc(f.placeholder || '')}" aria-describedby="${describedBy}" ${f.type === 'readonly' ? 'readonly' : ''} ${f.autocomplete ? `autocomplete="${esc(f.autocomplete)}"` : ''} ${common}>`;
+      }
+      if (f.regionProvinceKey) {
+        const cities = typeof YX_REGION_CITIES === 'undefined' ? [] : (YX_REGION_CITIES[data?.[f.regionProvinceKey]] || []);
+        input = input.replace('<input ', `<input list="${id}-cities" data-region-province="${esc(f.regionProvinceKey)}" `) + `<datalist id="${id}-cities">${cities.map((city) => `<option value="${esc(city)}"></option>`).join('')}</datalist>`;
       }
       return `<div class="form-item ${f.span2 || f.type === 'textarea' ? 'span2' : ''}"><label for="${id}">${esc(f.label)}${req}</label>${input}${f.hint ? `<small id="${hintId}">${esc(f.hint)}</small>` : ''}<span class="field-error" id="${errorId}" aria-live="polite"></span></div>`;
     }).join('') + `</div>`;
@@ -1273,6 +1279,30 @@
   }[page] || '查看详情');
   const roleAction = (action, page) => canWrite() ? action : readonlyAction(page);
 
+  const REGION_PROVINCES = ['北京', '天津', '河北', '山西', '内蒙古', '辽宁', '吉林', '黑龙江', '上海', '江苏', '浙江', '安徽', '福建', '江西', '山东', '河南', '湖北', '湖南', '广东', '广西', '海南', '重庆', '四川', '贵州', '云南', '西藏', '陕西', '甘肃', '青海', '宁夏', '新疆', '香港', '澳门', '台湾', '境外'];
+  const teacherResidenceText = (teacher) => teacher?.base_province && teacher?.base_city ? (teacher.base_province === teacher.base_city ? teacher.base_city : `${teacher.base_province} · ${teacher.base_city}`) : '待补充';
+  const residenceFields = () => [
+    { k: 'base_province', label: '常驻省份 / 地区', type: 'select', options: REGION_PROVINCES, required: true },
+    { k: 'base_city', label: '常驻城市 / 地区', required: true, regionProvinceKey: 'base_province', placeholder: '选择省份后输入或选择城市', hint: '讲师确认的常驻地，无需家庭地址。城市字典未覆盖的名称可手填，核对前不参与同城优先。' },
+  ];
+  function refreshRegionSuggestions(provinceInput, preserveCity = false) {
+    const grid = provinceInput.closest('.form-grid');
+    const cityInput = grid?.querySelector(`[data-region-province="${provinceInput.dataset.k}"]`);
+    if (!cityInput) return;
+    const cities = typeof YX_REGION_CITIES === 'undefined' ? [] : (YX_REGION_CITIES[provinceInput.value] || []);
+    const list = document.getElementById(cityInput.getAttribute('list'));
+    if (list) list.innerHTML = cities.map((city) => `<option value="${esc(city)}"></option>`).join('');
+    if (!preserveCity) cityInput.value = ['北京', '天津', '上海', '重庆', '香港', '澳门'].includes(provinceInput.value) ? provinceInput.value : '';
+  }
+  document.addEventListener('change', (event) => {
+    const provinceInput = event.target;
+    if (!['base_province', 'training_province'].includes(provinceInput?.dataset?.k)) return;
+    refreshRegionSuggestions(provinceInput);
+    const cityInput = provinceInput.closest('.form-grid')?.querySelector(`[data-region-province="${provinceInput.dataset.k}"]`);
+    if (!cityInput) return;
+    cityInput.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+
   const CRUD = {
     demands: {
       mod: 'demands', title: '培训需求', kw: '搜索：项目/单位/联系人',
@@ -1290,6 +1320,10 @@
         { k: 'phone', label: '联系电话', type: 'tel' },
         { k: 'hours', label: '预计课时', type: 'number', required: true, min: 0.5, max: 1000, step: 0.5 },
         { k: 'expect_date', label: '期望培训时间', type: 'date' },
+        { k: 'training_province', label: '授课省份 / 地区', type: 'select', options: [{ v: '', l: '待确定' }, ...REGION_PROVINCES] },
+        { k: 'training_city', label: '授课城市 / 地区', regionProvinceKey: 'training_province', placeholder: '选择省份后输入或选择城市' },
+        { k: 'training_mode', label: '授课方式', type: 'select', options: ['待定', '线下', '线上'], value: '待定' },
+        { k: 'training_period', label: '授课时段', type: 'select', options: ['待定', '上午', '下午', '全天'], value: '待定' },
         { k: 'status', label: '状态', type: 'select', options: ['待处理', '已投标', '已立项', '进行中', '已完成', '已流标'], value: '待处理' },
         { k: 'content', label: '主要培训内容', type: 'textarea' },
         { k: 'teacher_req', label: '师资要求', type: 'textarea' },
@@ -1543,6 +1577,14 @@
       return true;
     };
     if (cfg.mod === 'projects') acts.push({ l: '打开项目', cls: '', onClick: showProjectOverview });
+    if (cfg.mod === 'demands' && canWrite()) acts.push({ l: '推荐师资', cls: '', icon: 'users-round', show: (row) => ['待处理', '已流标'].includes(row.status), onClick: (demand) => {
+      invalidateTeacherRecommendations();
+      state.teacherTab = 'recommend';
+      state.teacherRequirementDraft = guidedRequirementText(demandGuidedFields(demand));
+      state.teacherRecommendationForm = { demandId: String(demand.id), maxResults: '3', maxFeeRate: '', hardBudget: false, inputMode: 'guided', guided: demandGuidedFields(demand), rawDraft: demandRequirementText(demand), rawInitialized: true,
+        logistics: { training_province: demand.training_province || '', training_city: demand.training_city || '', training_mode: demand.training_mode || '待定', training_period: demand.training_period || '待定', prefer_local: true } };
+      navigateTo('teachers');
+    } });
     if (cfg.mod === 'projects' && canWrite()) {
       acts.push({ l: '启动项目', cls: 'green', show: (r) => r.status === '待启动', onClick: showProjectStart });
       acts.push({ l: '完成交付', cls: 'green', show: (r) => r.status === '进行中', onClick: (r) => showProjectTransition(r, 'complete') });
@@ -2503,6 +2545,7 @@
     { k: 'gender', label: '性别', type: 'select', options: ['男', '女'] },
     { k: 'org', label: '所在单位' },
     { k: 'title', label: '职称/职务' },
+    ...residenceFields(),
     { k: 'field', label: '专业领域', span2: true },
     { k: 'phone', label: '联系电话' },
     { k: 'email', label: '电子邮箱', type: 'email' },
@@ -2544,7 +2587,7 @@
 
   function teacherRecommendationKey() {
     const form = state.teacherRecommendationForm;
-    return JSON.stringify([state.teacherRequirementDraft.trim(), String(form.demandId || ''), Number(form.maxResults), String(form.maxFeeRate || '').trim(), Boolean(form.hardBudget)]);
+    return JSON.stringify([state.teacherRequirementDraft.trim(), String(form.demandId || ''), Number(form.maxResults), String(form.maxFeeRate || '').trim(), Boolean(form.hardBudget), form.logistics || {}]);
   }
 
   function teacherResumeItems(payload) {
@@ -2601,10 +2644,12 @@
     if (!canWrite()) return;
     if (!teachers.length) { toast('请先通过手工入库建立讲师档案', true); return; }
     const selected = String(selectedTeacherId || '');
-    const options = teachers.map((teacher) => `<option value="${esc(teacher.id)}" ${String(teacher.id) === selected ? 'selected' : ''}>${esc(teacher.name)}｜${esc(teacher.title || '讲师')}｜${esc(teacher.org || '单位待补充')}</option>`).join('');
+    const options = teachers.map((teacher) => `<option value="${esc(teacher.id)}" ${String(teacher.id) === selected ? 'selected' : ''}>${esc(teacher.name)}｜${esc(teacherResidenceText(teacher))}｜${esc(teacher.org || '单位待补充')}</option>`).join('');
     const mask = openModal(selected ? '替换讲师简历' : '上传讲师简历', `
       <div class="resume-upload-lead"><span>${icon('scan-text')}</span><div><b>上传 PDF 或 PPTX 后自动提取专业画像</b><p>解析结果会进入简历管理，建议核对后再用于智能推荐。</p></div></div>
       <div class="form-item span2"><label for="teacher-resume-owner">关联讲师<span class="req">*</span></label><select id="teacher-resume-owner" ${selected ? '' : 'autofocus'}><option value="" disabled ${selected ? '' : 'selected'}>请选择讲师</option>${options}</select><span class="field-error" id="teacher-resume-owner-error" aria-live="polite"></span></div>
+      <div id="resume-residence-fields">${renderForm(residenceFields(), teachers.find((teacher) => String(teacher.id) === selected))}</div>
+      <p class="resume-refresh-note">上传前确认常驻地区；地区会单独保存，解析不会根据简历文字覆盖它。</p>
       <label class="resume-drop-zone" id="teacher-resume-drop" for="teacher-resume-file">
         <input class="sr-only" id="teacher-resume-file" type="file" accept=".pdf,.pptx,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation">
         <span class="resume-drop-icon">${icon('file-up')}</span>
@@ -2624,6 +2669,8 @@
         const ownerError = $('#teacher-resume-owner-error', mask);
         ownerError.textContent = '';
         if (!teacherId) { ownerError.textContent = '请选择需要关联的讲师'; $('#teacher-resume-owner', mask).focus(); return false; }
+        const residence = collectForm($('#resume-residence-fields', mask), residenceFields());
+        if (!residence) return false;
         if (!chosenFile) { toast('请选择 PDF 或 PPTX 讲师简历', true); $('#teacher-resume-file', mask).focus(); return false; }
         const extension = /\.pptx$/i.test(chosenFile.name || '') ? 'pptx' : 'pdf';
         const signature = new Uint8Array(await chosenFile.slice(0, 1024).arrayBuffer());
@@ -2635,11 +2682,20 @@
         $('#modal-cancel', mask).disabled = true;
         $('#teacher-resume-owner', mask).disabled = true;
         $('#teacher-resume-file', mask).disabled = true;
+        $$('#resume-residence-fields input, #resume-residence-fields select', mask).forEach((input) => { input.disabled = true; });
         $('#teacher-resume-progress', mask).hidden = false;
         $('#teacher-resume-progress-bar', mask).value = 0;
         $('#teacher-resume-progress-text', mask).textContent = '正在准备上传…';
         const uploadFile = chosenFile;
+        let residenceSaved = false;
         try {
+          const owner = teachers.find((teacher) => String(teacher.id) === teacherId);
+          if (owner?.base_province !== residence.base_province || owner?.base_city !== residence.base_city) {
+            await api('/teachers/residence', { body: { id: Number(teacherId), ...residence } });
+            if (owner) Object.assign(owner, residence);
+            residenceSaved = true;
+            invalidateTeacherRecommendations();
+          }
           const result = await uploadTeacherResume(uploadFile, teacherId, {
             onProgress: (loaded, total) => {
               if (!mask.isConnected) return;
@@ -2655,8 +2711,9 @@
           toast(result?.status === 'needs_ocr' ? '简历已安全保存，请补充人工专业画像' : '简历上传与解析已完成');
           renderPage();
         } catch (error) {
-          if (mask.isConnected) $('#teacher-resume-progress-text', mask).textContent = error?.message || '上传未完成，请重试';
-          throw error;
+          const message = `${residenceSaved ? '常驻地区已保存；简历上传未完成：' : ''}${error?.message || '请重试'}`;
+          if (mask.isConnected) $('#teacher-resume-progress-text', mask).textContent = message;
+          throw new Error(message);
         } finally {
           if (mask.isConnected) {
             mask.dataset.locked = 'false';
@@ -2664,11 +2721,16 @@
             $('#modal-cancel', mask).disabled = false;
             $('#teacher-resume-owner', mask).disabled = false;
             $('#teacher-resume-file', mask).disabled = false;
+            $$('#resume-residence-fields input, #resume-residence-fields select', mask).forEach((input) => { input.disabled = false; });
           }
         }
       },
     });
     const fileInput = $('#teacher-resume-file', mask);
+    $('#teacher-resume-owner', mask).onchange = () => {
+      const owner = teachers.find((teacher) => String(teacher.id) === $('#teacher-resume-owner', mask).value);
+      $('#resume-residence-fields', mask).innerHTML = renderForm(residenceFields(), owner);
+    };
     const drop = $('#teacher-resume-drop', mask);
     const selectedBox = $('#teacher-resume-selected', mask);
     let chosenFile = null;
@@ -2743,12 +2805,12 @@
       catch (error) { return; }
     }
     if (!isRouteCurrent(epoch, null, 'teachers') || ticket !== teacherProfileRequestSequence) return;
-    const fields = [{
+    const fields = [...residenceFields(), {
       k: 'manual_profile', label: '管理员校准画像', type: 'textarea', required: true,
       placeholder: '请完整填写讲师擅长主题、行业经验、授课对象、课程和资历，并注明需要进一步确认的条件。',
       hint: '已带入现有专业事实供您核对。请保留仍然有效的内容并修正遗漏；保存后，这份完整画像将优先用于推荐。最多 10000 字。',
     }];
-    openModal(`编辑专业画像 · ${teacher?.name || detail.teacher_name || '讲师'}`, renderForm(fields, { manual_profile: resumeProfileText(detail.manual_profile) || manualProfileDraft(detail.profile) }), {
+    openModal(`编辑专业画像 · ${teacher?.name || detail.teacher_name || '讲师'}`, renderForm(fields, { ...teacher, manual_profile: resumeProfileText(detail.manual_profile) || manualProfileDraft(detail.profile) }), {
       wide: true,
       kicker: '人工校准',
       okIcon: 'save',
@@ -2758,7 +2820,7 @@
         if (!data) return false;
         if (data.manual_profile.length > 10000) { toast('校准画像不能超过 10000 字', true); return false; }
         const target = Number(detail.id) > 0 ? { id: Number(detail.id) } : { teacher_id: Number(detail.teacher_id) };
-        await api('/teacher-resumes/profile', { body: { ...target, manual_profile: data.manual_profile } });
+        await api('/teacher-resumes/profile', { body: { ...target, manual_profile: data.manual_profile, base_province: data.base_province, base_city: data.base_city } });
         invalidateTeacherRecommendations();
         state.teacherTab = 'resumes';
         toast('人工专业画像已保存');
@@ -2851,6 +2913,7 @@
       { k: 'id', l: '编号', mobileHide: true, render: (row) => `<span class="project-id">#T-${String(row.id).padStart(4, '0')}</span>` },
       { k: 'name', l: '师资', render: (row) => `<div class="person-cell"><span class="person-avatar">${esc(row.name.slice(-2))}</span><span><b>${esc(row.name)}</b><small>${esc(row.title || '讲师')}</small></span></div>` },
       { k: 'org', l: '单位' },
+      { k: 'base_city', l: '常驻地区', render: (row) => esc(teacherResidenceText(row)) },
       { k: 'field', l: '专业领域' },
       ...(canWrite() ? [{ k: 'resume_status', l: '简历状态', render: (row) => resumeStatusTag(resumeByTeacher.get(String(row.id))) }] : []),
       { k: 'fee_rate', l: '课酬标准', align: 'right', render: (row) => teacherFeeRateText(row.fee_rate) },
@@ -2858,6 +2921,7 @@
     ];
     const actions = [{ l: '档案', cls: '', icon: 'contact-round', onClick: (row) => showTeacherEvals(row, projects, dispatches) }];
     if (canWrite()) {
+      actions.push({ l: '常驻地区', cls: 'gray', icon: 'map-pin', onClick: (row) => openModal(`常驻地区 · ${row.name}`, renderForm(residenceFields(), row), { onOk: async () => { const data = collectForm($('#modal-mask'), residenceFields()); if (!data) return false; await api('/teachers/residence', { body: { id: row.id, ...data } }); invalidateTeacherRecommendations(); toast('常驻地区已保存'); renderPage(); } }) });
       actions.push({ l: '上传简历', cls: 'gray', icon: 'file-up', onClick: (row) => openTeacherResumeUpload(rows, row.id) });
       actions.push({ l: '出库', cls: 'orange', show: (row) => row.status === '在库', onClick: (row) => confirmBox(`确定将师资【${row.name}】移出师资库？出库后不可参与新调度。`, async () => { await api('/teachers/checkout', { body: { id: row.id } }); invalidateTeacherRecommendations(); toast('已出库'); renderPage(); }) });
       actions.push({ l: '入库', cls: 'green', show: (row) => row.status === '出库', onClick: (row) => confirmBox(`确定将师资【${row.name}】重新入库？`, async () => { await api('/teachers/checkin', { body: { id: row.id } }); invalidateTeacherRecommendations(); toast('已重新入库'); renderPage(); }) });
@@ -3069,6 +3133,7 @@
 
   function renderRecommendationResults(target, payload, context) {
     const analysis = payload?.analysis || payload?.requirement_analysis || {};
+    const dispatchPreferences = analysis.dispatch_preferences || {};
     const recommendations = payload?.recommendations || payload?.results || payload?.candidates || [];
     const groups = [
       ['培训主题', listText(analysis.topics)],
@@ -3076,18 +3141,22 @@
       ['授课对象', listText(analysis.audiences)],
       ['专业资历', listText(analysis.credentials)],
     ].filter((group) => group[1].length);
-    const conditionFacts = [analysis.expected_date ? `授课日期：${analysis.expected_date}` : '', Number(analysis.hours) > 0 ? `课时：${num(analysis.hours)}` : '', Number(analysis.max_fee_rate) > 0 ? `课酬上限：¥ ${money(analysis.max_fee_rate)}/课时` : ''].filter(Boolean);
+    const conditionFacts = [analysis.expected_date ? `授课日期：${analysis.expected_date}` : '', Number(analysis.hours) > 0 ? `课时：${num(analysis.hours)}` : '', Number(analysis.max_fee_rate) > 0 ? `课酬上限：¥ ${money(analysis.max_fee_rate)}/课时` : '', dispatchPreferences.training_city ? `授课地区：${dispatchPreferences.training_province} · ${dispatchPreferences.training_city}` : '', dispatchPreferences.training_mode ? `方式：${dispatchPreferences.training_mode}` : '', dispatchPreferences.training_period ? `时段：${dispatchPreferences.training_period}` : ''].filter(Boolean);
+    const shortfall = Number(payload?.shortfall ?? Math.max(0, 3 - recommendations.length));
+    const pendingResidence = Number(payload?.residence_pending_count || 0);
+    const shortageHtml = shortfall > 0 || pendingResidence > 0 ? `<div class="recommend-shortage" role="status">${icon('users-round')}<div><b>${shortfall > 0 ? `找到 ${recommendations.length} 位相关候选，距 3 位目标还缺 ${shortfall} 位` : `已找到 ${recommendations.length} 位相关候选`}</b><p>${shortfall > 0 ? '请补充相应专业师资或人工调整需求条件。不会用无关、冲突或超出硬预算的老师凑数。' : ''}${pendingResidence > 0 ? ` 其中 ${pendingResidence} 位常驻地区未补齐，仍是待补资料候选，不能视为调度已核实。` : ''}</p></div></div>` : '';
     const excluded = Array.isArray(payload?.excluded) ? payload.excluded : [];
     const excludedHtml = excluded.length ? `<details class="recommend-excluded" ${recommendations.length ? '' : 'open'}><summary>${icon('calendar-x')}已排除 ${excluded.length} 位候选，查看原因</summary><ul>${excluded.map((item) => `<li><b>${esc(item.teacher_name || item.name || '讲师')}</b><span>${esc(item.reason || '当前条件不适合，请进一步确认')}</span></li>`).join('')}</ul></details>` : '';
     const analysisHtml = `<section class="recommend-analysis"><header class="recommend-profile-head"><h2>${icon('scan-search')}需求画像</h2><span>请核对识别结果</span></header>${groups.length ? `<dl class="recommend-profile-grid">${groups.map(([label, values]) => `<div><dt>${esc(label)}</dt><dd>${values.map((value) => esc(value)).join(' · ')}</dd></div>`).join('')}</dl>` : `<p class="recommend-profile-empty">${esc(analysis.summary || '暂未识别到明确专业条件，请补充培训主题与参训对象。')}</p>`}${conditionFacts.length ? `<p class="recommend-condition-facts">${conditionFacts.map((fact) => `<span>${esc(fact)}</span>`).join('')}</p>` : ''}<p class="recommend-condition-note">地点、差旅及特殊安排仍需人工确认。</p></section>`;
     if (!recommendations.length) {
-      target.innerHTML = `${analysisHtml}${excludedHtml}<div class="recommend-empty">${icon('user-round-search')}<b>暂未找到合适候选</b><p>${excluded.length ? '请查看上方排除原因，再调整日期、课酬条件或补充更多讲师。' : '可补充培训主题、参训对象与行业后重试，也请检查在库讲师的专业资料是否完善。'}</p></div>`;
+      target.innerHTML = `${analysisHtml}${shortageHtml}${excludedHtml}<div class="recommend-empty">${icon('user-round-search')}<b>暂未找到合适候选</b><p>${excluded.length ? '请查看上方排除原因，再调整日期、课酬条件或补充更多讲师。' : '可补充培训主题、参训对象与行业后重试，也请检查在库讲师的专业资料是否完善。'}</p></div>`;
       refreshIcons(target);
       return;
     }
     const teacherById = new Map(context.rows.map((teacher) => [String(teacher.id), teacher]));
     const cards = recommendations.map((item, index) => {
       const teacher = item.teacher || teacherById.get(String(item.teacher_id)) || {};
+      const dispatchFit = item.dispatch_fit || {};
       const name = item.teacher_name || teacher.name || '候选讲师';
       const score = recommendationPercent(item.match_score ?? item.score);
       const reasons = listText(item.reasons || item.match_reasons);
@@ -3102,7 +3171,8 @@
       return `<article class="teacher-match-card ${index === 0 ? 'is-top' : ''}">
         <div class="teacher-match-main">
           <header><span class="person-avatar large">${esc(name.slice(-2))}</span><div><h3>${esc(name)} ${resumeLabel}</h3><p>${esc(item.org || teacher.org || '单位待补充')} · ${esc(item.title || teacher.title || '讲师')}</p><small>${esc(item.field || teacher.field || '专业领域待补充')}</small></div><div class="teacher-match-score" aria-label="匹配参考分 ${score}，满分 100"><b>${score}<em>/ 100</em></b><small>匹配参考分</small></div></header>
-          <div class="teacher-match-facts"><span>课酬 <b>${teacherFeeRateText(item.fee_rate ?? teacher.fee_rate)}</b></span><span>系统已完成 <b>${num(verified.completedSessions)} 场</b></span><span>授课评价 <b>${verified.evaluationCount ? `${verified.evaluationAverage.toFixed(2)} / 5` : '暂无记录'}</b></span></div>
+          <div class="teacher-match-facts"><span>常驻 <b>${esc(teacherResidenceText(item))}</b></span><span>课酬 <b>${teacherFeeRateText(item.fee_rate ?? teacher.fee_rate)}</b></span><span>系统已完成 <b>${num(verified.completedSessions)} 场</b></span><span>授课评价 <b>${verified.evaluationCount ? `${verified.evaluationAverage.toFixed(2)} / 5` : '暂无记录'}</b></span></div>
+          <details class="teacher-dispatch-fit"><summary>${icon('map-pin')}<b>${esc(dispatchFit.label || '调度待核实')}</b><span>${dispatchFit.arrival_day_conflict ? '提前到达日有授课记录，需核对衔接' : dispatchFit.arrival_day_before ? '异地上午课 · 提前一天到达待核实' : '查看调度核对事项'}</span>${icon('chevron-down')}</summary><ul>${listText(dispatchFit.notes).map((note) => `<li>${esc(note)}</li>`).join('')}</ul></details>
           <div class="teacher-match-detail">
             <section class="match-reasons"><b>${icon('badge-check')}推荐理由</b>${reasons.length ? `<ul>${reasons.map((reason) => `<li>${esc(reason)}</li>`).join('')}</ul>` : '<p>暂无细分理由</p>'}</section>
             <section class="match-gaps"><b>${icon('triangle-alert')}缺口与待确认</b>${gaps.length ? `<ul>${gaps.map((gap) => `<li>${esc(gap)}</li>`).join('')}</ul>` : '<p>未发现明显缺口</p>'}</section>
@@ -3113,11 +3183,20 @@
           </details>
           ${resumeClaimFacts(item.resume_claims).length ? `<details class="teacher-evidence"><summary>${icon('badge-info')}查看简历自述数据</summary><div class="recommend-resume-claims">${resumeClaimMarkup(item.resume_claims)}</div></details>` : ''}
           ${evidence.length ? `<details class="teacher-evidence"><summary>${icon('file-search')}查看简历自述依据 <span>${evidence.length}</span></summary><div class="resume-claim-note">简历中的课时、满意度和客户案例属于讲师资料自述，不计入上方系统履约记录。</div><ul>${evidence.map((item) => `<li>${esc(item)}</li>`).join('')}</ul></details>` : ''}
-          <footer>${hasResume ? `<button type="button" class="btn gray" data-view-recommend-resume="${esc(item.teacher_id || teacher.id || '')}">${icon('file-search')}简历与画像</button>` : ''}<button type="button" class="btn gray" data-view-recommend-teacher="${esc(item.teacher_id || teacher.id || '')}">${icon('contact-round')}档案与授课记录</button></footer>
+          <footer>${!dispatchFit.residence_complete ? `<button type="button" class="btn gray" data-recommend-residence="${esc(item.teacher_id || teacher.id || '')}">${icon('map-pin')}补充常驻地区</button>` : ''}${hasResume ? `<button type="button" class="btn gray" data-view-recommend-resume="${esc(item.teacher_id || teacher.id || '')}">${icon('file-search')}简历与画像</button>` : ''}<button type="button" class="btn gray" data-view-recommend-teacher="${esc(item.teacher_id || teacher.id || '')}">${icon('contact-round')}档案与授课记录</button></footer>
         </div>
       </article>`;
     }).join('');
-    target.innerHTML = `${analysisHtml}<div class="recommend-results-head"><h2>推荐候选 <em>${recommendations.length}</em></h2><small>按资料匹配程度排序</small></div><div class="teacher-match-list">${cards}</div>${excludedHtml}<div class="recommend-notice">${icon('info')}<span>匹配分用于比较现有资料与客户要求的契合程度。最终人选请结合资料核对、沟通与档期确认；系统不会自动安排授课。</span></div>`;
+    target.innerHTML = `${analysisHtml}${shortageHtml}<div class="recommend-results-head"><h2>推荐候选 <em>${recommendations.length}</em></h2><small>${esc(dispatchPreferences.ranking_policy || '按资料匹配程度排序')}</small></div><div class="teacher-match-list">${cards}</div>${excludedHtml}<div class="recommend-notice">${icon('info')}<span>本名单用于投标前选师资，不表示老师已确认授课。专业分不是胜任概率；无交通记录不能判断可达，系统不会自动建项目、排课或产生课酬。</span></div>`;
+    $$('[data-recommend-residence]', target).forEach((button) => { button.onclick = () => {
+      const teacher = teacherById.get(String(button.dataset.recommendResidence));
+      if (!teacher) return;
+      openModal(`常驻地区 · ${teacher.name}`, renderForm(residenceFields(), teacher), { onOk: async () => {
+        const data = collectForm($('#modal-mask'), residenceFields()); if (!data) return false;
+        await api('/teachers/residence', { body: { id: teacher.id, ...data } });
+        invalidateTeacherRecommendations(); toast('地区已保存，请重新匹配更新顺序'); renderPage();
+      } });
+    }; });
     $$('[data-view-recommend-resume]', target).forEach((button) => {
       button.onclick = () => {
         const teacherId = button.dataset.viewRecommendResume;
@@ -3148,10 +3227,16 @@
     let inputMode = form.inputMode || (state.teacherRequirementDraft ? 'raw' : 'guided');
     let rawInitialized = form.rawInitialized ?? (inputMode === 'raw');
     const guided = form.guided || {};
+    const logisticsFields = [
+      { k: 'training_province', label: '授课省份 / 地区', type: 'select', options: [{ v: '', l: '待确定' }, ...REGION_PROVINCES] },
+      { k: 'training_city', label: '授课城市 / 地区', regionProvinceKey: 'training_province', placeholder: '选择省份后输入或选择城市' },
+      { k: 'training_mode', label: '授课方式', type: 'select', options: ['待定', '线下', '线上'], value: '待定' },
+      { k: 'training_period', label: '授课时段', type: 'select', options: ['待定', '上午', '下午', '全天'], value: '待定' },
+    ];
     const guidedField = (key, label, placeholder, limit = 200, type = 'text') => `<div class="form-item"><label for="recommend-guide-${key}">${esc(label)}${key === 'topic' ? '<span class="req">*</span>' : ''}</label><input id="recommend-guide-${key}" data-recommend-guide="${key}" type="${type}" maxlength="${limit}" value="${esc(guided[key] || '')}" placeholder="${esc(placeholder)}" ${key === 'topic' ? 'aria-required="true" aria-describedby="recommend-topic-error"' : ''}>${key === 'topic' ? '<span class="field-error" id="recommend-topic-error" aria-live="polite"></span>' : ''}</div>`;
     root.innerHTML = `<div class="teacher-recommend-workbench">
       <section class="recommend-input-card">
-        <div class="recommend-section-head"><div><h2>培训需求简报</h2><small>填写已知信息，匹配有资料依据的讲师。</small></div></div>
+        <div class="recommend-section-head"><div><h2>培训需求简报</h2><small>投标前准备 · 推荐师资 → 客户选师资 → 投标立项</small></div></div>
         <div class="form-item recommend-import"><label for="recommend-demand">带入已有需求</label><select id="recommend-demand" aria-describedby="recommend-demand-help"><option value="">直接填写，或选择一条培训需求</option>${context.demands.map((demand) => `<option value="${esc(demand.id)}" ${String(form.demandId) === String(demand.id) ? 'selected' : ''}>#R-${String(demand.id).padStart(4, '0')}｜${esc(demand.title)}｜${esc(demand.unit || '单位待补充')}</option>`).join('')}</select><small id="recommend-demand-help">带入后可编辑，以当前文字为准。</small></div>
         <div class="recommend-entry-modes" role="group" aria-label="需求填写方式"><button type="button" data-recommend-mode="guided" aria-pressed="${inputMode === 'guided'}" aria-controls="recommend-guided">填写要点</button><button type="button" data-recommend-mode="raw" aria-pressed="${inputMode === 'raw'}" aria-controls="recommend-raw">粘贴客户原话</button><small>两种草稿分别保留，以当前方式匹配。</small></div>
         <div id="recommend-guided" ${inputMode === 'guided' ? '' : 'hidden'}>
@@ -3171,16 +3256,21 @@
           <details class="recommend-brief-preview"><summary>查看整理后的需求${icon('chevron-down')}</summary><p id="recommend-brief-text"></p></details>
         </div>
         <div class="form-item recommend-requirement-field" id="recommend-raw" ${inputMode === 'raw' ? '' : 'hidden'}><label for="recommend-requirement">客户原话<span class="req">*</span></label><textarea id="recommend-requirement" maxlength="10000" aria-describedby="recommend-requirement-help recommend-requirement-error" placeholder="直接粘贴客户的消息，也可以补充或修改。">${esc(form.rawDraft ?? state.teacherRequirementDraft ?? '')}</textarea><small id="recommend-requirement-help">将按这段文字匹配，不叠加另一种方式的草稿。</small><span class="field-error" id="recommend-requirement-error" aria-live="polite"></span></div>
+        <section class="recommend-logistics" aria-labelledby="recommend-logistics-title"><div class="recommend-logistics-heading"><h3 id="recommend-logistics-title">授课地点与调度</h3><label><input type="checkbox" id="recommend-prefer-local" ${form.logistics?.prefer_local !== false ? 'checked' : ''}>同档匹配优先同城</label></div><div id="recommend-logistics-fields">${renderForm(logisticsFields, form.logistics)}</div><small>这些条件在两种填写方式中共用。异地耗时、票价和差旅待核实；线上课程不参与地区排序。</small></section>
         <details class="recommend-settings" id="recommend-settings" ${form.maxFeeRate || form.hardBudget ? 'open' : ''}><summary>${icon('sliders-horizontal')}筛选条件<small id="recommend-settings-summary"></small>${icon('chevron-down')}</summary><div class="recommend-settings-grid">
           <div class="form-item recommend-budget"><label for="recommend-max-fee">最高课酬（元/课时）</label><input id="recommend-max-fee" type="number" min="0" step="0.01" inputmode="decimal" value="${esc(form.maxFeeRate)}" placeholder="留空表示不限" aria-describedby="recommend-budget-help recommend-budget-error"><small id="recommend-budget-help">按每课时金额筛选，不是总项目预算。</small><label class="recommend-budget-toggle"><input id="recommend-hard-budget" type="checkbox" ${form.hardBudget ? 'checked' : ''}><span>严格排除超出课酬上限的讲师</span></label><span class="field-error" id="recommend-budget-error" aria-live="polite"></span></div>
-          <div class="form-item recommend-input-options"><label for="recommend-count">推荐人数</label><select id="recommend-count">${[3, 5, 10].map((count) => `<option value="${count}" ${String(form.maxResults) === String(count) ? 'selected' : ''}>最多 ${count} 位</option>`).join('')}</select><small>仅返回有匹配依据的候选。</small></div>
+          <div class="form-item recommend-input-options"><label for="recommend-count">推荐目标人数</label><select id="recommend-count">${[3, 5, 10].map((count) => `<option value="${count}" ${String(form.maxResults) === String(count) ? 'selected' : ''}>${count} 位</option>`).join('')}</select><small>至少 3 位供比较；相关师资不足时提示缺口，不用无关讲师补位。</small></div>
         </div></details>
         <div class="recommend-submit-row"><p id="recommend-status" role="status">${cached ? '已保留上次推荐结果，可调整需求后重新匹配。' : '提交后将在下方展示需求分析与推荐结果。'}</p><button type="button" class="btn recommend-run" id="recommend-run">${icon('arrow-right')}开始匹配讲师</button></div>
-        <p class="recommend-input-foot">${icon('shield-check')}基于本地资料匹配，尚未接入大模型。扫描简历需补充画像；地点、差旅与最终人选仍需人工确认。</p>
+        <p class="recommend-input-foot">${icon('shield-check')}本地规则匹配，不是大模型或实时交通查询。客户意向不等于讲师确认；推荐不会自动立项或安排授课。</p>
       </section>
       <section class="recommend-output" id="recommend-output" aria-label="讲师推荐结果" aria-live="polite" tabindex="-1" ${cached ? '' : 'hidden'}></section>
     </div>`;
     const demandSelect = $('#recommend-demand', root);
+    const logisticsRoot = $('#recommend-logistics-fields', root);
+    const logisticsInputs = $$('[data-k]', logisticsRoot);
+    const preferLocal = $('#recommend-prefer-local', root);
+    const readLogistics = () => ({ ...Object.fromEntries(logisticsInputs.map((input) => [input.dataset.k, input.value])), prefer_local: preferLocal.checked });
     const requirement = $('#recommend-requirement', root);
     const guideInputs = $$('[data-recommend-guide]', root);
     const hoursInput = $('#recommend-guide-hours', root);
@@ -3204,13 +3294,13 @@
     const status = $('#recommend-status', root);
     const updateSettingsSummary = () => {
       const fee = Number(maxFee.value);
-      $('#recommend-settings-summary', root).textContent = `${maxFee.value && fee > 0 ? `¥ ${money(fee)}/课时${hardBudget.checked ? ' · 严格限制' : ''}` : '课酬不限'} · 最多 ${count.value} 位`;
+      $('#recommend-settings-summary', root).textContent = `${maxFee.value && fee > 0 ? `¥ ${money(fee)}/课时${hardBudget.checked ? ' · 严格限制' : ''}` : '课酬不限'} · 目标 ${count.value} 位`;
     };
     updateSettingsSummary();
     let activeRequest = null;
     const persistForm = () => {
       state.teacherRequirementDraft = currentRequirement();
-      state.teacherRecommendationForm = { demandId: demandSelect.value, maxResults: count.value, maxFeeRate: maxFee.value, hardBudget: hardBudget.checked, inputMode, guided: readGuided(), rawDraft: requirement.value, rawInitialized };
+      state.teacherRecommendationForm = { demandId: demandSelect.value, maxResults: count.value, maxFeeRate: maxFee.value, hardBudget: hardBudget.checked, inputMode, guided: readGuided(), rawDraft: requirement.value, rawInitialized, logistics: readLogistics() };
     };
     const markRecommendationDirty = () => {
       persistForm();
@@ -3228,6 +3318,8 @@
       if (input.dataset.recommendGuide === 'hours') { $('#recommend-hours-error', root).textContent = ''; hoursInput.removeAttribute('aria-invalid'); }
       updateBrief(); markRecommendationDirty();
     }; });
+    logisticsInputs.forEach((input) => { input.oninput = markRecommendationDirty; input.onchange = markRecommendationDirty; });
+    preferLocal.onchange = markRecommendationDirty;
     modeButtons.forEach((button) => { button.onclick = () => {
       if (button.dataset.recommendMode === inputMode) return;
       if (button.dataset.recommendMode === 'raw' && !rawInitialized) { requirement.value = guidedRequirementText(readGuided()); rawInitialized = true; }
@@ -3240,6 +3332,8 @@
         requirement.value = demandRequirementText(demand);
         rawInitialized = true;
         const imported = demandGuidedFields(demand);
+        logisticsInputs.forEach((input) => { input.value = demand[input.dataset.k] || (['training_mode', 'training_period'].includes(input.dataset.k) ? '待定' : ''); });
+        refreshRegionSuggestions(logisticsInputs.find((input) => input.dataset.k === 'training_province'), true);
         guideInputs.forEach((input) => { input.value = imported[input.dataset.recommendGuide] || ''; });
         if (imported.date || imported.hours || imported.preference || imported.extra) $('.recommend-guide-more', root).open = true;
         $('#recommend-requirement-error', root).textContent = '';
@@ -3273,6 +3367,12 @@
         hoursInput.setAttribute('aria-invalid', 'true'); hoursInput.focus(); return;
       }
       if (text.length > 10000) { status.textContent = '需求内容超过 10000 字，请精简后重试。'; return; }
+      const logistics = collectForm(logisticsRoot, logisticsFields);
+      if (!logistics) return;
+      if (Boolean(logistics.training_province) !== Boolean(logistics.training_city)) {
+        status.textContent = '授课省份和城市请一起填写；地点未确定时可以都留空。';
+        $('[data-k="' + (logistics.training_province ? 'training_city' : 'training_province') + '"]', logisticsRoot).focus(); return;
+      }
       const feeValue = maxFee.value.trim();
       const fee = Number(feeValue);
       if (maxFee.validity.badInput || (feeValue && (!Number.isFinite(fee) || fee <= 0))) {
@@ -3292,7 +3392,7 @@
       delete state.cache.teacherRecommendationKey;
       const button = $('#recommend-run', root);
       const old = button.innerHTML;
-      const controls = [demandSelect, requirement, count, maxFee, hardBudget, ...guideInputs, ...modeButtons];
+      const controls = [demandSelect, requirement, count, maxFee, hardBudget, preferLocal, ...logisticsInputs, ...guideInputs, ...modeButtons];
       controls.forEach((control) => { control.disabled = true; });
       button.disabled = true;
       button.classList.add('is-loading');
@@ -3305,13 +3405,14 @@
       refreshIcons(button);
       try {
         const body = { requirement: text, max_results: Number(count.value), hard_budget: hardBudget.checked };
+        Object.assign(body, logistics, { prefer_local: preferLocal.checked });
         if (feeValue) body.max_fee_rate = fee;
         const result = await api('/teacher-recommendations', { body, signal: controller.signal });
         if (controller.signal.aborted || requestSequence !== teacherRecommendationSequence || requestKey !== teacherRecommendationKey() || !isRouteCurrent(context.epoch, context.c, 'teachers') || state.teacherTab !== 'recommend' || !output.isConnected) return;
         state.cache.teacherRecommendations = result;
         state.cache.teacherRecommendationKey = requestKey;
         renderRecommendationResults(output, result, context);
-        status.textContent = '匹配完成，结果已展示在下方。';
+        status.textContent = Number(result.shortfall) > 0 ? `已找到 ${result.returned_count} 位相关候选，距 3 位目标还缺 ${result.shortfall} 位。` : '已生成候选名单，请先核对资料与调度条件，再与客户确认。';
         output.focus({ preventScroll: true });
         output.scrollIntoView({ block: 'start', behavior: 'auto' });
       } catch (error) {
@@ -3412,7 +3513,7 @@
     openModal(t.name, `
       <div class="teacher-profile"><span class="person-avatar large">${esc(t.name.slice(-2))}</span><div><h3>${esc(t.name)} ${tag(t.status)}</h3><p>${esc(t.org || '未填写单位')} · ${esc(t.title || '未填写职称')}</p><div><span>${icon('tags')}${esc(t.field || '未填写专业领域')}</span><span>${icon('badge-japanese-yen')}${teacherFeeRateText(t.fee_rate)}</span></div></div><strong>${avg}<small>系统履约评分</small></strong></div>
       <section class="teacher-profile-proof"><div><span>${icon('shield-check')}系统履约记录</span><small>仅统计研序中已完成的课程与已提交评价，不等同于简历自述。</small></div><dl><div><dt>已完成场次</dt><dd>${num(verified.completedSessions)}</dd></div><div><dt>已完成课时</dt><dd>${num(verified.completedHours)}</dd></div><div><dt>评价均分</dt><dd>${verified.evaluationCount ? verified.evaluationAverage.toFixed(2) : '—'}</dd></div><div><dt>评价数量</dt><dd>${num(verified.evaluationCount)}</dd></div></dl></section>
-      <div class="teacher-info"><p><small>联系电话</small><span>${esc(t.phone || '—')}</span></p><p><small>电子邮箱</small><span>${esc(t.email || '—')}</span></p><p><small>入库日期</small><span>${esc(t.in_date || '—')}</span></p><p><small>授课评价</small><span>${evals.length} 条</span></p></div>
+      <div class="teacher-info"><p><small>常驻地区</small><span>${esc(teacherResidenceText(t))}</span></p><p><small>联系电话</small><span>${esc(t.phone || '—')}</span></p><p><small>电子邮箱</small><span>${esc(t.email || '—')}</span></p><p><small>入库日期</small><span>${esc(t.in_date || '—')}</span></p><p><small>授课评价</small><span>${evals.length} 条</span></p></div>
       <div class="teacher-intro"><small>师资简介</small><p>${esc(t.intro || '暂无简介')}</p></div>
       <div class="section-title response-title"><div><span>授课记录</span><small>每条已完成排课计为一场；新增课程请在项目排课中维护并确认完成。</small></div></div>
       ${completedDeliveries.length ? renderTable([

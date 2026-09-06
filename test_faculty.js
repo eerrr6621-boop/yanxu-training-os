@@ -97,7 +97,7 @@ async function upload(id, name, bytes) {
   return result.data;
 }
 async function teacher(name, fee = 1800, field = '', title = '') {
-  return api('/teachers', { name, org: '隔离测试机构', title, field, fee_rate: fee, intro: '', gender: '', phone: '', email: '', status: '在库', in_date: '2026-09-01', out_date: '' });
+  return api('/teachers', { name, org: '隔离测试机构', title, field, fee_rate: fee, intro: '', gender: '', phone: '', email: '', status: '在库', in_date: '2026-09-01', out_date: '', base_province: '浙江', base_city: '杭州' });
 }
 async function profile(id) { return api(`/teacher-resumes/profile?teacher_id=${id}`); }
 async function reparse(id) {
@@ -172,8 +172,9 @@ async function reparse(id) {
   const replaced = await profile(bankId);
   check('替换新版简历保留人工画像与审核时间', replaced.manual_profile === reviewed.manual_profile && replaced.reviewed_at === reviewed.reviewed_at && Boolean(replaced.reviewed_at));
   check('替换后采用人工校准专业并更新原文声明', !replaced.profile.tags.includes('领导力与管理') && replaced.profile.resume_claims.claimed_training_hours === '900');
-  const staleEdit = await request('/teacher-resumes/profile', { id: reviewed.id, manual_profile: '旧版本编辑' });
+  const staleEdit = await request('/teacher-resumes/profile', { id: reviewed.id, manual_profile: '旧版本编辑', base_province: '江苏', base_city: '南京' });
   check('保存已替换简历不能返回虚假成功', [404, 409].includes(staleEdit.status));
+  check('旧简历校准失败不部分保存常驻地区', (await api('/teachers')).find((row) => Number(row.id) === bankId).base_city === '杭州');
 
   result = await recommend('银行客户服务', { max_fee_rate: 2000, hard_budget: true });
   check('硬性每课时预算排除超价和待确认课酬', found(result, bankId) && !found(result, expensiveId) && !found(result, unknownFeeId));
@@ -194,7 +195,9 @@ async function reparse(id) {
   const demandId = await api('/demands', { title: '隔离师资回归项目', unit: '测试客户', hours: 8, content: '银行客户服务', expect_date: '2099-01-01', status: '待处理' });
   const bidId = await api('/bids', { demand_id: demandId, amount: 20000, proposal: '隔离测试', bid_date: '2026-09-01', status: '待评审' });
   const projectId = (await api('/bids/win', { id: bidId })).project_id;
-  await api('/dispatches', { project_id: projectId, teacher_id: bankId, subject: '银行客户服务', teach_date: '2099-01-01', start_time: '09:00', end_time: '12:00', hours: 4, status: '待发送' });
+  const conflictId = await api('/dispatches', { project_id: projectId, teacher_id: bankId, subject: '银行客户服务', teach_date: ' 2099-1-1 ', start_time: '09:00', end_time: '12:00', hours: 4, status: '待发送' });
+  check('保存排课规范日期格式', (await api('/dispatches')).find((row) => Number(row.id) === conflictId).teach_date === '2099-01-01');
+  check('非法排课日期在写入时拒绝', (await request('/dispatches', { project_id: projectId, teacher_id: bankId, subject: '银行客户服务', teach_date: '2099-02-30', hours: 4, status: '待发送' })).status === 400);
   result = await recommend('银行客户服务，2099-01-01开课');
   check('确切日期已有排课时排除并给出原因', !found(result, bankId) && result.excluded.some((x) => Number(x.teacher_id) === Number(bankId) && x.reason.includes('2099-01-01')));
   const before = await api('/dispatches');
@@ -211,6 +214,71 @@ async function reparse(id) {
   check('简历与人工自述不会覆盖实际完成课时', measured.resume_claims.claimed_training_hours === '900' && measured.system_metrics.completed_hours !== 9999);
   result = await recommend('深海热液地质同位素测年和行星岩芯取样');
   check('已有高评价的无关讲师也不能靠履约分入选', result.recommendations.length === 0);
+  check('无匹配结果明确三人缺口', result.minimum_required === 3 && result.shortfall === 3 && result.returned_count === 0);
+  check('推荐人数不能低于3', (await request('/teacher-recommendations', { requirement: '客户服务', max_results: 2 })).status === 400);
+
+  const regularPayload = { name: '区域回归师资', org: '测试机构', fee_rate: 1000, field: '量子传感测绘实操', status: '在库' };
+  check('新建师资强制常驻地区', (await request('/teachers', regularPayload)).status === 400);
+  check('空白地区不允许保存', (await request('/teachers', { ...regularPayload, base_province: '浙江', base_city: '　' })).status === 400);
+  const nearIds = [];
+  for (const [province, city] of [['江苏', '南京'], ['浙江', '宁波'], ['浙江省', '杭州市']]) {
+    nearIds.push(await api('/teachers', { ...regularPayload, name: `区域测试${city}`, base_province: province, base_city: city }));
+  }
+  const logistics = { training_province: '浙江省', training_city: '杭州市', training_mode: '线下', training_period: '上午', max_results: 3 };
+  result = await recommend('量子传感测绘实操', logistics);
+  check('师资充足时至少推荐三人且不重复', result.recommendations.length === 3 && new Set(result.recommendations.map((item) => item.teacher_id)).size === 3 && result.shortfall === 0);
+  check('相同专业档案同城优先且不改专业分', Number(result.recommendations[0].teacher_id) === nearIds[2] && new Set(result.recommendations.map((item) => item.score)).size === 1);
+  check('异地不按同省臆断远近', Number(result.recommendations[1].teacher_id) === nearIds[0] && found(result, nearIds[1]).dispatch_fit.label.includes('异地'));
+  check('省市后缀规范化', result.analysis.dispatch_preferences.training_province === '浙江' && result.analysis.dispatch_preferences.training_city === '杭州' && found(result, nearIds[2]).base_city === '杭州');
+  check('异地上午课提前到达待核实', found(result, nearIds[0]).dispatch_fit.arrival_day_before && !found(result, nearIds[0]).dispatch_fit.transport_verified);
+  check('推荐算法独立升版不混同简历解析版本', result.algorithm_version === 'local-rules-v3-prebid-locality');
+  const arrivalDispatchId = await api('/dispatches', { project_id: projectId, teacher_id: nearIds[0], subject: '量子传感测绘实操', teach_date: '2099-1-1', hours: 3, status: '待发送' });
+  result = await recommend('量子传感测绘实操，2099-01-02开课', logistics);
+  check('提前到达日已有课程保留候选并标记衔接待确认', Boolean(found(result, nearIds[0])?.dispatch_fit.arrival_day_conflict));
+  result = await recommend('量子传感测绘实操，2099-01-01开课', logistics);
+  check('目标三人不突破授课当天冲突', !found(result, nearIds[0]) && result.shortfall === 1);
+  const neutral = await recommend('量子传感测绘实操', { ...logistics, training_mode: '线上' });
+  check('线上专业同分恢复稳定顺序不做地区偏好', Number(neutral.recommendations[0].teacher_id) === nearIds[0] && !neutral.analysis.dispatch_preferences.local_preference_active && !found(neutral, nearIds[0]).dispatch_fit.arrival_day_before);
+  const disabled = await recommend('量子传感测绘实操', { ...logistics, prefer_local: false });
+  check('可以关闭同城偏好', Number(disabled.recommendations[0].teacher_id) === nearIds[0]);
+  const unrelatedLocal = await teacher('本地无关老师', 500, '深海岩芯鉴定');
+  check('同城不让无关专业入选', !found(await recommend('量子传感测绘实操', logistics), unrelatedLocal));
+  await api('/dispatches/delete', { id: arrivalDispatchId }); // Remove only this suite's disposable pending fixture before check-out.
+  await api('/teachers/checkout', { id: nearIds[0] });
+  result = await recommend('量子传感测绘实操', logistics);
+  check('只有两人时保留真实缺口不补回出库师资', result.recommendations.length === 2 && result.shortfall === 1 && !found(result, nearIds[0]));
+  result = await recommend('量子传感测绘实操', { ...logistics, max_fee_rate: 999, hard_budget: true });
+  check('三人目标不突破硬性预算', result.recommendations.length === 0 && result.shortfall === 3);
+  const localRow = (await api('/teachers')).find((row) => Number(row.id) === nearIds[2]);
+  const legacyPayload = { ...localRow }; delete legacyPayload.base_province; delete legacyPayload.base_city;
+  await api('/teachers', legacyPayload);
+  check('旧客户端编辑不清空已知地区', (await api('/teachers')).find((row) => Number(row.id) === nearIds[2]).base_city === '杭州');
+  check('显式清空常驻地区被拒绝', (await request('/teachers', { ...localRow, base_city: '' })).status === 400);
+  await api('/teachers/residence', { id: nearIds[2], base_province: '江苏', base_city: '南京', name: '不能改名', status: '出库' });
+  const updatedRow = (await api('/teachers')).find((row) => Number(row.id) === nearIds[2]);
+  check('地区专用动作不改变姓名状态等其他资料', updatedRow.name === localRow.name && updatedRow.status === localRow.status && updatedRow.base_city === '南京');
+  check('超长地区返回400而不是数据库错误', (await request('/teachers/residence', { id: nearIds[2], base_province: '江苏', base_city: '城'.repeat(65) })).status === 400);
+  check('无效地区不修改旧值', (await api('/teachers')).find((row) => Number(row.id) === nearIds[2]).base_city === '南京');
+  const prebid = await api('/demands', { title: '投标前区域回归', unit: '区域测试客户', hours: 4, content: '量子传感测绘实操', status: '待处理', ...logistics });
+  const businessBefore = await Promise.all(['/demands', '/bids', '/projects', '/dispatches', '/fees'].map((path) => api(path)));
+  result = await api('/teacher-recommendations', { demand_id: prebid, max_results: 3 });
+  check('投标前需求直接带入地点时段', result.analysis.dispatch_preferences.training_city === '杭州' && result.analysis.dispatch_preferences.training_period === '上午' && result.stage === '投标前师资推荐');
+  const businessAfter = await Promise.all(['/demands', '/bids', '/projects', '/dispatches', '/fees'].map((path) => api(path)));
+  check('投标前推荐不改变任何需求投标项目排课课酬', JSON.stringify(businessBefore) === JSON.stringify(businessAfter));
+  result = await api('/teacher-recommendations', { demand_id: prebid, training_province: '北京', training_city: '北京', max_results: 3 });
+  check('当前显式地区覆盖带入需求地区', result.analysis.dispatch_preferences.training_city === '北京');
+  const prebidRow = (await api('/demands')).find((row) => Number(row.id) === prebid);
+  const oldDemandPayload = { ...prebidRow }; for (const key of ['training_province', 'training_city', 'training_mode', 'training_period']) delete oldDemandPayload[key];
+  await api('/demands', oldDemandPayload);
+  check('旧需求编辑保留新增调度字段', (await api('/demands')).find((row) => Number(row.id) === prebid).training_city === '杭州');
+  check('非法需求日期在写入时明确400', (await request('/demands', { title: '非法日期兼容测试', unit: '测试', content: '客户服务', hours: 3, expect_date: '2099-02-30' })).status === 400);
+  const blankRegionDemand = await api('/demands', { title: '未知地区测试', unit: '测试', hours: 3, training_province: '　', training_city: ' ' });
+  check('未知授课地区保存为空而不是空格', (await api('/demands')).find((row) => Number(row.id) === blankRegionDemand).training_city === '');
+  const adminToken = token;
+  token = (await api('/login', { username: 'viewer', password: 'viewer123' })).token;
+  check('只读用户不能维护常驻地区', (await request('/teachers/residence', { id: nearIds[2], base_province: '浙江', base_city: '杭州' })).status === 403);
+  token = ''; check('未登录不能维护常驻地区', (await request('/teachers/residence', { id: nearIds[2], base_province: '浙江', base_city: '杭州' })).status === 401);
+  token = adminToken;
   console.log(`Faculty product regression: ${passed} passed, ${failed} failed`);
   process.exitCode = failed ? 1 : 0;
 })().catch((error) => { console.error(error); process.exitCode = 1; });

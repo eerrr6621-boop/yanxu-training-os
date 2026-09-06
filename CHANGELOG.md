@@ -4,6 +4,24 @@ All notable changes to Yanxu Training OS. Dates follow the production release hi
 
 ## [1.9.0] — 2026-09-06 · Clarity & Native-feeling Workspace
 
+### R6 preview iteration
+- Explicit pre-bid recommendation entry from customer demands, carrying independent
+  training region, delivery mode and time-of-day fields without creating projects.
+- Default target of three teachers with honest shortage reporting; relevance,
+  hard budgets, in-library status and same-day conflicts remain enforced.
+- Required confirmed teacher residence on creation/edit, resume upload and profile
+  review; narrow residence update action, atomic profile/residence save, and
+  non-destructive legacy migration. Missing legacy locations remain visibly unknown.
+- Professional-score bands with same-city preference, optional opt-out and online
+  exemption; prior-day arrival/conflict reminders for morning remote courses.
+  No guessed distances, live fare claims, automatic dispatch or financial entries.
+- Bundled, source-attributed province/place suggestions with frontend/backend parity;
+  unknown new names may be entered but do not silently gain same-city priority.
+- Canonical scheduling date writes and legacy date comparison prevent format-based
+  missed conflicts. Added isolated rules, migration, API and dictionary regressions.
+- R6 is local preview only. GitHub push and production deployment remain pending
+  their existing authorization blockers; this entry is not a production release.
+
 ### R5 preview iteration
 - Rebuilt the login composition as an ink-blue Three.js book stage and a focused,
   light credential surface. Removed the left-page dash; refined matte binding,
