@@ -4,6 +4,21 @@ All notable changes to Yanxu Training OS. Dates follow the production release hi
 
 ## [1.9.0] — 2026-09-06 · Clarity & Native-feeling Workspace
 
+### R9 preview iteration
+- Generated four custom title wordmarks with built-in ImageGen. With explicit user
+  permission, removed baked checkerboard backgrounds, retained the glyphs and raw
+  originals, and prepared four lossless transparent WebPs (373 KiB total).
+- Enlarged the rotating title; all four ink bounds share one optical center and
+  baseline with the fixed endorsement. Expanded the clipping window symmetrically
+  to avoid clipping the widest title. Static fallback shares the generated artwork.
+- Refined the fixed open book with bowed paper blocks, a thicker satin-silver cover,
+  quieter page edges, soft fill and a more dimensional viewing angle. No page flip,
+  page number or decorative control bar was restored.
+- Added typography placement, pinned image integrity and curved-block regressions.
+  Expanded the resource gate to find all local artwork referenced by module data.
+- Added the 20th history entry as preview. Local maintenance only; existing GitHub
+  and production authorization blockers remain unchanged.
+
 ### R8 preview iteration
 - Replaced the finite page-flip introduction with one fixed open book. The left
   headline cycles through training operations, faculty recommendations, course

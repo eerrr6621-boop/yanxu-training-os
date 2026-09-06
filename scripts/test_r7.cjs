@@ -2,13 +2,13 @@
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict'),crypto=require('node:crypto');
 let checks=0;const check=(condition,message)=>{assert.ok(condition,message);checks++;};
 const context={};vm.runInNewContext(fs.readFileSync('web/releases.js','utf8'),context);
-const releases=context.YanxuReleases;check(releases.length===19,'all 19 recorded iterations');check(new Set(releases.map(x=>x.id)).size===19,'unique IDs');
-check(releases[0].id==='v13-r8' && releases[0].status==='preview','current R8 remains preview, not a claimed deployment');
+const releases=context.YanxuReleases;check(releases.length===20,'all 20 recorded iterations');check(new Set(releases.map(x=>x.id)).size===20,'unique IDs');
+check(releases[0].id==='v13-r9' && releases[0].status==='preview','current R9 remains preview, not a claimed deployment');
 for(const item of releases){check(/^\d{4}-\d{2}(?:-\d{2})?$/.test(item.date),'record precision');check(['published','preview','history'].includes(item.status),'explicit status');check(item.changes.length>=2,'useful notes');}
 check(releases.find(x=>x.id==='initial').date==='2026-07','do not invent initial day');check(!releases.some(x=>x.id==='v13-r2'),'do not invent absent R2');
 const html=fs.readFileSync('web/materials.html','utf8'),app=fs.readFileSync('web/app.js','utf8'),environment=fs.readFileSync('web/environment.js','utf8');
 for(const id of ['material-grid','material-categories','admin-actions','add-material','material-search'])check(html.split('id="'+id+'"').length===2,'preserved unique hook '+id);
-check(/materials\.js\?v=20260906v13r7/.test(html),'unchanged material logic cache version');check(/v13\.css\?v=20260906v13r8/.test(html),'current shared CSS cache version');
+check(/materials\.js\?v=20260906v13r7/.test(html),'unchanged material logic cache version');check(/v13\.css\?v=20260906v13r9/.test(html),'current shared CSS cache version');
 check(!/navigator\.geolocation|localStorage|sessionStorage/.test(environment),'no permission prompt/IP persistence');check(!/<select|city-input|city-select/.test(environment),'no manual city selection');
 check(app.includes('environmentPanel?.destroy()'),'disposable lifecycle');
 check(fs.statSync('web/assets/book-paper-v13r7.jpg').size<100000,'paper browser budget <100KB');

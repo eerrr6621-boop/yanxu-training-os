@@ -472,7 +472,7 @@ async function main() {
     check('renderer imports pinned local Three r171', imports.includes('/vendor/three-r171/three.module.min.js'), imports.join(','));
     check('renderer imports local page surface', imports.includes('/scene/book-surface.js'), imports.join(','));
     check('renderer has no remote or bare specifier', imports.every((value) => value.startsWith('/') && !value.startsWith('//')), imports.join(','));
-    imports.forEach((specifier) => check('module dependency exists: ' + specifier, fs.existsSync(path.join(webRoot, specifier.slice(1)))));
+    imports.forEach((specifier) => check('module dependency exists: ' + specifier, fs.existsSync(path.join(webRoot, new URL(specifier, 'http://local.test').pathname.slice(1)))));
     const threeSource = fs.readFileSync(threePath, 'utf8');
     const threeDependencies = [...new Set([...threeSource.matchAll(/\bfrom\s*['"]([^'"]+)['"]/g)].map((match) => match[1]))];
     check('Three facade has one pinned relative core dependency', threeDependencies.length === 1 && threeDependencies[0] === './three.core.min.js', threeDependencies.join(','));
@@ -575,7 +575,7 @@ async function main() {
     check('no duplicate timers or RAF', h.scheduler.maxTimers === 1 && h.scheduler.maxFrames === 1);
     check('renderer contains fixed two-sided spread', /leftBaseBack.set\(1\)/.test(renderer) && /rightBase.set\(0\)/.test(renderer));
     check('renderer has no animated page stack', !/const pages =|state\.turn|state\.page|easeBookProgress/.test(renderer));
-    check('right brand and second line are fixed print', renderer.includes("ctx.fillText('研序', 384, 625)") && renderer.includes("ctx.fillText('就用', 138, 625)"));
+    check('right brand and second line are fixed print', renderer.includes("ctx.fillText('研序', 384, 625)") && renderer.includes("ctx.fillText('就用', 184, 625)"));
     check('only left print is repainted during transition', renderer.includes('if (textChanged) leftPrint.repaint()') && !renderer.includes('rightPrint.repaint()'));
     controller.destroy();
   });

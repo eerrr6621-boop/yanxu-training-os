@@ -300,8 +300,8 @@ function collectResources(sourceByPath) {
   };
   for (const source of sourceByPath.values()) {
     for (const match of source.matchAll(/(?:href|src)\s*=\s*['"](\/[^'"#]+)['"]/g)) add(match[1]);
-    // Generated business pictograms are held in a fixed source map, not literal img tags.
-    for (const match of source.matchAll(/['"](\/assets\/icons\/[a-z0-9-]+\.png)['"]/g)) add(match[1]);
+    // Generated artwork and Three.js print assets also live in source maps, not img tags.
+    for (const match of source.matchAll(/['"](\/assets\/[a-z0-9/_-]+\.(?:png|jpe?g|webp|svg)(?:\?[^'"]*)?)['"]/gi)) add(match[1]);
     for (const match of source.matchAll(/(?:url\(|import\(|script\.src\s*=\s*)\s*['"](\/[^'")]+)['"]/g)) add(match[1]);
   }
   return [...references].sort();

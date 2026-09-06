@@ -1,6 +1,6 @@
 // Static, compressed paper signatures. One closed mesh per half, not loose sheets.
-export function createPaperBlock({ width = 1.55, height = 2.1, depth = .072, layers = 8, segments = 12, side = 1 } = {}) {
-  if (![width, height, depth].every((n) => Number.isFinite(n) && n > 0) || !Number.isInteger(layers) || layers < 1 || layers > 32 || !Number.isInteger(segments) || segments < 1 || segments > 32 || ![-1, 1].includes(side)) throw new RangeError('Invalid paper block dimensions');
+export function createPaperBlock({ width = 1.55, height = 2.1, depth = .072, layers = 8, segments = 12, side = 1, restBend = 0 } = {}) {
+  if (![width, height, depth].every((n) => Number.isFinite(n) && n > 0) || !Number.isInteger(layers) || layers < 1 || layers > 32 || !Number.isInteger(segments) || segments < 1 || segments > 32 || ![-1, 1].includes(side) || !Number.isFinite(restBend) || restBend < 0 || restBend > 4) throw new RangeError('Invalid paper block dimensions');
   const positions = [], uvs = [], indices = [], ring = segments * 4;
   for (let level = 0; level <= layers * 2; level += 1) {
     const t = level / (layers * 2), inset = level % 2 ? 0 : .0012;
@@ -23,6 +23,12 @@ export function createPaperBlock({ width = 1.55, height = 2.1, depth = .072, lay
       const a = start + i, b = start + (i + 1) % ring;
       indices.push(center, top ? a : b, top ? b : a);
     }
+  }
+  // Follow the top sheet while keeping the bottom flush on the cover board.
+  if (restBend) for (let i = 0; i < positions.length; i += 3) {
+    const u = Math.abs(positions[i]) / width, v = positions[i + 1] / height + .5;
+    const ratio = Math.min(1, Math.max(0, (positions[i + 2] + .001 + depth) / depth));
+    positions[i + 2] += pageRestRelief(u, v, 0) * restBend * ratio;
   }
   if (side < 0) for (let i = 0; i < indices.length; i += 3) [indices[i + 1], indices[i + 2]] = [indices[i + 2], indices[i + 1]];
   return { positions: new Float32Array(positions), uvs: new Float32Array(uvs), indices: new Uint16Array(indices) };
