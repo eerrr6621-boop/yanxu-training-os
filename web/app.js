@@ -791,7 +791,7 @@
         <div class="login-ambient" aria-hidden="true"><span></span></div>
         <header class="login-topbar">
           <div class="orbit-brand">${brandSymbol()}<span>研序</span></div>
-          <nav class="login-public-nav" aria-label="公共页面"><a class="login-materials" href="/materials.html">${businessArt('materials')}<span>培训资料下载</span>${icon('arrow-up-right')}</a><a class="login-history" href="/updates.html">往期更新</a></nav>
+          <nav class="login-public-nav" aria-label="公共页面"><a class="login-materials" href="/materials.html">${businessArt('materials')}<span>培训资料下载</span>${icon('arrow-up-right')}</a><a class="login-history" href="/updates.html"><span>往期更新</span><img class="login-new" src="/assets/new-wordmark-v13r11.webp" alt="NEW" width="160" height="44"></a></nav>
         </header>
         <div class="login-layout">
           <section class="login-visual" data-login-visual aria-label="培训运营，就用研序">

@@ -238,7 +238,7 @@ html body.yx-v13 .login-learning:has(#login-form[aria-busy="true"]) .login-ambie
 html body.yx-v13 .login-topbar { position: relative; width: 100%; z-index: 2; display: flex; align-items: center; gap: clamp(16px,3vw,40px); min-height: 100px; max-width: 1600px; margin: 0 auto; padding: 24px clamp(24px,3.5vw,72px); }
 html body.yx-v13 .orbit-brand { display: flex; align-items: center; gap: 12px; color: #213149; font-size: 24px; font-weight: 600; letter-spacing: .12em; }
 html body.yx-v13 .orbit-brand .brand-symbol { display: block; width: 36px; height: 36px; }
-html body.yx-v13 .login-materials { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 12px; border-radius: 9px; color: #5b6b80; font-size: 14px; text-decoration: none; transition: background .2s,color .2s; }
+html body.yx-v13 .login-materials { display: inline-flex; align-items: center; gap: 9px; min-height: 44px; padding: 0 12px; border-radius: 9px; color: #405773; font-size: 1.0625rem; font-weight: 500; white-space: nowrap; text-decoration: none; transition: background .2s,color .2s; }
 html body.yx-v13 .login-materials:hover { background: #ffffffcc; color: #263c66; }
 html body.yx-v13 .login-materials .business-art { filter: none; opacity: .8; }
 html body.yx-v13 .login-materials .business-art { width: 20px; height: 20px; flex-basis: 20px; }
@@ -278,10 +278,10 @@ html body.yx-v13 .orbit-panel .login-input input { min-width: 0; flex: 1; height
 html body.yx-v13 .orbit-panel .login-input input::placeholder { color: #98a4b6; }
 html body.yx-v13 .orbit-panel #pwd-toggle { display: grid; place-items: center; width: 44px; height: 44px; flex: 0 0 44px; margin-right: -10px; border: 0; border-radius: 9px; background: transparent; color: #8a99ad; cursor: pointer; }
 html body.yx-v13 .orbit-panel #pwd-toggle svg { width: 18px; height: 18px; }
-html body.yx-v13 .orbit-panel .login-submit { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; height: 54px; margin-top: 24px; padding: 0 22px; border: 1px solid #596fea; border-radius: 11px; background: linear-gradient(112deg,#5462ed,#345dcb); color: #fff; font-size: 15px; font-weight: 550; box-shadow: inset 0 1px 0 #ffffff26,0 7px 20px #405edb20; cursor: pointer; transition: transform .2s,box-shadow .2s; }
+html body.yx-v13 .orbit-panel .login-submit { position: relative; display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; height: 54px; margin-top: 24px; padding: 0 48px; border: 1px solid #596fea; border-radius: 11px; background: linear-gradient(112deg,#5462ed,#345dcb); color: #fff; font-size: 15px; font-weight: 550; text-align: center; box-shadow: inset 0 1px 0 #ffffff26,0 7px 20px #405edb20; cursor: pointer; transition: transform .2s,box-shadow .2s; }
 html body.yx-v13 .orbit-panel .login-submit:hover { transform: translateY(-1px); box-shadow: inset 0 1px 0 #ffffff30,0 10px 26px #405edb30; }
 html body.yx-v13 .orbit-panel .login-submit:active { transform: translateY(0); }
-html body.yx-v13 .orbit-panel .login-submit > svg { width: 17px; height: 17px; }
+html body.yx-v13 .orbit-panel .login-submit > svg { position: absolute; right: 22px; width: 17px; height: 17px; }
 html body.yx-v13 .orbit-panel .login-submit:disabled { cursor: wait; opacity: .65; }
 html body.yx-v13 .orbit-panel .login-err { min-height: 0; margin: 0 0 16px; color: #ad4c5b; font-size: 14px; line-height: 1.65; }
 html body.yx-v13 .orbit-panel .login-err:empty { display: none; }
@@ -289,7 +289,7 @@ html body.yx-v13 .orbit-panel .v10-caps:empty { display: none; }
 html body.yx-v13 .orbit-panel .v10-caps.show { margin-top: 0; font-size: 13px; }
 @media (max-width: 1000px) {
   html body.yx-v13 .login-topbar { gap: 10px; padding-inline: 24px; }
-  html body.yx-v13 .login-materials { font-size: 13px; padding-inline: 6px; }
+  html body.yx-v13 .login-materials { padding-inline: 6px; }
   html body.yx-v13 .orbit-panel { padding-inline: 30px; }
   html body.yx-v13 .book-stage { height: 440px; }
 }
@@ -297,7 +297,7 @@ html body.yx-v13 .orbit-panel .v10-caps.show { margin-top: 0; font-size: 13px; }
   html body.yx-v13 .login-topbar { width: 100%; justify-content: space-between; min-height: 76px; gap: 10px; padding: 16px 20px; flex-wrap: wrap; }
   html body.yx-v13 .orbit-brand { gap: 8px; font-size: 20px; }
   html body.yx-v13 .orbit-brand .brand-symbol { width: 30px; height: 30px; }
-  html body.yx-v13 .login-materials { padding-inline: 7px; gap: 6px; font-size: 13px; }
+  html body.yx-v13 .login-materials { padding-inline: 0; gap: 8px; font-size: 1rem; }
   html body.yx-v13 .login-materials > svg { display: none; }
   html body.yx-v13 .login-layout { display: flex; flex-direction: column; gap: 14px; width: 100%; min-height: 0; padding: 0 20px 32px; }
   html body.yx-v13 .login-visual { flex: 0 0 auto; width: 100%; min-height: 0; height: 220px; padding: 0; }
@@ -606,8 +606,9 @@ html body.yx-v13 :is(.answer-field-hint,.answer-privacy,.answer-optional) { font
 }
 /* R7: public history and optional ambient context. */
 html body.yx-v13 .login-public-nav { display: flex; align-items: center; gap: 24px; }
-html body.yx-v13 .login-history { font-size: 14px; color: #60758f; padding: 12px 4px; text-decoration: none; }
+html body.yx-v13 .login-history { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; font-size: 1.0625rem; font-weight: 500; color: #405773; padding: 10px 4px; white-space: nowrap; text-decoration: none; }
 html body.yx-v13 .login-history:hover { color: #304f8d; }
+html body.yx-v13 .login-new { display: block; width: 38px; height: auto; flex: 0 0 38px; }
 html body.yx-v13 .login-environment { width: 100%; max-width: 384px; padding: 0 0 24px; margin: 0 0 28px; border-bottom: 1px solid #e7ebf2; }
 html body.yx-v13 .environment-time { display: flex; align-items: baseline; gap: 14px; color: #677991; }
 html body.yx-v13 .environment-time time { font-size: 30px; font-weight: 400; letter-spacing: -.04em; line-height: 1.15; font-variant-numeric: tabular-nums; color: #344b69; }
@@ -649,13 +650,24 @@ html body.yx-v13 .release-chevron { color: #71849b; font-size: 20px; transition:
 html body.yx-v13 .release-detail[open] .release-chevron { transform: rotate(180deg); }
 html body.yx-v13 .release-changes { padding: 0 0 0 18px; margin: 20px 0 4px; color: #5c7089; font-size: 14px; line-height: 1.85; }
 html body.yx-v13 .release-changes li + li { margin-top: 8px; }
+html body.yx-v13 .release-day-label { font-size: 11px; color: #77889c; }
+html body.yx-v13 .release-content { min-width: 0; }
+html body.yx-v13 .release-statuses { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; }
+html body.yx-v13 .release-statuses .release-status::before { content: ''; display: inline-block; width: 5px; height: 5px; border-radius: 50%; margin: 0 6px 2px 0; background: currentColor; }
+html body.yx-v13 .release-group { margin-top: 26px; }
+html body.yx-v13 .release-group + .release-group { padding-top: 24px; border-top: 1px solid #e3eaf2; }
+html body.yx-v13 .release-group-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 0; font-weight: 500; }
+html body.yx-v13 .release-group .release-changes { margin-top: 12px; }
+html body.yx-v13 .release-record-time { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; margin-top: 22px; font-size: 12px; line-height: 1.7; color: #64768d; }
+html body.yx-v13 .release-record-time time { font-variant-numeric: tabular-nums; white-space: nowrap; color: #485f7a; }
 html body.yx-v13 .updates-page :focus-visible { outline: 3px solid #507bbc55; outline-offset: 4px; }
 @media (max-width: 1100px) {
   html body.yx-v13 .topbar-environment .environment-time > span { display: none; }
 }
 @media (max-width: 760px) {
-  html body.yx-v13 .login-public-nav { gap: 14px; }
-  html body.yx-v13 .login-history { font-size: 12px; }
+  html body.yx-v13 .login-topbar { flex-wrap: wrap; row-gap: 8px; }
+  html body.yx-v13 .login-public-nav { width: 100%; flex-wrap: wrap; gap: 8px 26px; }
+  html body.yx-v13 .login-history { font-size: 1rem; padding-inline: 0; }
   html body.yx-v13 .login-environment { padding-bottom: 18px; margin-bottom: 22px; }
   html body.yx-v13 .environment-time time { font-size: 25px; }
   html body.yx-v13 .topbar-environment { display: none; }

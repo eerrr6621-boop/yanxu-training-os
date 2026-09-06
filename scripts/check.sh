@@ -13,6 +13,7 @@ node scripts/test_book_headlines.cjs
 node scripts/test_login_background.cjs
 node scripts/check_business_art.cjs
 node scripts/test_r7.cjs
+node scripts/test_release_days.cjs
 node scripts/test_environment.cjs
 check_root="$(mktemp -d "${TMPDIR:-/tmp}/yanxu-check.XXXXXX")"
 check_pid=""

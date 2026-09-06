@@ -4,8 +4,8 @@ const base=process.env.TRAINING_PREVIEW_BASE||'http://127.0.0.1:18087';
 const host=new URL(base);if(!['127.0.0.1','localhost'].includes(host.hostname))throw new Error('Local preview verification only');
 let checks=0;const check=(condition,message)=>{assert.ok(condition,message);checks++;};
 (async()=>{
-  for(const path of ['/','/materials.html','/answer.html','/updates.html']){const r=await fetch(base+path);const text=await r.text();check(r.ok,'public page '+path);check(text.includes('yanxu-v13-clarity-r10'),'current R10 page build '+path);}
-  for(const path of ['/environment.js?v=20260906v13r7','/releases.js?v=20260906v13r10','/updates.js?v=20260906v13r7','/assets/book-paper-v13r7.jpg']){const r=await fetch(base+path);check(r.ok,'public asset '+path);}
+  for(const path of ['/','/materials.html','/answer.html','/updates.html']){const r=await fetch(base+path);const text=await r.text();check(r.ok,'public page '+path);check(text.includes('yanxu-v13-clarity-r11'),'current R11 page build '+path);}
+  for(const path of ['/environment.js?v=20260906v13r7','/releases.js?v=20260906v13r11','/updates.js?v=20260906v13r11','/assets/book-paper-v13r7.jpg']){const r=await fetch(base+path);check(r.ok,'public asset '+path);}
   const response=await fetch(base+'/api/visitor-context');check(response.ok,'anonymous login weather endpoint');check(/(?:^|,)\s*no-store(?:\s*,|$)/.test(response.headers.get('cache-control')||''),'no shared IP cache (preview proxy also enforces no-store)');
   const payload=await response.json();check(payload.status==='not_configured'||payload.status==='location_unavailable','no fake location in local preview');check(!Object.keys(payload).some(key=>/ip|token|latitude|longitude|key/i.test(key)),'no private details');
   check((await fetch(base+'/api/visitor-context?city=上海')).status===400,'manual city override rejected');check((await fetch(base+'/api/visitor-context',{method:'POST'})).status===405,'weather cannot mutate');

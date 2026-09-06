@@ -4,6 +4,22 @@ All notable changes to Yanxu Training OS. Dates follow the production release hi
 
 ## [1.9.0] — 2026-09-06 · Clarity & Native-feeling Workspace
 
+### R11 preview iteration
+- Enlarged login public navigation to 17px on desktop / 16px on mobile. Added one
+  built-in ImageGen NEW wordmark, with user-approved halo cleanup, transparent trim
+  and lossless compression (5,656 bytes); retained the original and exact prompt.
+- Consolidated 21 public iteration notes into six daily summaries and one early
+  month archive. Published and preview sections remain separate within a day.
+  Same-day maintenance now edits the existing note instead of adding another card.
+- Added verified second-precision Beijing maintenance timestamps below each day's
+  content, including collapsed entries. Older unknown times retain date/month
+  precision; no inferred deployment time or page-visit timestamp is displayed.
+- Centered the login button label independently of its right-aligned arrow.
+  Weather remains unconfigured pending provider credentials and approved server
+  setup; no guessed visitor city, provider request or production change was made.
+- Added daily-history, cache compatibility, typography and asset regressions.
+  GitHub push and deployment remain subject to the existing authorization blockers.
+
 ### R10 preview iteration
 - Added one built-in ImageGen silver-white refractive background across the login
   page, keeping the center quiet and pale blue optical detail toward the bottom.
