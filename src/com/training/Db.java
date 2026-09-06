@@ -79,7 +79,27 @@ public class Db {
                     "status VARCHAR(16) DEFAULT '上架', download_count BIGINT DEFAULT 0, created_by BIGINT," +
                     "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
             st.execute("CREATE INDEX IF NOT EXISTS idx_materials_status_created ON materials(status, created_at)");
+            st.execute("CREATE TABLE IF NOT EXISTS teacher_resumes(" +
+                    "id IDENTITY PRIMARY KEY, teacher_id BIGINT NOT NULL, file_name VARCHAR(255) NOT NULL," +
+                    "storage_name VARCHAR(64) UNIQUE NOT NULL, file_size BIGINT NOT NULL, sha256 VARCHAR(64) NOT NULL," +
+                    "page_count INT DEFAULT 0, extracted_text CLOB, profile_json CLOB, manual_profile CLOB, profile_source VARCHAR(24)," +
+                    "parse_status VARCHAR(24) DEFAULT 'queued', parse_error VARCHAR(500), is_current BOOLEAN DEFAULT FALSE," +
+                    "uploaded_by BIGINT, reviewed_by BIGINT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP," +
+                    "parsed_at TIMESTAMP, reviewed_at TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP," +
+                    "UNIQUE(teacher_id,sha256))");
+            st.execute("CREATE INDEX IF NOT EXISTS idx_teacher_resumes_teacher_current " +
+                    "ON teacher_resumes(teacher_id,is_current,created_at)");
+            st.execute("CREATE INDEX IF NOT EXISTS idx_teacher_resumes_status " +
+                    "ON teacher_resumes(parse_status,created_at)");
+            st.execute("ALTER TABLE teacher_resumes ADD COLUMN IF NOT EXISTS manual_profile CLOB");
             // 兼容已有本地数据库：以非破坏方式补齐运营字段。
+            // 不从单位/简历推断常驻地；历史未知值保留，首次编辑时由管理员补录。
+            st.execute("ALTER TABLE teachers ADD COLUMN IF NOT EXISTS base_province VARCHAR(64)");
+            st.execute("ALTER TABLE teachers ADD COLUMN IF NOT EXISTS base_city VARCHAR(64)");
+            st.execute("ALTER TABLE demands ADD COLUMN IF NOT EXISTS training_province VARCHAR(64)");
+            st.execute("ALTER TABLE demands ADD COLUMN IF NOT EXISTS training_city VARCHAR(64)");
+            st.execute("ALTER TABLE demands ADD COLUMN IF NOT EXISTS training_mode VARCHAR(16)");
+            st.execute("ALTER TABLE demands ADD COLUMN IF NOT EXISTS training_period VARCHAR(16)");
             st.execute("ALTER TABLE projects ADD COLUMN IF NOT EXISTS owner VARCHAR(64)");
             st.execute("ALTER TABLE projects ADD COLUMN IF NOT EXISTS participant_count INT DEFAULT 0");
             st.execute("ALTER TABLE projects ADD COLUMN IF NOT EXISTS delivery_mode VARCHAR(32)");
@@ -90,13 +110,15 @@ public class Db {
             st.execute("ALTER TABLE dispatches ADD COLUMN IF NOT EXISTS venue VARCHAR(200)");
             st.execute("ALTER TABLE dispatches ADD COLUMN IF NOT EXISTS confirm_deadline VARCHAR(32)");
             st.execute("ALTER TABLE dispatches ADD COLUMN IF NOT EXISTS material_status VARCHAR(32)");
-            // 为随系统提供的示例项目补充可直接体验的交付信息；只处理首次迁移产生的 NULL 字段。
+            // 只在明确启用的演示环境补填示例值，真实项目即使同名也不自动改写。
+            if (Boolean.getBoolean("bootstrap.demo")) {
             st.execute("UPDATE projects SET owner='陈婧', participant_count=42, delivery_mode='线下集中', venue='市干部教育中心 302', contract_no='YX-2026-017' WHERE owner IS NULL AND title='中层干部领导力提升培训班'");
             st.execute("UPDATE projects SET owner='赵明', participant_count=60, delivery_mode='线下集中', venue='某商业银行培训中心 A1', contract_no='YX-2026-021' WHERE owner IS NULL AND title='新员工入职培训（第一期）'");
             st.execute("UPDATE projects SET owner='周航', participant_count=38, delivery_mode='线下集中', venue='机关党校报告厅', contract_no='YX-2026-026' WHERE owner IS NULL AND title='党史学习教育专题培训班'");
             st.execute("UPDATE dispatches SET start_time='09:00', end_time='12:00', venue='市干部教育中心 302', confirm_deadline='2026-08-10', material_status='准备中' WHERE start_time IS NULL AND project_id=1 AND subject='战略思维与领导力'");
             st.execute("UPDATE dispatches SET start_time='14:00', end_time='17:00', venue='市干部教育中心 302', confirm_deadline='2026-08-10', material_status='待准备' WHERE start_time IS NULL AND project_id=1 AND subject='团队建设与绩效管理'");
             st.execute("UPDATE dispatches SET start_time='09:00', end_time='16:30', venue='机关党校报告厅', confirm_deadline='2026-08-04', material_status='待准备' WHERE start_time IS NULL AND project_id=3 AND subject='党史专题辅导'");
+            }
         }
         seed();
     }
@@ -141,6 +163,11 @@ public class Db {
         exec("INSERT INTO teachers(name,gender,org,title,field,phone,email,fee_rate,intro,status,in_date) VALUES(?,?,?,?,?,?,?,?,?,'在库',?)",
                 "刘晓芸", "女", "某咨询公司", "资深顾问", "市场营销、客户服务", "13800000005", "liuxy@example.com", 2000,
                 "十余年营销咨询经验，案例丰富，互动性强。", "2025-02-15");
+
+        // Synthetic demo locations only, never a migration/backfill for existing teachers.
+        exec("UPDATE teachers SET base_province='北京',base_city='北京' WHERE id IN (1,2)");
+        exec("UPDATE teachers SET base_province='浙江',base_city='杭州' WHERE id IN (3,5)");
+        exec("UPDATE teachers SET base_province='江苏',base_city='南京' WHERE id=4");
 
         exec("INSERT INTO demands(title,unit,contact,phone,hours,content,teacher_req,expect_date,status,remark) VALUES(?,?,?,?,?,?,?,?,?,?)",
                 "中层干部领导力提升培训班", "某市国资委", "周主任", "0571-88000001", 24,

@@ -15,6 +15,24 @@
     return value.toLocaleString('zh-CN', { maximumFractionDigits: 0 });
   };
   const num = (n) => (Number(n || 0)).toLocaleString('zh-CN');
+  function collectionProgress(contractValue, dueValue, receivedValue) {
+    const contract = Number(contractValue) || 0;
+    const due = Number(dueValue) || 0;
+    const received = Number(receivedValue) || 0;
+    const target = contract > 0 ? contract : due;
+    // 金额按分呈现，避免 0.1 + 0.7 的浮点尾差生成 ¥0.00 回款待办。
+    const outstanding = Math.max(0, Math.round((target - received) * 100) / 100);
+    return {
+      target,
+      outstanding,
+      rate: target > 0 ? (outstanding === 0 ? 100 : Math.min(100, Math.max(0, received / target * 100))) : 0,
+      mismatch: contract > 0 && Math.abs(due - contract) > 0.005,
+    };
+  }
+  function collectionStageStatus(progress, received) {
+    // 客户回款和讲师课酬是两个独立流程；课酬不会阻止回款阶段完成。
+    return progress.outstanding === 0 && !progress.mismatch ? 'done' : received > 0 ? 'current' : 'todo';
+  }
   const shiftIsoDate = (date, days) => {
     if (!date) return '';
     const parts = String(date).split('-').map(Number);
@@ -23,7 +41,35 @@
     return value.toISOString().slice(0, 10);
   };
   const icon = (name, cls = '') => `<i data-lucide="${esc(name)}" class="${esc(cls)}" aria-hidden="true"></i>`;
-  const brandSymbol = (cls = '') => `<img class="brand-symbol ${esc(cls)}" src="/assets/yx-mark-v10.png?v=20260813v10r3" alt="" aria-hidden="true">`;
+  const brandSymbol = (cls = '') => `<img class="brand-symbol ${esc(cls)}" src="/assets/yx-mark-v13.png?v=20260906v13" alt="" aria-hidden="true">`;
+  const BUSINESS_ART = Object.freeze({
+    dashboard: '/assets/icons/dashboard-v13.png',
+    projects: '/assets/icons/projects-v13.png',
+    documents: '/assets/icons/documents-v13.png',
+    contract: '/assets/icons/contract-v13.png',
+    calendar: '/assets/icons/calendar-v13.png',
+    faculty: '/assets/icons/faculty-v13.png',
+    evaluation: '/assets/icons/evaluation-v13.png',
+    collection: '/assets/icons/collection-v13.png',
+    fees: '/assets/icons/fees-v13.png',
+    costs: '/assets/icons/costs-v13.png',
+    report: '/assets/icons/report-v13.png',
+    access: '/assets/icons/access-v13.png',
+    materials: '/assets/icons/materials-v13.png',
+    recommend: '/assets/icons/recommend-v13.png',
+  });
+  const businessArt = (kind) => `<img class="business-art" src="${Object.hasOwn(BUSINESS_ART, kind) ? BUSINESS_ART[kind] : BUSINESS_ART.documents}?v=20260906v13i1" alt="" aria-hidden="true" width="48" height="48" decoding="async">`;
+  function taskArtKind(item) {
+    if (['documents', 'calendar', 'faculty', 'collection', 'evaluation', 'fees', 'costs'].includes(item?.art)) return item.art;
+    switch (item?.page) {
+      case 'dispatches': return 'faculty';
+      case 'charges': return 'collection';
+      case 'questionnaires': return 'evaluation';
+      case 'fees': return 'fees';
+      case 'costs': return 'costs';
+      default: return 'documents';
+    }
+  }
   const mergeContextLabels = (values) => {
     const unique = [...new Set(values.filter(Boolean))];
     if (unique.length < 2) return unique[0] || '';
@@ -123,17 +169,25 @@
   }
   window.addEventListener('resize', debounce(() => chartInstances.forEach((chart) => chart.resize())));
 
-  const state = { user: null, page: 'dashboard', projectId: null, contextProjectId: null, focusId: null, initialFilter: null, filters: {}, cache: {} };
+  const state = { user: null, page: 'dashboard', projectId: null, contextProjectId: null, focusId: null, initialFilter: null, filters: {}, cache: {}, teacherTab: 'library', teacherRequirementDraft: '', teacherRecommendationForm: { demandId: '', maxResults: '3', maxFeeRate: '', hardBudget: false } };
   let routeEpoch = 0;
   let routeCleanups = [];
   let lastRenderedHash = '';
   let navKeyHandler = null;
+  let navViewportCleanup = null;
   let globalKeyHandler = null;
   let scrollShadowHandler = null;
   let v6PointerHandler = null;
   let loginRotTimer = null;
   let loginRotSwap = null;
   let v7GlowHandler = null;
+  let loginMotion = null;
+  let environmentPanel = null;
+  function disposeLoginExperience() {
+    environmentPanel?.destroy(); environmentPanel = null;
+    try { loginMotion?.destroy(); } catch (_) { /* Optional artwork must not block navigation. */ }
+    finally { loginMotion = null; }
+  }
 
   function clearRouteAsync() {
     const cleanups = routeCleanups;
@@ -142,6 +196,7 @@
   }
 
   function beginRouteEpoch() {
+    closeRowMenu();
     clearRouteAsync();
     routeEpoch += 1;
     return routeEpoch;
@@ -178,10 +233,15 @@
     state.initialFilter = null;
     state.filters = {};
     state.cache = {};
+    state.teacherTab = 'library';
+    state.teacherRequirementDraft = '';
+    state.teacherRecommendationForm = { demandId: '', maxResults: '3', maxFeeRate: '', hardBudget: false };
     localStorage.removeItem('token');
     clearTimeout(toastTimer);
     toastTimer = null;
     $('.toast')?.remove();
+    const sessionModal = $('#modal-mask');
+    if (sessionModal) sessionModal.dataset.locked = 'false';
     closeModal();
     if (!alreadyOnLogin) renderLogin();
   }
@@ -205,7 +265,7 @@
     return {
       setMode(mode, payload = {}) {
         document.documentElement.dataset.sceneMode = mode;
-        if (mode === 'shell') {
+        if (mode === 'shell' || document.body.classList.contains('yx-v13')) {
           generation += 1;
           controller?.destroy?.();
           controller = undefined;
@@ -219,6 +279,7 @@
   })();
 
   function navigateTo(page, options = {}) {
+    closeRowMenu();
     const { projectId = null, focusId = null, filter = null, skipHistory = false, replaceHistory = false } = options;
     closeModal();
     state.page = page;
@@ -327,6 +388,79 @@
     return j.data;
   }
 
+  function encodeBase64UrlUtf8(value) {
+    const bytes = new TextEncoder().encode(String(value || ''));
+    let binary = '';
+    bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
+    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+  }
+
+  /** 讲师简历使用原始 PDF/PPTX 请求体上传，避免通用 JSON 请求器破坏文件内容。 */
+  async function uploadTeacherResume(file, teacherId, opts = {}) {
+    return new Promise((resolve, reject) => {
+      const request = new XMLHttpRequest();
+      const abort = () => request.abort();
+      const cleanup = () => opts.signal?.removeEventListener('abort', abort);
+      const fail = (message) => { cleanup(); toast(message, true); reject(new Error(message)); };
+      request.open('POST', `/api/teacher-resumes/upload?teacher_id=${encodeURIComponent(teacherId)}`);
+      request.setRequestHeader('Content-Type', /\.pptx$/i.test(file.name || '') ? 'application/vnd.openxmlformats-officedocument.presentationml.presentation' : 'application/pdf');
+      request.setRequestHeader('X-Resume-Name', encodeBase64UrlUtf8(file.name));
+      request.timeout = 10 * 60 * 1000;
+      request.upload.onprogress = (event) => opts.onProgress?.(event.loaded, event.lengthComputable ? event.total : file.size);
+      request.upload.onload = () => opts.onProgress?.(file.size, file.size);
+      request.onerror = () => fail(navigator.onLine ? '简历上传失败，请稍后重试' : '网络已断开，恢复连接后请重试');
+      request.ontimeout = () => fail('上传等待时间过长，请检查网络后重试');
+      request.onabort = () => { cleanup(); reject(new DOMException('上传已取消', 'AbortError')); };
+      request.onload = () => {
+        cleanup();
+        let payload;
+        try { payload = JSON.parse(request.responseText); }
+        catch (error) { fail(request.status === 413 ? '文件超过服务器允许的大小，请压缩后重试' : '上传服务暂时不可用，请稍后重试'); return; }
+        if (payload.code === 401) {
+          const activeModal = $('#modal-mask');
+          if (activeModal) activeModal.dataset.locked = 'false';
+          invalidateSession();
+          reject(new Error(payload.msg || '登录状态已失效，请重新登录'));
+          return;
+        }
+        if (request.status < 200 || request.status >= 300 || payload.code !== 0) { fail(payload.msg || '简历上传失败'); return; }
+        resolve(payload.data);
+      };
+      if (opts.signal?.aborted) { reject(new DOMException('上传已取消', 'AbortError')); return; }
+      opts.signal?.addEventListener('abort', abort, { once: true });
+      request.send(file);
+    });
+  }
+
+  async function downloadTeacherResume(teacherId, fallbackName = '讲师简历.pdf') {
+    let res;
+    try {
+      res = await fetch(`/api/teacher-resumes/download?teacher_id=${encodeURIComponent(teacherId)}`, { credentials: 'same-origin' });
+    } catch (error) {
+      toast('简历下载失败，请检查网络后重试', true);
+      return;
+    }
+    if (!res.ok || String(res.headers.get('content-type') || '').includes('application/json')) {
+      let message = '简历下载失败';
+      try {
+        const payload = JSON.parse(await res.text());
+        message = payload.msg || message;
+        if (payload.code === 401) invalidateSession();
+      } catch (error) { /* 保留通用提示 */ }
+      toast(message, true);
+      return;
+    }
+    const blob = await res.blob();
+    const href = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = href;
+    link.download = String(fallbackName || '讲师简历.pdf').replace(/[\\/:*?"<>|]/g, '_');
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(href), 1200);
+  }
+
   let toastTimer = null;
   function toast(msg, isErr) {
     clearTimeout(toastTimer);
@@ -406,6 +540,11 @@
   function closeModal() {
     const m = $('#modal-mask');
     if (!m) return;
+    if (m.dataset.locked === 'true') {
+      $('.modal', m)?.classList.add('attention');
+      setTimeout(() => $('.modal', m)?.classList.remove('attention'), 220);
+      return;
+    }
     if (m._keyHandler) document.removeEventListener('keydown', m._keyHandler);
     chartInstances = chartInstances.filter((chart) => {
       try { if (m.contains(chart.getDom())) { chart.dispose(); return false; } } catch (e) {}
@@ -450,6 +589,10 @@
       } else {
         input = `<input id="${id}" data-k="${f.k}" type="${f.type === 'readonly' ? 'text' : (f.type || 'text')}" value="${esc(v)}" placeholder="${esc(f.placeholder || '')}" aria-describedby="${describedBy}" ${f.type === 'readonly' ? 'readonly' : ''} ${f.autocomplete ? `autocomplete="${esc(f.autocomplete)}"` : ''} ${common}>`;
       }
+      if (f.regionProvinceKey) {
+        const cities = typeof YX_REGION_CITIES === 'undefined' ? [] : (YX_REGION_CITIES[data?.[f.regionProvinceKey]] || []);
+        input = input.replace('<input ', `<input list="${id}-cities" data-region-province="${esc(f.regionProvinceKey)}" `) + `<datalist id="${id}-cities">${cities.map((city) => `<option value="${esc(city)}"></option>`).join('')}</datalist>`;
+      }
       return `<div class="form-item ${f.span2 || f.type === 'textarea' ? 'span2' : ''}"><label for="${id}">${esc(f.label)}${req}</label>${input}${f.hint ? `<small id="${hintId}">${esc(f.hint)}</small>` : ''}<span class="field-error" id="${errorId}" aria-live="polite"></span></div>`;
     }).join('') + `</div>`;
   }
@@ -484,13 +627,70 @@
   }
 
   // ============ 表格 ============
+  // Keep actions outside table clipping, without expanding or shifting the row.
+  let activeRowMenu = null;
+  function closeRowMenu(restoreFocus = false) {
+    if (!activeRowMenu) return;
+    const { menu, panel, summary } = activeRowMenu;
+    activeRowMenu = null;
+    menu.appendChild(panel);
+    panel.classList.remove('v13-row-menu');
+    panel.removeAttribute('style');
+    menu.open = false;
+    if (restoreFocus && summary.isConnected) summary.focus();
+  }
+  function openRowMenu(menu) {
+    if (activeRowMenu?.menu === menu) return;
+    closeRowMenu();
+    const panel = menu.querySelector(':scope > div');
+    const summary = menu.querySelector('summary');
+    if (!panel || !summary) return;
+    activeRowMenu = { menu, panel, summary };
+    panel.classList.add('v13-row-menu');
+    document.body.appendChild(panel);
+    const rect = summary.getBoundingClientRect();
+    const width = Math.min(200, window.innerWidth - 24);
+    panel.style.width = `${width}px`;
+    panel.style.left = `${Math.max(12, Math.min(rect.right - width, window.innerWidth - width - 12))}px`;
+    const below = window.innerHeight - rect.bottom - 16;
+    const above = rect.top - 16;
+    const height = Math.min(panel.scrollHeight, Math.max(below, above), 360);
+    panel.style.maxHeight = `${Math.max(44, height)}px`;
+    panel.style.top = `${below >= height ? rect.bottom + 6 : Math.max(12, rect.top - height - 6)}px`;
+    panel.onkeydown = (event) => {
+      const buttons = $$('.menu-action:not(:disabled)', panel);
+      const index = buttons.indexOf(document.activeElement);
+      if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+        event.preventDefault();
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length;
+        buttons[next]?.focus();
+      } else if (event.key === 'Tab' && ((event.shiftKey && index === 0) || (!event.shiftKey && index === buttons.length - 1))) {
+        closeRowMenu(true);
+        if (event.shiftKey) event.preventDefault();
+      }
+    };
+  }
+  document.addEventListener('pointerdown', (event) => {
+    if (activeRowMenu && !activeRowMenu.panel.contains(event.target) && !activeRowMenu.summary.contains(event.target)) closeRowMenu();
+  });
+  document.addEventListener('focusin', (event) => {
+    if (activeRowMenu && !activeRowMenu.panel.contains(event.target) && !activeRowMenu.summary.contains(event.target)) closeRowMenu();
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && activeRowMenu) { event.preventDefault(); closeRowMenu(true); }
+  });
+  window.addEventListener('resize', () => closeRowMenu());
+  document.addEventListener('scroll', (event) => {
+    if (activeRowMenu && !activeRowMenu.panel.contains(event.target)) closeRowMenu();
+  }, true);
+
   function actionPriority(action, row) {
     const label = action.l;
     if (label === '补齐准备') return row && row.status === '已确认' ? -1 : 2;
     if (['中标', '启动项目', '收款', '记录通知', '确认', '完成', '发布', '发送链接', '发放', '入库'].includes(label)) return 0;
-    if (['打开项目', '详情', '统计', '档案', '消息'].includes(label)) return 1;
-    if (['编辑', '评价', '重置密码'].includes(label)) return 3;
-    if (['归档', '关闭', '出库', '删除'].includes(label)) return 9;
+    if (['打开项目', '详情', '统计', '档案', '消息', '解析详情'].includes(label)) return 1;
+    if (['编辑', '评价', '重置密码', '编辑画像'].includes(label)) return 3;
+    if (['归档', '关闭', '出库', '删除', '删除简历'].includes(label)) return 9;
     return 5;
   }
 
@@ -525,12 +725,32 @@
   }
 
   function bindTableActions(el, rows, actions) {
+    if (activeRowMenu && !activeRowMenu.menu.isConnected) closeRowMenu();
+    $$('.row-more', el).forEach((menu) => {
+      menu.ontoggle = () => {
+        if (menu.open) openRowMenu(menu);
+        else if (activeRowMenu?.menu === menu) closeRowMenu();
+      };
+      $('summary', menu).onkeydown = (event) => {
+        if (!['ArrowDown', 'Enter', ' '].includes(event.key)) {
+          if (event.key === 'Tab' && activeRowMenu?.menu === menu) {
+            if (event.shiftKey) closeRowMenu();
+            else { event.preventDefault(); activeRowMenu.panel.querySelector('button')?.focus(); }
+          }
+          return;
+        }
+        event.preventDefault();
+        if (event.key !== 'ArrowDown' && activeRowMenu?.menu === menu) { closeRowMenu(true); return; }
+        menu.open = true;
+        openRowMenu(menu);
+        activeRowMenu?.panel.querySelector('button')?.focus();
+      };
+    });
     $$('.btn[data-act]', el).forEach((btn) => {
       btn.onclick = () => {
         const a = actions[Number(btn.dataset.act)];
         const row = rows.find((r) => String(r.id) === btn.dataset.id);
-        const menu = btn.closest('details');
-        if (menu) menu.removeAttribute('open');
+        closeRowMenu(true);
         a.onClick(row);
       };
     });
@@ -538,10 +758,10 @@
   }
 
   const tagClass = (v) => {
-    if (['已确认', '已完成', '已结清', '已发放', '已中标', '在库', '已立项', '已就绪', '启用'].includes(v)) return 'green';
-    if (['待发送', '待评审', '待处理', '待发放', '未收费', '待启动', '待准备', '材料待补充'].includes(v)) return 'orange';
-    if (['已拒绝', '未中标', '已流标'].includes(v)) return 'red';
-    if (['部分收费', '进行中', '已发送', '已投标', '准备中'].includes(v)) return 'blue';
+    if (['已确认', '已完成', '已结清', '已发放', '已中标', '在库', '已立项', '已就绪', '启用', '可推荐'].includes(v)) return 'green';
+    if (['待发送', '待评审', '待处理', '待发放', '未收费', '待启动', '待准备', '材料待补充', '待确认', '等待解析'].includes(v)) return 'orange';
+    if (['已拒绝', '未中标', '已流标', '解析失败'].includes(v)) return 'red';
+    if (['部分收费', '进行中', '已发送', '已投标', '准备中', '解析中'].includes(v)) return 'blue';
     if (['已发布'].includes(v)) return 'violet';
     return 'gray';
   };
@@ -556,52 +776,53 @@
   };
 
   function renderLogin() {
+    disposeLoginExperience();
     state.user = null;
     document.title = '登录 · 研序';
     if (navKeyHandler) { document.removeEventListener('keydown', navKeyHandler); navKeyHandler = null; }
+    if (navViewportCleanup) { navViewportCleanup(); navViewportCleanup = null; }
     if (globalKeyHandler) { document.removeEventListener('keydown', globalKeyHandler); globalKeyHandler = null; }
     if (scrollShadowHandler) { window.removeEventListener('scroll', scrollShadowHandler); scrollShadowHandler = null; }
     if (v7GlowHandler) { window.removeEventListener('pointermove', v7GlowHandler); v7GlowHandler = null; }
     clearCharts();
     sceneBridge.setMode('login');
     document.getElementById('app').innerHTML = `
-      <main class="v6-login" aria-label="研序登录">
-        <div class="v6-bg" aria-hidden="true"><i class="v6-aurora a1"></i><i class="v6-aurora a2"></i><i class="v6-aurora a3"></i><span class="v6-gridlines"></span><span class="v6-glow"></span></div>
-        <header class="v6-top">
-          <div class="v10-top-left"><div class="v6-brand">${brandSymbol()}<span><b>研序</b><small>TRAINING OPERATIONS</small></span></div><a class="v10-material-entry" href="/materials.html">${icon('library-big')}<span><b>培训资料下载</b><small>无需登录 · 公开获取</small></span>${icon('arrow-up-right')}</a></div>
-          <span class="v6-top-mini"><i aria-hidden="true"></i>培训运营中枢</span>
+      <main class="v6-login login-learning" aria-label="研序登录">
+        <div class="login-ambient" aria-hidden="true"><span></span></div>
+        <header class="login-topbar">
+          <div class="orbit-brand">${brandSymbol()}<span>研序</span></div>
+          <nav class="login-public-nav" aria-label="公共页面"><a class="login-materials" href="/materials.html">${businessArt('materials')}<span>培训资料下载</span>${icon('arrow-up-right')}</a><a class="login-history" href="/updates.html"><span>更新记录</span><img class="login-new" src="/assets/new-wordmark-v13r11.webp" alt="NEW" width="160" height="44"></a></nav>
         </header>
-        <section class="v6-hero">
-          <div class="v6-hero-copy">
-            <span class="v10-kicker">YANXU · OPERATIONS CLOUD</span>
-            <h1 aria-label="专业的培训人，都在用研序。">专业<span class="v6-rotword" aria-hidden="true">${V6_ROT_WORDS[0]}</span>，<br>都在用<em>研序</em>。</h1>
-            <p>让需求、项目、师资、交付与结算在同一条运营轨道上持续推进。</p>
-            <div class="v10-proof" aria-label="研序核心能力"><span>${icon('workflow')}全流程协同</span><span>${icon('shield-check')}角色权限</span><span>${icon('chart-spline')}经营洞察</span></div>
-            <div class="v6-pulse" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><span class="v6-pulse-run"></span></div>
-          </div>
-          <div class="v6-card">
-            <div class="v6-card-head"><span class="v6-dot"></span><span><b>进入研序</b><small>使用授权账号继续</small></span><em>SECURE</em></div>
+        <div class="login-layout">
+          <section class="login-visual" data-login-visual aria-label="培训运营，就用研序">
+            <div class="book-stage" data-login-book role="img" aria-label="培训运营、师资推荐、课程交付、项目管理，就用研序。主题自动轮播。" title="拖动查看书本">
+              <div class="book-fallback" aria-hidden="true">
+                <div class="book-fallback-left"><strong class="book-heading-art"><img src="/assets/book-headline-operations-v13r9.webp" alt="培训运营" width="960" height="240"></strong><span class="book-endorsement"><img src="/assets/book-endorsement-v13r8.png" alt="就用 →" width="960" height="320"></span></div>
+                <div class="book-fallback-right">${brandSymbol()}<b>研序</b></div>
+              </div>
+            </div>
+          </section>
+          <section class="orbit-panel" aria-labelledby="login-heading">
+            <div class="login-environment" data-environment><div class="environment-time"><time data-local-clock aria-label="设备本地时间">—</time><span data-local-date></span></div><div class="environment-weather" data-local-weather aria-label="所在城市天气">正在获取天气…</div></div>
+            <div class="login-panel-heading"><span class="login-product-name">YANXU / WORKSPACE</span><h1 id="login-heading">欢迎回到研序</h1></div>
             <form id="login-form">
               <div class="login-err" id="login-err" role="alert" aria-live="polite"></div>
-              <label class="sr-only" for="login-user">账号</label>
-              <div class="login-input">${icon('user-round')}<input id="login-user" name="username" placeholder="账号" autocomplete="username" required aria-describedby="login-user-hint"></div>
+              <div class="login-credentials">
+                <div class="login-field"><label for="login-user">账号</label><div class="login-input"><input id="login-user" name="username" placeholder="输入您的账号" autocomplete="username" required aria-describedby="login-user-hint"></div></div>
+                <div class="login-field"><label for="login-pwd">密码</label><div class="login-input"><input id="login-pwd" name="password" type="password" placeholder="输入密码" autocomplete="current-password" required aria-describedby="caps-lock-note"><button type="button" id="pwd-toggle" aria-label="显示密码">${icon('eye')}</button></div></div>
+              </div>
               <span class="sr-only" id="login-user-hint">请输入您的研序授权账号</span>
-              <label class="sr-only" for="login-pwd">密码</label>
-              <div class="login-input">${icon('lock-keyhole')}<input id="login-pwd" name="password" type="password" placeholder="密码" autocomplete="current-password" required aria-describedby="caps-lock-note"><button type="button" id="pwd-toggle" aria-label="显示密码">${icon('eye')}</button></div>
               <div class="v10-caps" id="caps-lock-note" role="status" aria-live="polite"></div>
               <button type="submit" class="login-submit" id="login-btn"><span>进入工作台</span>${icon('arrow-right')}</button>
             </form>
-            <p class="v6-card-foot">${icon('lock-keyhole')}连接已加密 · 仅限授权用户访问</p>
-          </div>
-        </section>
-        <section class="v6-marquee" aria-hidden="true">
-          <div class="v6-marquee-track">${V6_JOBS.concat(V6_JOBS, V6_JOBS, V6_JOBS).map((j, idx) => `<span class="v6-chip tone-${idx % V6_JOBS.length}">${icon(V6_JOB_ICONS[j.name])}<b>${j.name}</b></span>`).join('')}</div>
-        </section>
-        <footer class="v6-foot"><span>研序 · 培训运营中心</span><span>需求 → 项目 → 交付 → 结算</span></footer>
+            <a class="login-release-link" href="/updates.html"><span>了解研序的每一次进步</span>${icon('arrow-up-right')}</a>
+          </section>
+        </div>
       </main>`;
     refreshIcons(document.getElementById('app'));
+    environmentPanel = window.YanxuEnvironment?.mount($('[data-environment]'));
     const v6bg = $('.v6-bg');
-    if (v6bg && !prefersReducedMotion() && window.matchMedia('(pointer: fine)').matches) {
+    if (v6bg && !document.body.classList.contains('yx-v13') && !prefersReducedMotion() && window.matchMedia('(pointer: fine)').matches) {
       if (v6PointerHandler) window.removeEventListener('pointermove', v6PointerHandler);
       v6PointerHandler = (e) => { v6bg.style.setProperty('--mx', `${e.clientX}px`); v6bg.style.setProperty('--my', `${e.clientY}px`); };
       window.addEventListener('pointermove', v6PointerHandler, { passive: true });
@@ -629,17 +850,27 @@
     $('#login-pwd').addEventListener('keyup', updateCapsLock);
     $('#login-pwd').addEventListener('mousedown', updateCapsLock);
     const doLogin = async () => {
-      $('#login-err').textContent = '';
+      const form = $('#login-form');
+      const error = $('#login-err');
+      const userInput = $('#login-user');
+      const passwordInput = $('#login-pwd');
       const btn = $('#login-btn');
       if (btn.disabled) return;
+      error.textContent = '';
+      const username = userInput.value.trim();
+      const password = passwordInput.value;
+      const current = () => form.isConnected && $('#login-form') === form;
       btn.disabled = true;
+      form.setAttribute('aria-busy', 'true');
       btn.innerHTML = `${icon('loader-circle', 'spin')}<span>正在验证</span>`;
       sceneBridge.setPhase('loading');
+      loginMotion?.setPhase('loading');
       refreshIcons(btn);
       try {
-        const r = await api('/login', { body: { username: $('#login-user').value.trim(), password: $('#login-pwd').value } });
+        const r = await api('/login', { body: { username, password } });
+        if (!current()) return;
         localStorage.removeItem('token');
-        localStorage.setItem('yx_last_username', $('#login-user').value.trim());
+        localStorage.setItem('yx_last_username', username);
         state.user = r.user;
         if (!restoreRouteFromUrl()) {
           state.page = 'dashboard';
@@ -650,10 +881,14 @@
           writeRouteToUrl(true);
         }
         sceneBridge.setPhase('success');
+        loginMotion?.setPhase('success');
         renderLayout();
       } catch (e) {
+        if (!current()) return;
         sceneBridge.setPhase('error');
-        $('#login-err').textContent = e.message || '登录失败';
+        loginMotion?.setPhase('error');
+        error.textContent = e.message || '登录失败';
+        form.removeAttribute('aria-busy');
         btn.disabled = false;
         btn.innerHTML = `<span>进入工作台</span>${icon('arrow-right')}`;
         refreshIcons(btn);
@@ -667,30 +902,36 @@
       $('#pwd-toggle').setAttribute('aria-label', input.type === 'password' ? '显示密码' : '隐藏密码');
       refreshIcons($('#pwd-toggle'));
     };
-    requestAnimationFrame(() => (lastUser ? $('#login-pwd') : $('#login-user')).focus());
+    // Authentication remains usable if the optional visual cannot initialize.
+    const loginRoot = $('.login-learning');
+    try {
+      if (typeof window.YanxuLoginMotion?.mount !== 'function') throw new Error('Visual module unavailable');
+      loginMotion = window.YanxuLoginMotion.mount(loginRoot);
+    } catch (_) { loginRoot.dataset.motionState = 'unavailable'; }
+    // Do not steal focus or open a mobile keyboard on entry. Native Tab order remains intact.
   }
 
   // ============ 主布局 ============
   const NAV = [
-    { k: 'dashboard', l: '今日运营', ico: 'scan-line', group: '工作台' },
-    { k: 'projects', l: '项目总览', ico: 'folder-kanban', group: '项目运营' },
-    { k: 'demands', l: '培训需求', ico: 'inbox', group: '项目运营' },
-    { k: 'bids', l: '投标与立项', ico: 'file-check-2', group: '项目运营' },
-    { k: 'dispatches', l: '课程与排期', ico: 'calendar-clock', group: '交付协同' },
-    { k: 'questionnaires', l: '效果评估', ico: 'clipboard-check', group: '交付协同' },
-    { k: 'teachers', l: '师资资源', ico: 'users-round', group: '交付协同' },
-    { k: 'charges', l: '项目回款', ico: 'circle-dollar-sign', group: '财务结算' },
-    { k: 'fees', l: '课酬发放', ico: 'wallet-cards', group: '财务结算' },
-    { k: 'costs', l: '成本费用', ico: 'receipt-text', group: '财务结算' },
-    { k: 'report', l: '经营洞察', ico: 'chart-no-axes-combined', group: '分析' },
-    { k: 'users', l: '用户与权限', ico: 'shield-check', group: '系统', admin: true },
+    { k: 'dashboard', l: '今日运营', ico: 'layout-dashboard', art: 'dashboard', group: '工作台' },
+    { k: 'projects', l: '项目总览', ico: 'folder-kanban', art: 'projects', group: '项目运营' },
+    { k: 'demands', l: '培训需求', ico: 'inbox', art: 'documents', group: '项目运营' },
+    { k: 'bids', l: '投标与立项', ico: 'file-check-2', art: 'contract', group: '项目运营' },
+    { k: 'dispatches', l: '课程与排期', ico: 'calendar-clock', art: 'calendar', group: '交付协同' },
+    { k: 'questionnaires', l: '效果评估', ico: 'clipboard-check', art: 'evaluation', group: '交付协同' },
+    { k: 'teachers', l: '师资资源', ico: 'contact-round', art: 'faculty', group: '交付协同' },
+    { k: 'charges', l: '项目回款', ico: 'badge-japanese-yen', art: 'collection', group: '财务结算' },
+    { k: 'fees', l: '课酬发放', ico: 'wallet-cards', art: 'fees', group: '财务结算' },
+    { k: 'costs', l: '成本费用', ico: 'receipt-text', art: 'costs', group: '财务结算' },
+    { k: 'report', l: '经营洞察', ico: 'chart-no-axes-combined', art: 'report', group: '分析' },
+    { k: 'users', l: '用户与权限', ico: 'shield-check', art: 'access', group: '系统', admin: true },
   ];
 
   const PAGE_META = {
     dashboard: ['今日运营', ''], demands: ['培训需求', '统一沉淀客户需求与培训目标'],
     bids: ['投标与立项', '管理投标方案、报价与立项结果'], projects: ['项目总览', '以项目为中心协同交付与结算'],
     dispatches: ['课程与排期', '安排课程、发送邀请并跟踪讲师确认'], questionnaires: ['效果评估', '创建问卷并回收培训反馈'],
-    teachers: ['师资资源', '管理讲师档案、专长与授课评价'], charges: ['项目回款', '跟踪应收、回款进度与票据信息'],
+    teachers: ['师资资源', '管理讲师档案、简历解析、智能匹配与授课评价'], charges: ['项目回款', '跟踪应收、回款进度与票据信息'],
     fees: ['课酬发放', '根据确认课时核算并发放课酬'], costs: ['成本费用', '记录项目交付成本与费用构成'],
     report: ['经营洞察', '分析合同、回款、已录成本与项目质量'], users: ['用户与权限', '管理系统账号、角色与启用状态'],
     project_detail: ['项目工作区', '围绕风险、交付、评估与结算推进单个项目'],
@@ -755,8 +996,12 @@
     const commandItems = () => {
       const items = [];
       if (canWrite()) items.push({ label: '新建培训需求', meta: '录入客户目标、课时、师资要求与期望日期', keywords: '新建 创建 客户 需求', ico: 'plus', action: '新建', run: quickCreateDemand });
+      if (canWrite()) items.push(
+        { label: '上传讲师简历', meta: '进入师资资源的简历管理', keywords: '讲师 老师 PDF PPTX 上传 解析', ico: 'file-up', art: 'documents', action: '前往', run: () => { state.teacherTab = 'resumes'; navigateTo('teachers'); } },
+        { label: '智能推荐讲师', meta: '识别客户需求并推荐匹配师资', keywords: '老师 推荐 匹配 客户 要求', ico: 'sparkles', art: 'recommend', action: '开始', run: () => { state.teacherTab = 'recommend'; navigateTo('teachers'); } },
+      );
       NAV.filter((n) => !n.admin || state.user.role === 'admin').forEach((n) => items.push({
-        label: n.l, meta: (PAGE_META[n.k] || [n.l, ''])[1], keywords: `${n.l} ${n.group}`, ico: n.ico, action: '前往', run: () => navigateTo(n.k),
+        label: n.l, meta: (PAGE_META[n.k] || [n.l, ''])[1], keywords: `${n.l} ${n.group}`, ico: n.ico, art: n.art, action: '前往', run: () => navigateTo(n.k),
       }));
       projects.forEach((p) => items.push({
         label: p.title, meta: `${p.unit || '委托单位待补充'} · ${p.owner || '负责人待补充'} · ${p.status}`, keywords: `${p.title} ${p.unit || ''} ${p.owner || ''} ${p.status || ''}`, ico: 'folder-kanban', action: '打开项目', run: () => navigateTo('project_detail', { projectId: p.id }),
@@ -780,7 +1025,7 @@
       const query = input.value.trim().toLowerCase();
       visible = commandItems().filter((item) => !query || `${item.label} ${item.meta} ${item.keywords}`.toLowerCase().includes(query)).slice(0, 12);
       activeIndex = Math.min(activeIndex, Math.max(0, visible.length - 1));
-      resultRoot.innerHTML = visible.length ? visible.map((item, i) => `<button type="button" id="command-option-${i}" class="command-result ${i === activeIndex ? 'active' : ''}" data-command-index="${i}" role="option" aria-selected="${i === activeIndex}"><span>${icon(item.ico)}</span><span><b>${esc(item.label)}</b><small>${esc(item.meta)}</small></span><em>${esc(item.action)}${icon('arrow-right')}</em></button>`).join('') : `<div class="command-empty">${icon('search-x')}<b>没有匹配结果</b><span>换一个项目名、单位名或功能名称试试</span></div>`;
+      resultRoot.innerHTML = visible.length ? visible.map((item, i) => `<button type="button" id="command-option-${i}" class="command-result ${i === activeIndex ? 'active' : ''}" data-command-index="${i}" role="option" aria-selected="${i === activeIndex}"><span>${item.art ? businessArt(item.art) : icon(item.ico)}</span><span><b>${esc(item.label)}</b><small>${esc(item.meta)}</small></span><em>${esc(item.action)}${icon('arrow-right')}</em></button>`).join('') : `<div class="command-empty">${icon('search-x')}<b>没有匹配结果</b><span>换一个项目名、单位名或功能名称试试</span></div>`;
       input.setAttribute('aria-activedescendant', visible.length ? `command-option-${activeIndex}` : '');
       bindResultClicks();
       requestAnimationFrame(() => $(`.command-result[data-command-index="${activeIndex}"]`, resultRoot)?.scrollIntoView({ block: 'nearest' }));
@@ -804,12 +1049,15 @@
   }
 
   function renderLayout() {
+    disposeLoginExperience();
+    if (navViewportCleanup) { navViewportCleanup(); navViewportCleanup = null; }
     if (navKeyHandler) { document.removeEventListener('keydown', navKeyHandler); navKeyHandler = null; }
     if (globalKeyHandler) { document.removeEventListener('keydown', globalKeyHandler); globalKeyHandler = null; }
     const u = state.user;
     if (!u) { renderLogin(); return; }
     lastRenderedHash = location.hash;
     sceneBridge.setMode('shell', { route: state.page }).then(() => sceneBridge.setRoute(state.page));
+    const selectedNavigation = state.page === 'project_detail' ? 'projects' : state.page;
     const groups = [];
     NAV.filter((n) => !n.admin || u.role === 'admin').forEach((n) => {
       let group = groups.find((g) => g.name === n.group);
@@ -821,12 +1069,13 @@
         <div class="v7-ambient" aria-hidden="true"><i class="a1"></i><i class="a2"></i><i class="a3"></i></div>
         <aside class="sidebar" id="primary-sidebar" aria-label="主导航">
           <div class="logo">${brandSymbol()}<span><b>研序</b><small>TRAINING OS</small></span></div>
-          <a class="sidebar-materials" href="/materials.html">${icon('library-big')}<span><b>${canWrite() ? '资料上传与管理' : '培训资料中心'}</b><small>${canWrite() ? '上传、上下架与下载' : '公开学习包下载'}</small></span>${icon('arrow-up-right')}</a>
+          <a class="sidebar-materials" href="/materials.html">${businessArt('materials')}<span><b>${canWrite() ? '资料上传与管理' : '培训资料中心'}</b><small>${canWrite() ? '上传、上下架与下载' : '公开学习包下载'}</small></span>${icon('arrow-up-right')}</a>
           ${canWrite() ? `<button type="button" class="sidebar-create" id="sidebar-create">${icon('plus')}<span>新建培训需求</span><kbd>N</kbd></button>` : ''}
           <nav class="nav">
             ${groups.map((g) => `<div class="nav-group"><div class="nav-label">${esc(g.name)}</div>${g.items.map((n) =>
-              `<button type="button" class="nav-item ${state.page === n.k ? 'active' : ''}" data-nav="${n.k}" ${state.page === n.k ? 'aria-current="page"' : ''}>${icon(n.ico, 'ico')}<span>${n.l}</span></button>`).join('')}</div>`).join('')}
+              `<button type="button" class="nav-item ${selectedNavigation === n.k ? 'active' : ''}" data-nav="${n.k}" ${selectedNavigation === n.k ? 'aria-current="page"' : ''}>${businessArt(n.art)}<span>${n.l}</span></button>`).join('')}</div>`).join('')}
           </nav>
+          <a class="sidebar-updates" href="/updates.html">${icon('history')}<span>更新记录</span>${icon('arrow-up-right')}</a>
         </aside>
         <button type="button" class="sidebar-scrim" id="sidebar-scrim" aria-label="关闭导航" aria-hidden="true" tabindex="-1"></button>
         <div class="main">
@@ -834,27 +1083,31 @@
           <div class="topbar">
             <div class="topbar-start"><button type="button" class="icon-btn menu-btn" id="menu-btn" aria-label="打开导航" aria-controls="primary-sidebar" aria-expanded="false">${icon('menu')}</button><div class="topbar-title"><div><div class="page-title" id="page-title"></div><div class="page-subtitle" id="page-subtitle"></div></div></div></div>
             <div class="topbar-actions">
-              <button type="button" class="top-command" id="global-command">${icon('search')}<span>搜索功能或项目</span><kbd>⌘ K</kbd></button>
-              ${canWrite() ? `<button type="button" class="top-create" id="top-create">${icon('plus')}新建需求</button>` : ''}
-              <span class="today">${new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'numeric', weekday: 'short' }).format(new Date())}</span>
-              <button type="button" class="icon-btn top-help" id="btn-help" aria-label="查看快捷键" title="快捷键">${icon('circle-help')}</button>
+              <div class="topbar-environment" data-environment><div class="environment-time"><time data-local-clock aria-label="设备本地时间">—</time><span data-local-date></span></div><div class="environment-weather" data-local-weather aria-label="所在城市天气">正在获取天气…</div></div>
+              <button type="button" class="top-command" id="global-command" aria-label="搜索功能或项目" title="搜索功能或项目（⌘ K / Ctrl K）">${icon('search')}<span>搜索</span></button>
               <details class="user user-menu" id="user-menu">
-                <summary aria-label="打开账户菜单"><span class="user-avatar">${esc((u.name || u.username).slice(-2))}</span><span class="user-name"><b>${esc(u.name)}</b><small>${esc(u.name === u.roleName ? u.username : u.roleName)}</small></span>${icon('chevron-down')}</summary>
-                <div class="user-popover"><div class="user-popover-head"><span class="user-avatar large">${esc((u.name || u.username).slice(-2))}</span><span><b>${esc(u.name)}</b><small>${esc(u.username)} · ${esc(u.roleName)}</small></span></div><button type="button" id="btn-chpwd">${icon('key-round')}<span><b>修改登录密码</b><small>更新当前账号凭据</small></span></button><button type="button" id="btn-logout" class="danger">${icon('log-out')}<span><b>退出登录</b><small>安全结束本次会话</small></span></button></div>
+                <summary aria-label="打开账户菜单" title="${esc(u.name || u.username)} · ${esc(u.roleName)}"><span class="user-avatar" aria-hidden="true">${icon('user-round')}</span><span class="user-name"><b>${esc(u.name || u.username)}</b></span>${icon('chevron-down')}</summary>
+                <div class="user-popover">
+                  <div class="user-popover-head"><span class="user-avatar large" aria-hidden="true">${icon('user-round')}</span><span><b>${esc(u.name || u.username)}</b><small>${esc(u.username)} · ${esc(u.roleName)}</small></span></div>
+                  <button type="button" id="btn-chpwd">${icon('key-round')}<span>修改密码</span>${icon('chevron-right')}</button>
+                  <button type="button" id="btn-help">${icon('command')}<span>快捷键与帮助</span>${icon('chevron-right')}</button>
+                  <button type="button" id="btn-logout" class="danger">${icon('log-out')}<span>退出登录</span></button>
+                </div>
               </details>
             </div>
           </div>
           <main class="content" id="content"></main>
         </div>
         <nav class="mobile-dock" aria-label="移动端快捷导航">
-          <button type="button" data-mobile-nav="dashboard" class="${state.page === 'dashboard' ? 'active' : ''}" ${state.page === 'dashboard' ? 'aria-current="page"' : ''}>${icon('house')}<span>今日</span></button>
-          <button type="button" data-mobile-nav="projects" class="${['projects','project_detail'].includes(state.page) ? 'active' : ''}" ${['projects','project_detail'].includes(state.page) ? 'aria-current="page"' : ''}>${icon('folder-kanban')}<span>项目</span></button>
+          <button type="button" data-mobile-nav="dashboard" class="${state.page === 'dashboard' ? 'active' : ''}" ${state.page === 'dashboard' ? 'aria-current="page"' : ''}>${businessArt('dashboard')}<span>今日</span></button>
+          <button type="button" data-mobile-nav="projects" class="${['projects','project_detail'].includes(state.page) ? 'active' : ''}" ${['projects','project_detail'].includes(state.page) ? 'aria-current="page"' : ''}>${businessArt('projects')}<span>项目</span></button>
           ${canWrite() ? `<button type="button" class="mobile-create" id="mobile-create" aria-label="新建培训需求">${icon('plus')}<span>新建</span></button>` : ''}
-          <button type="button" data-mobile-nav="dispatches" class="${state.page === 'dispatches' ? 'active' : ''}" ${state.page === 'dispatches' ? 'aria-current="page"' : ''}>${icon('calendar-clock')}<span>排期</span></button>
+          <button type="button" data-mobile-nav="dispatches" class="${state.page === 'dispatches' ? 'active' : ''}" ${state.page === 'dispatches' ? 'aria-current="page"' : ''}>${businessArt('calendar')}<span>排期</span></button>
           <button type="button" id="mobile-more" aria-controls="primary-sidebar" aria-expanded="false">${icon('menu')}<span>更多</span></button>
         </nav>
       </div>`;
     $$('.nav-item').forEach((n) => (n.onclick = () => navigateTo(n.dataset.nav)));
+    environmentPanel = window.YanxuEnvironment?.mount($('[data-environment]'));
     $('#btn-logout').onclick = () => confirmBox('确定退出研序工作台？当前账号需要重新验证后才能继续访问。', async () => {
       // 只有服务端确认撤销会话后才切回登录页。网络失败时保留当前画面，
       // 避免 HttpOnly Cookie 仍有效却向用户显示“已安全退出”。
@@ -862,7 +1115,7 @@
       invalidateSession();
     });
     $('#btn-chpwd').onclick = () => { $('#user-menu')?.removeAttribute('open'); showChangePwd(); };
-    $('#btn-help').onclick = openShortcutGuide;
+    $('#btn-help').onclick = () => { $('#user-menu')?.removeAttribute('open'); openShortcutGuide(); };
     const layout = $('.layout');
     const userMenu = $('#user-menu');
     layout.addEventListener('click', (e) => { if (userMenu && !e.target.closest('#user-menu')) userMenu.removeAttribute('open'); });
@@ -899,6 +1152,10 @@
       else if (restoreFocus) navOpener?.focus();
     };
     setNavOpen(false);
+    const navViewport = window.matchMedia('(max-width: 1024px)');
+    const onNavViewportChange = () => setNavOpen(false, navViewport.matches && sidebar.contains(document.activeElement));
+    navViewport.addEventListener('change', onNavViewportChange);
+    navViewportCleanup = () => navViewport.removeEventListener('change', onNavViewportChange);
     menuBtn.onclick = () => setNavOpen(true, false, menuBtn);
     scrim.onclick = () => setNavOpen(false, true);
     navKeyHandler = (e) => {
@@ -913,9 +1170,7 @@
     };
     document.addEventListener('keydown', navKeyHandler);
     const sidebarCreate = $('#sidebar-create');
-    const topCreate = $('#top-create');
     if (sidebarCreate) sidebarCreate.onclick = quickCreateDemand;
-    if (topCreate) topCreate.onclick = quickCreateDemand;
     if ($('#mobile-create')) $('#mobile-create').onclick = quickCreateDemand;
     if ($('#global-command')) $('#global-command').onclick = openCommandCenter;
     $$('.mobile-dock [data-mobile-nav]').forEach((btn) => { btn.onclick = () => navigateTo(btn.dataset.mobileNav); });
@@ -1033,6 +1288,30 @@
   }[page] || '查看详情');
   const roleAction = (action, page) => canWrite() ? action : readonlyAction(page);
 
+  const REGION_PROVINCES = ['北京', '天津', '河北', '山西', '内蒙古', '辽宁', '吉林', '黑龙江', '上海', '江苏', '浙江', '安徽', '福建', '江西', '山东', '河南', '湖北', '湖南', '广东', '广西', '海南', '重庆', '四川', '贵州', '云南', '西藏', '陕西', '甘肃', '青海', '宁夏', '新疆', '香港', '澳门', '台湾', '境外'];
+  const teacherResidenceText = (teacher) => teacher?.base_province && teacher?.base_city ? (teacher.base_province === teacher.base_city ? teacher.base_city : `${teacher.base_province} · ${teacher.base_city}`) : '待补充';
+  const residenceFields = () => [
+    { k: 'base_province', label: '常驻省份 / 地区', type: 'select', options: REGION_PROVINCES, required: true },
+    { k: 'base_city', label: '常驻城市 / 地区', required: true, regionProvinceKey: 'base_province', placeholder: '选择省份后输入或选择城市', hint: '讲师确认的常驻地，无需家庭地址。城市字典未覆盖的名称可手填，核对前不参与同城优先。' },
+  ];
+  function refreshRegionSuggestions(provinceInput, preserveCity = false) {
+    const grid = provinceInput.closest('.form-grid');
+    const cityInput = grid?.querySelector(`[data-region-province="${provinceInput.dataset.k}"]`);
+    if (!cityInput) return;
+    const cities = typeof YX_REGION_CITIES === 'undefined' ? [] : (YX_REGION_CITIES[provinceInput.value] || []);
+    const list = document.getElementById(cityInput.getAttribute('list'));
+    if (list) list.innerHTML = cities.map((city) => `<option value="${esc(city)}"></option>`).join('');
+    if (!preserveCity) cityInput.value = ['北京', '天津', '上海', '重庆', '香港', '澳门'].includes(provinceInput.value) ? provinceInput.value : '';
+  }
+  document.addEventListener('change', (event) => {
+    const provinceInput = event.target;
+    if (!['base_province', 'training_province'].includes(provinceInput?.dataset?.k)) return;
+    refreshRegionSuggestions(provinceInput);
+    const cityInput = provinceInput.closest('.form-grid')?.querySelector(`[data-region-province="${provinceInput.dataset.k}"]`);
+    if (!cityInput) return;
+    cityInput.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+
   const CRUD = {
     demands: {
       mod: 'demands', title: '培训需求', kw: '搜索：项目/单位/联系人',
@@ -1050,6 +1329,10 @@
         { k: 'phone', label: '联系电话', type: 'tel' },
         { k: 'hours', label: '预计课时', type: 'number', required: true, min: 0.5, max: 1000, step: 0.5 },
         { k: 'expect_date', label: '期望培训时间', type: 'date' },
+        { k: 'training_province', label: '授课省份 / 地区', type: 'select', options: [{ v: '', l: '待确定' }, ...REGION_PROVINCES] },
+        { k: 'training_city', label: '授课城市 / 地区', regionProvinceKey: 'training_province', placeholder: '选择省份后输入或选择城市' },
+        { k: 'training_mode', label: '授课方式', type: 'select', options: ['待定', '线下', '线上'], value: '待定' },
+        { k: 'training_period', label: '授课时段', type: 'select', options: ['待定', '上午', '下午', '全天'], value: '待定' },
         { k: 'status', label: '状态', type: 'select', options: ['待处理', '已投标', '已立项', '进行中', '已完成', '已流标'], value: '待处理' },
         { k: 'content', label: '主要培训内容', type: 'textarea' },
         { k: 'teacher_req', label: '师资要求', type: 'textarea' },
@@ -1303,6 +1586,14 @@
       return true;
     };
     if (cfg.mod === 'projects') acts.push({ l: '打开项目', cls: '', onClick: showProjectOverview });
+    if (cfg.mod === 'demands' && canWrite()) acts.push({ l: '推荐师资', cls: '', icon: 'users-round', show: (row) => ['待处理', '已流标'].includes(row.status), onClick: (demand) => {
+      invalidateTeacherRecommendations();
+      state.teacherTab = 'recommend';
+      state.teacherRequirementDraft = guidedRequirementText(demandGuidedFields(demand));
+      state.teacherRecommendationForm = { demandId: String(demand.id), maxResults: '3', maxFeeRate: '', hardBudget: false, inputMode: 'guided', guided: demandGuidedFields(demand), rawDraft: demandRequirementText(demand), rawInitialized: true,
+        logistics: { training_province: demand.training_province || '', training_city: demand.training_city || '', training_mode: demand.training_mode || '待定', training_period: demand.training_period || '待定', prefer_local: true } };
+      navigateTo('teachers');
+    } });
     if (cfg.mod === 'projects' && canWrite()) {
       acts.push({ l: '启动项目', cls: 'green', show: (r) => r.status === '待启动', onClick: showProjectStart });
       acts.push({ l: '完成交付', cls: 'green', show: (r) => r.status === '进行中', onClick: (r) => showProjectTransition(r, 'complete') });
@@ -1455,8 +1746,11 @@
     const completedHours = dispatches.filter((d) => d.status === '已完成').reduce((s, d) => s + Number(d.hours || 0), 0);
     const missingHours = Math.max(0, Number(project.hours || 0) - scheduledHours);
     const received = charges.reduce((s, r) => s + Number(r.received || 0), 0);
-    const due = charges.reduce((s, r) => s + Number(r.amount || 0), 0) || Number(project.amount || 0);
-    const outstanding = Math.max(0, due - received);
+    const due = charges.reduce((s, r) => s + Number(r.amount || 0), 0);
+    const collection = collectionProgress(project.amount, due, received);
+    const outstanding = collection.outstanding;
+    const deliveryActive = !['已完成', '已归档'].includes(project.status);
+    const settlementNotice = !charges.length && collection.target > 0 ? '尚未登记应收。待回款按合同额计算，请先核对应收计划。' : collection.mismatch ? '已登记应收与合同金额不一致。待回款按合同额计算，归档前请核对。' : '';
     const feeTotal = fees.reduce((s, r) => s + Number(r.amount || 0), 0);
     const feePending = fees.filter((r) => r.status === '待发放').reduce((s, r) => s + Number(r.amount || 0), 0);
     const costTotal = costs.reduce((s, r) => s + Number(r.amount || 0), 0);
@@ -1467,9 +1761,9 @@
     const today = new Date(); today.setHours(0, 0, 0, 0);
     const dayDiff = (date) => date ? Math.ceil((new Date(date + 'T00:00:00') - today) / 86400000) : null;
     const startIn = dayDiff(project.start_date);
-    const urgentPending = dispatches.filter((d) => ['待发送', '已拒绝'].includes(d.status) && dayDiff(d.teach_date) !== null && dayDiff(d.teach_date) <= 3);
-    const materialRisks = dispatches.filter((d) => !['已拒绝', '已完成'].includes(d.status) && dayDiff(d.teach_date) !== null && dayDiff(d.teach_date) <= 3 && d.material_status !== '已就绪');
-    const awaitingConfirm = dispatches.filter((d) => d.status === '已发送');
+    const urgentPending = dispatches.filter((d) => deliveryActive && ['待发送', '已拒绝'].includes(d.status) && dayDiff(d.teach_date) !== null && dayDiff(d.teach_date) <= 3);
+    const materialRisks = dispatches.filter((d) => deliveryActive && !['已拒绝', '已完成'].includes(d.status) && dayDiff(d.teach_date) !== null && dayDiff(d.teach_date) <= 3 && d.material_status !== '已就绪');
+    const awaitingConfirm = dispatches.filter((d) => deliveryActive && d.status === '已发送');
     const issueMap = new Map();
     const upsertIssue = (key, item) => {
       const old = issueMap.get(key);
@@ -1481,74 +1775,74 @@
       issueMap.set(key, { ...winner, score: Math.max(item.score, old.score), notes, titles, actions, title: mergeContextLabels(titles), action: actions.join(' + '), detail: notes.join('；') });
     };
     urgentPending.forEach((d) => upsertIssue(`dispatch:${d.id}`, { tone: 'critical', score: dayDiff(d.teach_date) <= 1 ? 100 : 86, type: dayDiff(d.teach_date) <= 1 ? '紧急交付' : '交付风险', title: `${d.subject} · ${d.status === '已拒绝' ? '讲师已拒绝' : '通知尚未记录'}`, detail: `${d.teach_date} 开课 · ${d.teacher_name || '讲师待定'} · ${num(d.hours)} 课时`, page: 'dispatches', focusId: d.id, action: d.status === '已拒绝' ? '重新安排讲师' : '记录师资通知' }));
-    materialRisks.forEach((d) => upsertIssue(`dispatch:${d.id}`, { tone: dayDiff(d.teach_date) <= 1 ? 'critical' : 'warning', score: dayDiff(d.teach_date) <= 1 ? 88 : 68, type: '交付准备', title: `${d.subject} · 材料${d.material_status || '状态待补充'}`, detail: `${d.teach_date} 开课 · ${d.venue || '场地尚未确定'}`, page: 'dispatches', focusId: d.id, action: '补齐交付准备' }));
+    materialRisks.forEach((d) => upsertIssue(`dispatch:${d.id}`, { tone: dayDiff(d.teach_date) <= 1 ? 'critical' : 'warning', score: dayDiff(d.teach_date) <= 1 ? 88 : 68, type: '交付准备', art: 'documents', title: `${d.subject} · 材料${d.material_status || '状态待补充'}`, detail: `${d.teach_date} 开课 · ${d.venue || '场地尚未确定'}`, page: 'dispatches', focusId: d.id, action: '补齐交付准备' }));
     awaitingConfirm.forEach((d) => upsertIssue(`dispatch:${d.id}`, { tone: 'warning', score: 78, type: '师资确认', title: `${d.subject} · 等待讲师确认`, detail: `${d.teacher_name || '待定讲师'} · 确认截止 ${d.confirm_deadline || '待定'}`, page: 'dispatches', focusId: d.id, action: '记录确认结果' }));
-    if (missingHours > 0) upsertIssue('schedule-gap', { tone: 'warning', score: 74, type: '排课缺口', title: `计划课时尚缺 ${num(missingHours)} 课时`, detail: `计划 ${num(project.hours)} 课时，目前已有效排课 ${num(scheduledHours)} 课时`, page: 'dispatches', action: `安排 ${num(missingHours)} 课时` });
-    if (outstanding > 0) upsertIssue('payment', { tone: 'neutral', score: 52, type: '回款跟进', title: `还有 ¥ ${money(outstanding)} 尚未回款`, detail: `当前回款率 ${due ? Math.round(received / due * 100) : 0}%`, page: 'charges', action: '登记本次回款' });
-    if (!questionnaires.length) upsertIssue('evaluation', { tone: 'neutral', score: 42, type: '评估准备', title: '本项目尚未创建效果评估', detail: '建议在课程结束前准备并发布问卷', page: 'questionnaires', action: '创建效果评估' });
+    if (deliveryActive && missingHours > 0) upsertIssue('schedule-gap', { tone: 'warning', score: 74, type: '排课缺口', art: 'calendar', title: `计划课时尚缺 ${num(missingHours)} 课时`, detail: `计划 ${num(project.hours)} 课时，目前已有效排课 ${num(scheduledHours)} 课时`, page: 'dispatches', action: `安排 ${num(missingHours)} 课时` });
+    if (settlementNotice && project.status !== '已归档') upsertIssue('receivable-plan', { tone: 'warning', score: 54, type: '应收核对', title: charges.length ? '应收计划与合同金额不一致' : '尚未登记应收计划', detail: settlementNotice, page: 'charges', action: '核对应收计划' });
+    if (outstanding > 0) upsertIssue('payment', { tone: 'neutral', score: 52, type: '回款跟进', title: `还有 ¥ ${money(outstanding)} 尚未回款`, detail: `当前回款率 ${Math.round(collection.rate)}%`, page: 'charges', action: '登记本次回款' });
+    if (!questionnaires.length && project.status !== '已归档') upsertIssue('evaluation', { tone: 'neutral', score: 42, type: '评估准备', title: '本项目尚未创建效果评估', detail: '按项目需要准备培训反馈回收', page: 'questionnaires', action: '创建效果评估' });
     if (feePending > 0) upsertIssue('fees', { tone: 'neutral', score: 36, type: '课酬结算', title: `待发放课酬 ¥ ${money(feePending)}`, detail: `${fees.filter((r) => r.status === '待发放').length} 笔课酬等待处理`, page: 'fees', action: '核对待发课酬' });
     const issues = [...issueMap.values()].sort((a, b) => b.score - a.score);
-    if (!canWrite()) issues.forEach((item) => { item.action = readonlyAction(item.page); });
-    const primary = issues[0] || { tone: 'good', type: '项目状态', title: '当前没有阻塞项目推进的事项', detail: '继续按计划跟踪交付与结算进度', page: 'projects', action: roleAction('检查项目进度', 'projects') };
+    if (!canWrite() || project.status === '已归档') issues.forEach((item) => { item.action = readonlyAction(item.page); });
     const health = issues.some((x) => x.tone === 'critical') ? ['有风险', 'critical'] : issues.some((x) => x.tone === 'warning') ? ['需关注', 'warning'] : ['正常', 'good'];
-    const milestone = startIn === null ? '开课日期待定' : startIn < 0 ? '项目交付中' : startIn === 0 ? '今天开课' : startIn === 1 ? '明天开课' : `距离开课 ${startIn} 天`;
-    const paymentRate = due ? Math.min(100, received / due * 100) : 0;
-    const deliveryRate = Number(project.hours || 0) ? Math.min(100, completedHours / Number(project.hours) * 100) : 0;
+    const milestone = ['已完成', '已归档'].includes(project.status) ? project.status : startIn === null ? '开课日期待定' : startIn < 0 ? (project.status === '待启动' ? '等待启动' : '项目交付中') : startIn === 0 ? '今天开课' : startIn === 1 ? '明天开课' : `距离开课 ${startIn} 天`;
+    const paymentRate = collection.rate;
     const projectJourney = [
-      { label: '项目资料', value: project.contract_no && project.owner && project.start_date ? '信息已齐' : '仍需补充', page: 'projects', status: project.contract_no && project.owner && project.start_date ? 'done' : 'current', ico: 'file-check-2' },
-      { label: '课程排期', value: `${num(scheduledHours)} / ${num(project.hours)} 课时`, page: 'dispatches', status: scheduledHours >= Number(project.hours || 0) && Number(project.hours || 0) > 0 ? 'done' : scheduledHours > 0 ? 'current' : 'todo', ico: 'calendar-clock' },
-      { label: '课程交付', value: `${num(completedHours)} 已完成 · ${num(confirmedHours)} 已确认`, page: 'dispatches', status: completedHours >= Number(project.hours || 0) && Number(project.hours || 0) > 0 ? 'done' : confirmedHours > 0 ? 'current' : 'todo', ico: 'badge-check' },
-      { label: '效果评估', value: questionnaires.length ? `${questionnaires.length} 份问卷 · ${responseRate}% 回收` : '尚未创建问卷', page: 'questionnaires', status: responseRate >= 60 ? 'done' : questionnaires.length ? 'current' : 'todo', ico: 'clipboard-check' },
-      { label: '回款结算', value: `${paymentRate.toFixed(0)}% 已回款`, page: 'charges', status: paymentRate >= 100 ? 'done' : received > 0 ? 'current' : 'todo', ico: 'circle-dollar-sign' },
+      { label: '项目资料', value: project.contract_no && project.owner && project.start_date ? '信息已齐' : '仍需补充', page: 'projects', status: project.contract_no && project.owner && project.start_date ? 'done' : 'current', art: 'documents', ico: 'file-check-2' },
+      { label: '课程排期', value: `${num(scheduledHours)} / ${num(project.hours)} 课时`, page: 'dispatches', status: scheduledHours >= Number(project.hours || 0) && Number(project.hours || 0) > 0 ? 'done' : scheduledHours > 0 ? 'current' : 'todo', art: 'calendar', ico: 'calendar-clock' },
+      { label: '课程交付', value: `${num(completedHours)} 已完成 · ${num(confirmedHours)} 已确认`, page: 'dispatches', status: completedHours >= Number(project.hours || 0) && Number(project.hours || 0) > 0 ? 'done' : confirmedHours > 0 ? 'current' : 'todo', art: 'faculty', ico: 'badge-check' },
+      { label: '效果评估', value: questionnaires.length ? `${questionnaires.length} 份问卷 · ${responseRate}% 回收` : '尚未创建问卷', page: 'questionnaires', status: responseRate >= 60 ? 'done' : questionnaires.length ? 'current' : 'todo', art: 'evaluation', ico: 'clipboard-check' },
+      { label: '回款结算', value: collection.target > 0 ? `${paymentRate.toFixed(0)}% 已回款` : '无需回款', page: 'charges', status: collectionStageStatus(collection, received), art: 'collection', ico: 'badge-japanese-yen' },
     ];
 
+    const writableProject = canWrite() && project.status !== '已归档';
+    const taskHtml = (item, priority = false) => `<button type="button" class="workspace-task ${item.tone} ${priority ? 'is-priority' : ''}" data-project-goto="${item.page}" ${item.focusId ? `data-focus-id="${item.focusId}"` : ''}><span class="task-signal">${businessArt(taskArtKind(item))}</span><span><small>${priority ? (writableProject ? '优先处理 · ' : '优先查看 · ') : ''}${esc(item.type)}</small><b>${esc(item.title)}</b><em>${esc(item.detail)}</em><strong>${esc(item.action)}${icon('chevron-right')}</strong></span></button>`;
     c.innerHTML = `
-      <div class="workspace-back"><button type="button" id="project-back">${icon('arrow-left')}返回项目总览</button><span>项目 #P-${String(project.id).padStart(4, '0')}</span></div>
-      ${project.status === '已归档' ? `<div class="readonly-banner">${icon('archive')}<span><b>项目已归档</b> 交付与财务事实已锁定，可继续查看但不能再修改业务记录。</span></div>` : ''}<section class="project-workspace-head">
-        <div><div class="workspace-kicker"><span class="health-dot ${health[1]}"></span>${health[0]} · ${esc(milestone)}</div><h1>${esc(project.title)}</h1><p>${esc(project.unit || '委托单位待补充')}<span></span>${esc(project.owner || '负责人待补充')}<span></span>${esc(project.delivery_mode || '授课方式待定')}<span></span>${esc(project.start_date || '待定')} — ${esc(project.end_date || '待定')}</p></div>
-        <div class="workspace-head-actions">${canWrite() ? `${project.status !== '已归档' ? `<button type="button" class="btn gray" id="project-edit">${icon('pencil')}编辑项目信息</button>` : ''}${project.status === '待启动' ? `<button type="button" class="btn green" id="project-start">${icon('play')}启动项目</button>` : project.status === '进行中' ? `<button type="button" class="btn green" id="project-transition" data-action="complete">${icon('badge-check')}完成交付</button>` : project.status === '已完成' ? `<button type="button" class="btn gray" id="project-transition" data-action="archive">${icon('archive')}归档项目</button>` : ''}` : ''}<button type="button" class="btn" data-project-goto="${primary.page}" ${primary.focusId ? `data-focus-id="${primary.focusId}"` : ''}>${icon('arrow-up-right')}${esc(primary.action)}</button></div>
-      </section>
+      <div class="workspace-back"><button type="button" id="project-back">${icon('chevron-left')}所有项目</button><span>项目 #P-${String(project.id).padStart(4, '0')}</span></div>
+      ${project.status === '已归档' ? `<div class="readonly-banner">${icon('archive')}<span><b>项目已归档</b> 交付与财务事实已锁定，可查看但不能修改。</span></div>` : ''}
+      <header class="project-workspace-head">
+        <div><div class="workspace-kicker"><span class="health-dot ${health[1]}"></span>${health[0]} · ${esc(milestone)}</div><h1>${esc(project.title)}</h1><p>${esc(project.unit || '委托单位待补充')}<span></span>${esc(project.owner || '负责人待补充')}<span></span>${esc(project.start_date || '待定')} — ${esc(project.end_date || '待定')}</p></div>
+        <div class="workspace-head-actions">${writableProject ? `<button type="button" class="btn gray" id="project-edit">${icon('pencil')}编辑资料</button>${project.status === '待启动' ? `<button type="button" class="btn" id="project-start">${icon('play')}启动项目</button>` : project.status === '进行中' ? `<button type="button" class="btn gray" id="project-transition" data-action="complete">${icon('check')}完成交付</button>` : project.status === '已完成' ? `<button type="button" class="btn gray" id="project-transition" data-action="archive">${icon('archive')}归档项目</button>` : ''}` : ''}</div>
+      </header>
 
-      <nav class="project-journey" aria-label="项目推进路径">${projectJourney.map((step, index) => `<button type="button" class="${step.status}" data-project-goto="${step.page}" ${step.page === 'projects' ? `data-focus-id="${project.id}"` : ''}><span class="journey-index">0${index + 1}</span><span class="journey-icon">${icon(step.ico)}</span><span><b>${step.label}</b><small>${esc(step.value)}</small></span>${step.status === 'done' ? icon('check') : icon('arrow-right')}</button>`).join('')}</nav>
-
-      <section class="project-next ${primary.tone}"><span class="project-next-index">下一步</span><div><small>${esc(primary.type)}</small><h2>${esc(primary.title)}</h2><p>${esc(primary.detail)}</p></div><button type="button" data-project-goto="${primary.page}" ${primary.focusId ? `data-focus-id="${primary.focusId}"` : ''}>${esc(primary.action)}${icon('arrow-right')}</button></section>
-
-      <div class="project-metrics workspace-metrics">
-        <div><small>计划 / 已排课时</small><b>${num(project.hours)} <em>/ ${num(scheduledHours)}</em></b><span class="metric-line"><i style="width:${Number(project.hours) ? Math.min(100, scheduledHours / Number(project.hours) * 100) : 0}%"></i></span></div>
-        <div><small>已完成 / 已确认课时</small><b>${num(completedHours)} <em>/ ${num(confirmedHours)}</em></b><span class="metric-line"><i style="width:${deliveryRate}%"></i></span></div>
-        <div><small>回款进度</small><b>${paymentRate.toFixed(0)}<em>%</em></b><span class="metric-line"><i style="width:${paymentRate}%"></i></span></div>
-        <div><small>按已录成本估算余额</small><b>¥ ${money(estimatedBalance)}</b><span class="metric-note">未完整排课时不代表最终利润</span></div>
+      <div class="project-metrics workspace-metrics" aria-label="项目关键进度">
+        <div><small>已安排课时</small><b>${num(scheduledHours)}<em> / ${num(project.hours)}</em></b><span class="metric-note">已排 / 计划课时</span></div>
+        <div><small>已交付课时</small><b>${num(completedHours)}<em> / ${num(project.hours)}</em></b><span class="metric-note">${num(confirmedHours)} 课时已确认</span></div>
+        <div><small>待回款</small><b>¥ ${money(outstanding)}</b><span class="metric-note">${collection.target > 0 ? `已回款 ${paymentRate.toFixed(0)}%` : '无需回款'}</span></div>
+        <div><small>估算余额</small><b>¥ ${money(estimatedBalance)}</b><span class="metric-note">按已录成本 · 非最终利润</span></div>
       </div>
 
-      <div class="workspace-grid">
-        <section class="workspace-panel risk-panel">
-          <div class="workspace-panel-head"><div><span>${canWrite() ? '待处理事项' : '需关注事项'}</span><small>同一业务记录已合并风险，按影响程度排序</small></div><b>${issues.length || 0}</b></div>
-          <div class="workspace-tasks">${issues.length ? issues.slice(0, 5).map((item) => `<button type="button" class="workspace-task ${item.tone}" data-project-goto="${item.page}" ${item.focusId ? `data-focus-id="${item.focusId}"` : ''}><span class="task-signal"></span><span><small>${esc(item.type)}</small><b>${esc(item.title)}</b><em>${esc(item.detail)}</em><strong>${esc(item.action)}${icon('arrow-right')}</strong></span></button>`).join('') : `<div class="workspace-clear">${icon('badge-check')}<div><b>当前没有待处理风险</b><span>项目正在按计划推进，可以检查未来课程与回款节点</span></div></div>`}</div>
-        </section>
+      <nav class="project-journey" aria-label="项目推进路径">${projectJourney.map((step) => `<button type="button" class="${step.status}" data-project-goto="${step.page}" ${step.page === 'projects' ? `data-focus-id="${project.id}"` : ''}><span class="journey-icon">${businessArt(step.art)}</span><span class="journey-copy"><b>${step.label}</b><small>${project.status === '已归档' && step.page === 'questionnaires' && !questionnaires.length ? '未设置' : step.status === 'done' ? '已就绪' : step.status === 'current' ? '跟进中' : '待推进'}</small></span>${icon('chevron-right')}</button>`).join('')}</nav>
 
-        <section class="workspace-panel delivery-panel">
-          <div class="workspace-panel-head"><div><span>交付准备度</span><small>已完成 ${num(completedHours)} / 已确认 ${num(confirmedHours)} / 已排 ${num(scheduledHours)} 课时</small></div><button type="button" data-project-goto="dispatches">查看全部${icon('arrow-right')}</button></div>
-          <div class="delivery-rows">${dispatches.length ? dispatches.slice(0, 5).map((d) => `<div class="delivery-row"><time><b>${esc((d.teach_date || '').slice(8) || '--')}</b><small>${esc((d.teach_date || '').slice(5, 7) || '--')}月</small></time><span><b>${esc(d.subject)}</b><small>${esc(d.teacher_name || '讲师待定')} · ${esc([d.start_time, d.end_time].filter(Boolean).join('—') || `${num(d.hours)} 课时`)} · ${esc(d.venue || '场地待定')}</small></span><span class="delivery-tags">${tag(d.material_status || '材料待补充')}${tag(d.status)}</span></div>`).join('') : `<div class="workspace-empty">${icon('calendar-plus')}<b>尚未安排课程</b><span>先完成讲师与排期安排</span></div>`}</div>
-        </section>
+      <div class="v13-workspace-columns">
+        <div class="v13-workspace-main">
+          <section class="workspace-panel risk-panel">
+            <div class="workspace-panel-head"><div><h2>${writableProject ? '接下来要做' : '项目关注事项'}</h2><small>按紧急程度排序</small></div><span class="v13-section-count">${issues.length} 项</span></div>
+            <div class="workspace-tasks">${issues.length ? issues.slice(0, 3).map((item, index) => taskHtml(item, index === 0)).join('') : `<div class="workspace-clear">${icon('circle-check')}<div><b>${project.status === '已归档' ? '项目已归档，暂无需关注事项' : '当前没有待处理事项'}</b><span>${project.status === '已归档' ? '可继续查阅历史交付与结算记录' : '继续按计划跟踪课程与回款节点'}</span></div></div>`}${issues.length > 3 ? `<details class="workspace-more-tasks"><summary>查看其余 ${issues.length - 3} 项待办${icon('chevron-down')}</summary>${issues.slice(3).map((item) => taskHtml(item)).join('')}</details>` : ''}</div>
+          </section>
 
-        <section class="workspace-panel finance-panel">
-          <div class="workspace-panel-head"><div><span>财务结算</span><small>合同、回款、课酬与已录成本</small></div><button type="button" data-project-goto="charges">进入结算${icon('arrow-right')}</button></div>
-          <div class="finance-focus"><div><small>合同 / 应收</small><b>¥ ${money(due)}</b></div><div><small>已回款</small><b>¥ ${money(received)}</b></div><div><small>待回款</small><b>¥ ${money(outstanding)}</b></div></div>
-          <div class="finance-bar"><span><i style="width:${paymentRate}%"></i></span><small>${paymentRate.toFixed(0)}% 已回款</small></div>
-          <div class="finance-ledger"><p><span>已录课酬</span><b>¥ ${money(feeTotal)}</b></p><p><span>其他成本</span><b>¥ ${money(costTotal)}</b></p><p><span>待发课酬</span><b>¥ ${money(feePending)}</b></p></div>
-          <details class="finance-definition"><summary>${icon('calculator')}估算余额 = 合同额 − 已录课酬 − 已录成本${icon('chevron-down')}</summary><div><p>未来未排课程的课酬和尚未登记的费用不会自动计入。</p><button type="button" data-project-goto="dispatches">检查排课</button><button type="button" data-project-goto="costs">${canWrite() ? '补录成本' : '查看成本'}</button></div></details>
-        </section>
+          <section class="workspace-panel delivery-panel">
+            <div class="workspace-panel-head"><div><h2>课程安排</h2><small>讲师、时间与交付准备</small></div><button type="button" data-project-goto="dispatches">全部课程${icon('chevron-right')}</button></div>
+            <div class="delivery-rows">${dispatches.length ? dispatches.slice(0, 5).map((d) => `<button type="button" class="delivery-row" data-project-goto="dispatches" data-focus-id="${d.id}"><time datetime="${esc(d.teach_date || '')}" aria-label="${esc(d.teach_date || '日期待定')}"><small>${esc((d.teach_date || '').slice(5, 7) || '--')}月</small><b>${esc((d.teach_date || '').slice(8) || '--')}</b></time><span><b>${esc(d.subject)}</b><small>${esc(d.teacher_name || '讲师待定')} · ${esc([d.start_time, d.end_time].filter(Boolean).join('—') || `${num(d.hours)} 课时`)}<em>${esc(d.venue || '场地待定')}</em></small></span><span class="delivery-tags">${tag(d.material_status || '材料待补充')}${tag(d.status)}${icon('chevron-right')}</span></button>`).join('') : `<div class="workspace-empty">${businessArt('calendar')}<b>尚未安排课程</b><span>先完成讲师与排期安排</span><button type="button" data-project-goto="dispatches">${writableProject ? '安排课程' : '查看排期'}${icon('chevron-right')}</button></div>`}</div>
+          </section>
 
-        <section class="workspace-panel evaluation-panel">
-          <div class="workspace-panel-head"><div><span>效果评估</span><small>反馈回收与培训质量</small></div><button type="button" data-project-goto="questionnaires">${canWrite() ? '管理评估' : '查看评估'}${icon('arrow-right')}</button></div>
-          ${questionnaires.length ? `<div class="evaluation-focus"><div><small>问卷</small><b>${questionnaires.length}</b><span>份</span></div><div><small>计划触达</small><b>${sendTotal}</b><span>人次</span></div><div><small>回收</small><b>${recvTotal}</b><span>${responseRate}%</span></div></div><div class="evaluation-note">${responseRate >= 60 ? icon('badge-check') + '当前回收率达到基础复盘要求' : icon('circle-alert') + '回收率不足 60%，建议再次触达学员'}</div>` : `<div class="workspace-empty">${icon('clipboard-plus')}<b>尚未创建评估问卷</b><span>在交付结束前准备反馈回收</span><button type="button" data-project-goto="questionnaires">${canWrite() ? '创建评估' : '查看评估'}</button></div>`}
-        </section>
-      </div>
+          <section class="workspace-panel evaluation-panel">
+            <div class="workspace-panel-head"><div><h2>效果评估</h2><small>反馈回收与培训质量</small></div><button type="button" data-project-goto="questionnaires">${writableProject ? '管理评估' : '查看评估'}${icon('chevron-right')}</button></div>
+            ${questionnaires.length ? `<div class="evaluation-focus"><div><small>问卷</small><b>${questionnaires.length}<em> 份</em></b></div><div><small>计划触达</small><b>${sendTotal}<em> 人次</em></b></div><div><small>已回收</small><b>${recvTotal}<em> · ${responseRate}%</em></b></div></div><p class="evaluation-note">${project.status === '已归档' ? icon('archive') + `历史回收率 ${responseRate}%，项目已归档` : responseRate >= 60 ? icon('circle-check') + '已达到基础复盘回收要求' : icon('info') + '回收率不足 60%，建议再次触达学员'}</p>` : `<div class="workspace-empty">${businessArt('evaluation')}<b>${project.status === '已归档' ? '本项目未设置评估' : '尚未创建评估问卷'}</b><span>${project.status === '已归档' ? '历史状态，可在项目资料中核对' : '按项目需要准备培训反馈回收'}</span><button type="button" data-project-goto="questionnaires">${writableProject ? '创建评估' : '查看评估'}${icon('chevron-right')}</button></div>`}
+          </section>
+        </div>
 
-      <section class="workspace-panel demand-brief">
-        <div class="workspace-panel-head"><div><span>客户需求底稿</span><small>${esc(demand ? demand.title : '该项目未关联原始需求')}</small></div><span>${project.bid_id ? `中标记录 #${project.bid_id}` : '独立立项'}</span></div>
-        <div class="demand-brief-grid"><div><small>培训目标与内容</small><p>${esc(demand?.content || project.remark || '尚未记录详细培训目标')}</p></div><div><small>师资要求</small><p>${esc(demand?.teacher_req || '尚未记录师资要求')}</p></div><div><small>交付信息</small><p>${esc([project.contract_no ? `合同 ${project.contract_no}` : '合同编号待补充', project.participant_count ? `${project.participant_count} 人` : '人数待定', project.venue || '场地待定'].join(' · '))}</p><small>客户联系人</small><p>${esc(demand ? `${demand.contact || '—'} · ${demand.phone || '—'}` : '—')}</p></div></div>
-      </section>`;
+        <aside class="v13-workspace-aside" aria-label="结算与项目资料">
+          <section class="workspace-panel finance-panel">
+            <div class="workspace-panel-head"><div><h2>结算概览</h2></div><button type="button" data-project-goto="charges">查看${icon('chevron-right')}</button></div>
+            <dl class="v13-finance-list"><div><dt>合同金额</dt><dd>¥ ${money(project.amount)}</dd></div><div><dt>应收金额</dt><dd>¥ ${money(due)}</dd></div><div><dt>已回款</dt><dd>¥ ${money(received)}</dd></div><div class="is-outstanding"><dt>待回款</dt><dd>¥ ${money(outstanding)}</dd></div></dl>${settlementNotice ? `<p class="v13-finance-notice">${icon('info')}${esc(settlementNotice)}</p>` : ''}
+            <div class="v13-finance-links"><button type="button" data-project-goto="fees"><span>课酬发放<small>已录 ¥ ${money(feeTotal)} · 待发 ¥ ${money(feePending)}</small></span>${icon('chevron-right')}</button><button type="button" data-project-goto="costs"><span>成本费用<small>已录 ¥ ${money(costTotal)}</small></span>${icon('chevron-right')}</button></div>
+            <details class="finance-definition"><summary>${icon('info')}估算余额如何计算${icon('chevron-down')}</summary><div><p>合同额 − 已录课酬 − 已录成本。未排课程的课酬和尚未登记的费用不会自动计入，当前余额不代表最终利润。</p><button type="button" data-project-goto="dispatches">检查排课</button><button type="button" data-project-goto="costs">${writableProject ? '补录成本' : '查看成本'}</button></div></details>
+          </section>
+
+          <details class="v13-project-brief"><summary>${icon('text-align-start')}项目资料${icon('chevron-down')}</summary><div class="demand-brief-grid"><div><small>培训目标与内容</small><p>${esc(demand?.content || project.remark || '尚未记录详细培训目标')}</p></div><div><small>师资要求</small><p>${esc(demand?.teacher_req || '尚未记录师资要求')}</p></div><div><small>交付信息</small><p>${esc([project.contract_no ? `合同 ${project.contract_no}` : '合同编号待补充', project.participant_count ? `${project.participant_count} 人` : '人数待定', project.delivery_mode || '授课方式待定', project.venue || '场地待定'].join(' · '))}</p></div><div><small>客户联系人</small><p>${esc(demand ? `${demand.contact || '—'} · ${demand.phone || '—'}` : '—')}</p></div><div><small>来源记录</small><p>${esc(demand?.title || '未关联原始需求')} · ${project.bid_id ? `中标记录 #${esc(project.bid_id)}` : '独立立项'}</p></div></div></details>
+        </aside>
+      </div>`;
 
     $('#project-back').onclick = () => navigateTo('projects');
     const projectEdit = $('#project-edit');
@@ -1557,10 +1851,19 @@
     if (projectStart) projectStart.onclick = () => showProjectStart(project);
     const projectTransition = $('#project-transition');
     if (projectTransition) projectTransition.onclick = () => showProjectTransition(project, projectTransition.dataset.action);
-    $$('[data-project-goto]').forEach((btn) => { btn.onclick = () => navigateTo(btn.dataset.projectGoto, {
-      projectId: btn.dataset.projectGoto === 'projects' ? null : project.id,
-      focusId: btn.dataset.focusId || null,
-    }); });
+    $$('[data-project-goto]', c).forEach((btn) => { btn.onclick = () => {
+      if (btn.closest('.project-journey') && btn.dataset.projectGoto === 'projects') {
+        const brief = $('.v13-project-brief', c);
+        brief.open = true;
+        brief.scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'start' });
+        $('summary', brief).focus({ preventScroll: true });
+        return;
+      }
+      navigateTo(btn.dataset.projectGoto, {
+        projectId: btn.dataset.projectGoto === 'projects' ? null : project.id,
+        focusId: btn.dataset.focusId || null,
+      });
+    }; });
     refreshIcons(c);
   }
 
@@ -1597,13 +1900,13 @@
       upsertTask({ key: `dispatch:${x.id}`, page: 'dispatches', projectId: x.project_id, focusId: x.id, tone: 'critical', score: 92, label: '等待确认', title: `${x.subject} · 讲师尚未确认`, meta: `${x.teach_date} · ${x.teacher_name || '讲师待定'}`, action: '记录确认结果' });
     });
     dispatches.filter((x) => !['已拒绝', '已完成'].includes(x.status) && dayDiff(x.teach_date) !== null && dayDiff(x.teach_date) <= 3 && x.material_status !== '已就绪').forEach((x) => {
-      upsertTask({ key: `dispatch:${x.id}`, page: 'dispatches', projectId: x.project_id, focusId: x.id, tone: dayDiff(x.teach_date) <= 1 ? 'critical' : 'warning', score: dayDiff(x.teach_date) <= 1 ? 88 : 68, label: '交付准备', title: `${x.subject} · 材料${x.material_status || '状态待补充'}`, meta: `${x.teach_date} · ${x.venue || '场地尚未确定'}`, action: '补齐交付准备' });
+      upsertTask({ key: `dispatch:${x.id}`, page: 'dispatches', projectId: x.project_id, focusId: x.id, tone: dayDiff(x.teach_date) <= 1 ? 'critical' : 'warning', score: dayDiff(x.teach_date) <= 1 ? 88 : 68, label: '交付准备', art: 'documents', title: `${x.subject} · 材料${x.material_status || '状态待补充'}`, meta: `${x.teach_date} · ${x.venue || '场地尚未确定'}`, action: '补齐交付准备' });
     });
     activeProjects.forEach((project) => {
       const projectDispatches = dispatches.filter((x) => String(x.project_id) === String(project.id) && x.status !== '已拒绝');
       const scheduled = projectDispatches.reduce((s, x) => s + Number(x.hours || 0), 0);
       const gap = Math.max(0, Number(project.hours || 0) - scheduled);
-      if (gap > 0) upsertTask({ key: `project:${project.id}:schedule`, page: 'dispatches', projectId: project.id, tone: 'warning', score: 74, label: '排课缺口', title: `${project.title} 尚缺 ${num(gap)} 课时`, meta: `计划 ${num(project.hours)} 课时 · 已排 ${num(scheduled)} 课时`, action: `安排 ${num(gap)} 课时` });
+      if (gap > 0) upsertTask({ key: `project:${project.id}:schedule`, page: 'dispatches', projectId: project.id, tone: 'warning', score: 74, label: '排课缺口', art: 'calendar', title: `${project.title} 尚缺 ${num(gap)} 课时`, meta: `计划 ${num(project.hours)} 课时 · 已排 ${num(scheduled)} 课时`, action: `安排 ${num(gap)} 课时` });
     });
     charges.filter((x) => x.status !== '已结清').forEach((x) => {
       const left = Math.max(0, Number(x.amount || 0) - Number(x.received || 0));
@@ -1642,7 +1945,7 @@
     const healthText = criticalCount ? '有紧急事项' : warningCount ? '需要关注' : '运行正常';
     const rowHtml = (x) => `
       <button type="button" class="v9-row ${x.tone}" data-goto="${x.page}" ${x.projectId ? `data-project-id="${x.projectId}"` : ''} ${x.focusId ? `data-focus-id="${x.focusId}"` : ''}>
-        <span class="v9-rail"></span>
+        <span class="v9-task-art">${businessArt(taskArtKind(x))}</span>
         <span class="v9-row-main"><small>${esc(x.label)} · ${esc(x.meta)}</small><b>${esc(x.title)}</b></span>
         <span class="v9-row-action">${esc(x.action)}${icon('arrow-up-right')}</span>
       </button>`;
@@ -1663,7 +1966,7 @@
         <header class="v9-hero">
           <div class="v9-hero-l">
             <span class="v9-date">${esc(todayLabel)} · 运营台账</span>
-            <h1>今日<em>运营</em></h1>
+            <h1>今日运营</h1>
             <div class="v9-health ${healthTone}"><i></i><span>${healthText}</span><b>${criticalCount}</b><small>紧急</small><b>${warningCount}</b><small>关注</small><b>${tasks.length}</b><small>待推进</small></div>
           </div>
           <div class="v9-kpis" aria-label="今日运营指标">
@@ -1798,7 +2101,7 @@
     const actions = [
       { l: '消息', cls: 'gray', onClick: (r) => {
         const logs = String(r.msg_log || '').split('\n').map((line) => line.trim()).filter(Boolean);
-        openModal('通知与确认记录', logs.length ? `<div class="activity-log">${logs.map((line, i) => `<div><span>${String(i + 1).padStart(2, '0')}</span><p>${esc(line)}</p></div>`).join('')}</div>` : `<div class="workspace-empty">${icon('message-square-dashed')}<b>暂无通知记录</b><span>通过线下、电话或其他渠道通知师资后，可在这里记录操作轨迹。</span></div>`, { noFoot: true, kicker: '师资协同轨迹' });
+        openModal('通知与确认记录', logs.length ? `<div class="activity-log">${logs.map((line, i) => `<div><span>${String(i + 1).padStart(2, '0')}</span><p>${esc(line)}</p></div>`).join('')}</div>` : `<div class="workspace-empty">${businessArt('faculty')}<b>暂无通知记录</b><span>通过线下、电话或其他渠道通知师资后，可在这里记录操作轨迹。</span></div>`, { noFoot: true, kicker: '师资协同轨迹' });
       } },
       { l: '记录通知', cls: '', show: (r) => canWrite() && ['待启动', '进行中'].includes(r.project_status) && ['待发送', '已拒绝'].includes(r.status), onClick: (r) => confirmBox(`请先通过电话、微信或其他实际渠道联系师资“${r.teacher_name}”。确认已经通知《${r.subject}》的授课安排，并在系统中记录这次通知？`, async () => { const res = await api('/dispatches/send', { body: { id: r.id } }); toast(res || '已记录师资通知'); renderPage(); }) },
       { l: '确认', cls: 'green', show: (r) => canWrite() && ['待启动', '进行中'].includes(r.project_status) && r.status === '已发送', onClick: (r) => {
@@ -2244,16 +2547,369 @@
     };
   }
 
-  // ============ 师资库 ============
-  async function pageTeachers(c) {
+  // ============ 师资资源：档案、简历与智能推荐 ============
+  const teacherFeeRateText = (value) => Number.isFinite(Number(value)) && Number(value) > 0 ? `¥ ${money(value)}/课时` : '待确认';
+  const teacherFormFields = () => [
+    { k: 'name', label: '姓名', required: true },
+    { k: 'gender', label: '性别', type: 'select', options: ['男', '女'] },
+    { k: 'org', label: '所在单位' },
+    { k: 'title', label: '职称/职务' },
+    ...residenceFields(),
+    { k: 'field', label: '专业领域', span2: true },
+    { k: 'phone', label: '联系电话' },
+    { k: 'email', label: '电子邮箱', type: 'email' },
+    { k: 'fee_rate', label: '课酬标准（元/课时）', type: 'number', required: true, min: 0, step: 100, hint: '尚未确认时可填写 0，系统会显示为“待确认”。' },
+    { k: 'in_date', label: '入库日期', type: 'date' },
+    { k: 'intro', label: '师资简介', type: 'textarea' },
+  ];
+
+  let teacherResumeUploadConfig = {};
+  let teacherRecommendationSequence = 0;
+  let teacherRecommendationController = null;
+  let teacherProfileRequestSequence = 0;
+
+  function cancelTeacherRecommendation() {
+    teacherRecommendationSequence += 1;
+    teacherRecommendationController?.abort();
+    teacherRecommendationController = null;
+  }
+
+  function resumeLimitBytes(extension) {
+    const ext = String(extension || '').toLowerCase();
+    const fallback = ext === 'pptx' ? 80 * 1024 * 1024 : 15 * 1024 * 1024;
+    const config = teacherResumeUploadConfig || {};
+    const nested = config.limits?.[ext] || config.upload_limits?.[ext] || {};
+    const byteValues = [config[`max_${ext}_bytes`], config[`${ext}_max_bytes`], nested.max_bytes, nested.bytes];
+    const byteValue = byteValues.map(Number).find((value) => Number.isFinite(value) && value > 0);
+    if (byteValue) return byteValue;
+    const mbValues = [config[`max_${ext}_mb`], config[`${ext}_max_mb`], nested.max_mb, nested.mb];
+    const mbValue = mbValues.map(Number).find((value) => Number.isFinite(value) && value > 0);
+    return mbValue ? mbValue * 1024 * 1024 : fallback;
+  }
+
+  const resumeLimitMb = (extension) => Math.round(resumeLimitBytes(extension) / 1024 / 1024);
+  const invalidateTeacherRecommendations = () => {
+    cancelTeacherRecommendation();
+    delete state.cache.teacherRecommendations;
+    delete state.cache.teacherRecommendationKey;
+  };
+
+  function teacherRecommendationKey() {
+    const form = state.teacherRecommendationForm;
+    return JSON.stringify([state.teacherRequirementDraft.trim(), String(form.demandId || ''), Number(form.maxResults), String(form.maxFeeRate || '').trim(), Boolean(form.hardBudget), form.logistics || {}]);
+  }
+
+  function teacherResumeItems(payload) {
+    if (Array.isArray(payload)) return payload;
+    if (Array.isArray(payload?.items)) return payload.items;
+    if (Array.isArray(payload?.resumes)) return payload.resumes;
+    if (Array.isArray(payload?.rows)) return payload.rows;
+    return [];
+  }
+
+  function listText(value) {
+    if (Array.isArray(value)) return value.flatMap(listText).filter(Boolean);
+    if (value && typeof value === 'object') return Object.values(value).flatMap(listText).filter(Boolean);
+    if (value === undefined || value === null) return [];
+    return String(value).split(/\n+|[；;]\s*/).map((item) => item.trim()).filter(Boolean);
+  }
+
+  function resumeProfileText(value) {
+    if (value === undefined || value === null || value === '') return '';
+    if (typeof value === 'string') return value;
+    try { return JSON.stringify(value, null, 2); } catch (error) { return String(value); }
+  }
+
+  function formatResumeBytes(value) {
+    const bytes = Number(value || 0);
+    if (!Number.isFinite(bytes) || bytes <= 0) return '大小待确认';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(bytes < 10240 ? 1 : 0)} KB`;
+    return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  }
+
+  function formatResumeTime(value) {
+    if (!value) return '—';
+    return String(value).replace('T', ' ').replace(/\.\d+.*$/, '').slice(0, 16);
+  }
+
+  function resumeStatusInfo(value) {
+    const raw = String(value || '未上传').trim();
+    const key = raw.toLowerCase();
+    if (!raw || ['none', 'missing', 'not_uploaded', '未上传'].includes(key)) return { label: '未上传', tone: 'empty' };
+    if (key.includes('fail') || key.includes('error') || raw.includes('失败')) return { label: '解析失败', tone: 'failed' };
+    if (key.includes('needs_ocr') || key.includes('ocr') || raw.includes('需人工')) return { label: '需人工补充', tone: 'review' };
+    if (key.includes('review') || key.includes('confirm') || raw.includes('待确认')) return { label: '待确认', tone: 'review' };
+    if (key.includes('parsing') || key.includes('processing') || raw.includes('解析中')) return { label: '解析中', tone: 'processing' };
+    if (['ready', 'parsed', 'completed', 'success', '可推荐', '已解析'].includes(key) || raw.includes('可推荐')) return { label: '可推荐', tone: 'ready' };
+    if (key.includes('pending') || key.includes('queued') || key.includes('uploaded') || raw.includes('待解析') || raw.includes('等待')) return { label: '等待解析', tone: 'pending' };
+    return { label: raw, tone: 'empty' };
+  }
+
+  const resumeStatusTag = (resume) => tag(resumeStatusInfo(resume?.parse_status).label);
+  const resumeHasFile = (resume) => Boolean(resume && (resume.file_name || !['empty'].includes(resumeStatusInfo(resume.parse_status).tone)));
+
+  function openTeacherResumeUpload(teachers, selectedTeacherId = '') {
+    if (!canWrite()) return;
+    if (!teachers.length) { toast('请先通过手工入库建立讲师档案', true); return; }
+    const selected = String(selectedTeacherId || '');
+    const options = teachers.map((teacher) => `<option value="${esc(teacher.id)}" ${String(teacher.id) === selected ? 'selected' : ''}>${esc(teacher.name)}｜${esc(teacherResidenceText(teacher))}｜${esc(teacher.org || '单位待补充')}</option>`).join('');
+    const mask = openModal(selected ? '替换讲师简历' : '上传讲师简历', `
+      <div class="resume-upload-lead"><span>${icon('scan-text')}</span><div><b>上传 PDF 或 PPTX 后自动提取专业画像</b><p>解析结果会进入简历管理，建议核对后再用于智能推荐。</p></div></div>
+      <div class="form-item span2"><label for="teacher-resume-owner">关联讲师<span class="req">*</span></label><select id="teacher-resume-owner" ${selected ? '' : 'autofocus'}><option value="" disabled ${selected ? '' : 'selected'}>请选择讲师</option>${options}</select><span class="field-error" id="teacher-resume-owner-error" aria-live="polite"></span></div>
+      <div id="resume-residence-fields">${renderForm(residenceFields(), teachers.find((teacher) => String(teacher.id) === selected))}</div>
+      <p class="resume-refresh-note">上传前确认常驻地区；地区会单独保存，解析不会根据简历文字覆盖它。</p>
+      <label class="resume-drop-zone" id="teacher-resume-drop" for="teacher-resume-file">
+        <input class="sr-only" id="teacher-resume-file" type="file" accept=".pdf,.pptx,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation">
+        <span class="resume-drop-icon">${icon('file-up')}</span>
+        <b>选择或拖入讲师简历</b>
+        <small>PDF ≤ ${resumeLimitMb('pdf')} MB · PPTX ≤ ${resumeLimitMb('pptx')} MB；再次上传会替换旧文件</small>
+      </label>
+      <div class="resume-file-selected" id="teacher-resume-selected" role="status" aria-live="polite"><span>${icon('file-text')}</span><p><b>尚未选择文件</b><small>请选择需要解析的讲师简历</small></p></div>
+      <div class="resume-upload-progress" id="teacher-resume-progress" hidden><progress id="teacher-resume-progress-bar" max="100" value="0" aria-label="简历上传进度"></progress><span id="teacher-resume-progress-text" role="status" aria-live="polite">正在准备上传…</span></div>
+      <div class="resume-privacy-note">${icon('shield-check')}简历可能包含联系方式等个人信息，仅管理员和业务管理员可下载原件或维护画像。</div>
+    `, {
+      wide: true,
+      kicker: '师资智能档案',
+      okIcon: 'sparkles',
+      okText: selected ? '替换并重新解析' : '上传并解析',
+      onOk: async () => {
+        const teacherId = $('#teacher-resume-owner', mask).value;
+        const ownerError = $('#teacher-resume-owner-error', mask);
+        ownerError.textContent = '';
+        if (!teacherId) { ownerError.textContent = '请选择需要关联的讲师'; $('#teacher-resume-owner', mask).focus(); return false; }
+        const residence = collectForm($('#resume-residence-fields', mask), residenceFields());
+        if (!residence) return false;
+        if (!chosenFile) { toast('请选择 PDF 或 PPTX 讲师简历', true); $('#teacher-resume-file', mask).focus(); return false; }
+        const extension = /\.pptx$/i.test(chosenFile.name || '') ? 'pptx' : 'pdf';
+        const signature = new Uint8Array(await chosenFile.slice(0, 1024).arrayBuffer());
+        const signatureText = Array.from(signature.slice(0, 1024)).map((byte) => String.fromCharCode(byte)).join('');
+        const validSignature = extension === 'pdf' ? signatureText.includes('%PDF-') : signature[0] === 0x50 && signature[1] === 0x4b;
+        if (!validSignature) { toast(`文件内容不是有效的 ${extension.toUpperCase()}`, true); return false; }
+        mask.dataset.locked = 'true';
+        $('#modal-x', mask).disabled = true;
+        $('#modal-cancel', mask).disabled = true;
+        $('#teacher-resume-owner', mask).disabled = true;
+        $('#teacher-resume-file', mask).disabled = true;
+        $$('#resume-residence-fields input, #resume-residence-fields select', mask).forEach((input) => { input.disabled = true; });
+        $('#teacher-resume-progress', mask).hidden = false;
+        $('#teacher-resume-progress-bar', mask).value = 0;
+        $('#teacher-resume-progress-text', mask).textContent = '正在准备上传…';
+        const uploadFile = chosenFile;
+        let residenceSaved = false;
+        try {
+          const owner = teachers.find((teacher) => String(teacher.id) === teacherId);
+          if (owner?.base_province !== residence.base_province || owner?.base_city !== residence.base_city) {
+            await api('/teachers/residence', { body: { id: Number(teacherId), ...residence } });
+            if (owner) Object.assign(owner, residence);
+            residenceSaved = true;
+            invalidateTeacherRecommendations();
+          }
+          const result = await uploadTeacherResume(uploadFile, teacherId, {
+            onProgress: (loaded, total) => {
+              if (!mask.isConnected) return;
+              const percent = Math.min(100, Math.round(loaded / Math.max(1, total) * 100));
+              $('#teacher-resume-progress-bar', mask).value = percent;
+              $('#teacher-resume-progress-text', mask).textContent = loaded >= total
+                ? '文件上传完成，正在提取讲师信息，请稍候…'
+                : `正在上传 ${percent}% · ${formatResumeBytes(loaded)} / ${formatResumeBytes(total)}`;
+            },
+          });
+          invalidateTeacherRecommendations();
+          state.teacherTab = 'resumes';
+          toast(result?.status === 'needs_ocr' ? '简历已安全保存，请补充人工专业画像' : '简历上传与解析已完成');
+          renderPage();
+        } catch (error) {
+          const message = `${residenceSaved ? '常驻地区已保存；简历上传未完成：' : ''}${error?.message || '请重试'}`;
+          if (mask.isConnected) $('#teacher-resume-progress-text', mask).textContent = message;
+          throw new Error(message);
+        } finally {
+          if (mask.isConnected) {
+            mask.dataset.locked = 'false';
+            $('#modal-x', mask).disabled = false;
+            $('#modal-cancel', mask).disabled = false;
+            $('#teacher-resume-owner', mask).disabled = false;
+            $('#teacher-resume-file', mask).disabled = false;
+            $$('#resume-residence-fields input, #resume-residence-fields select', mask).forEach((input) => { input.disabled = false; });
+          }
+        }
+      },
+    });
+    const fileInput = $('#teacher-resume-file', mask);
+    $('#teacher-resume-owner', mask).onchange = () => {
+      const owner = teachers.find((teacher) => String(teacher.id) === $('#teacher-resume-owner', mask).value);
+      $('#resume-residence-fields', mask).innerHTML = renderForm(residenceFields(), owner);
+    };
+    const drop = $('#teacher-resume-drop', mask);
+    const selectedBox = $('#teacher-resume-selected', mask);
+    let chosenFile = null;
+    const clearChosen = () => {
+      chosenFile = null;
+      fileInput.value = '';
+      drop.classList.remove('has-file');
+      selectedBox.innerHTML = `<span>${icon('file-text')}</span><p><b>尚未选择文件</b><small>请选择需要解析的讲师简历</small></p>`;
+      refreshIcons(selectedBox);
+    };
+    const choose = (file) => {
+      if (mask.dataset.locked === 'true') return;
+      if (!file) return;
+      const extension = /\.pptx$/i.test(file.name || '') ? 'pptx' : /\.pdf$/i.test(file.name || '') ? 'pdf' : '';
+      if (!extension || !file.size) { clearChosen(); toast('请选择有效的 PDF 或 PPTX 文件', true); return; }
+      if (file.size > resumeLimitBytes(extension)) { clearChosen(); toast(`${extension.toUpperCase()} 不能超过 ${resumeLimitMb(extension)} MB`, true); return; }
+      chosenFile = file;
+      drop.classList.add('has-file');
+      selectedBox.innerHTML = `<span>${icon('file-check-2')}</span><p><b>${esc(file.name)}</b><small>${formatResumeBytes(file.size)} · 已准备上传</small></p>`;
+      refreshIcons(selectedBox);
+    };
+    fileInput.onchange = () => choose(fileInput.files?.[0]);
+    ['dragenter', 'dragover'].forEach((name) => drop.addEventListener(name, (event) => { event.preventDefault(); drop.classList.add('is-dragover'); }));
+    ['dragleave', 'drop'].forEach((name) => drop.addEventListener(name, (event) => { event.preventDefault(); drop.classList.remove('is-dragover'); }));
+    drop.addEventListener('drop', (event) => choose(event.dataTransfer?.files?.[0]));
+  }
+
+  function resumeClaimFacts(claims = {}) {
+    claims = claims && typeof claims === 'object' ? claims : {};
+    const definitions = [
+      ['claimed_training_hours', '自述累计课时', '课时'],
+      ['claimed_sessions', '自述授课场次', '场'],
+      ['claimed_satisfaction_percent', '自述满意度', '%'],
+      ['claimed_experience_years', '自述从业年限', '年'],
+    ];
+    return definitions.flatMap(([key, label, unit]) => {
+      const raw = claims[key];
+      if (raw === undefined || raw === null || raw === '') return [];
+      const value = String(raw).trim();
+      return [{ key, label, value: value.endsWith(unit) ? value : `${value}${unit}` }];
+    });
+  }
+
+  function resumeClaimMarkup(claims = {}) {
+    const facts = resumeClaimFacts(claims);
+    return facts.length
+      ? `<dl class="resume-claim-facts">${facts.map((fact) => `<div><dt>${esc(fact.label)}</dt><dd>${esc(fact.value)}</dd></div>`).join('')}</dl><p class="resume-fact-caption">以上数值来自简历或管理员校准，请结合原件核对时间范围与计量口径。</p>`
+      : '<p class="resume-derived-empty">资料中暂未提取到明确的课时、场次、满意度或从业年限。</p>';
+  }
+
+  function manualProfileDraft(profile = {}) {
+    const groups = [
+      ['专业概述', profile.summary], ['擅长主题', profile.tags], ['行业经验', profile.industries],
+      ['授课对象', profile.audiences], ['专业资历', profile.credentials], ['代表课程', profile.courses],
+      ['授课形式', profile.delivery_modes], ['服务案例', profile.service_cases],
+    ];
+    const lines = groups.flatMap(([label, values]) => {
+      const content = listText(values).join('；');
+      return content ? [`${label}：${content}`] : [];
+    });
+    resumeClaimFacts(profile.resume_claims).forEach((fact) => lines.push(`${fact.label}：${fact.value}`));
+    return lines.join('\n');
+  }
+
+  async function openResumeProfileEditor(resume, teacher) {
+    if (!canWrite()) return;
     const epoch = routeEpoch;
-    const [rows, projects, dispatches] = await Promise.all([api('/teachers'), api('/projects'), api('/dispatches')]);
-    if (!isRouteCurrent(epoch, c, 'teachers')) return;
+    const ticket = ++teacherProfileRequestSequence;
+    let detail = resume;
+    if (!resume.profile) {
+      try { detail = await api(`/teacher-resumes/profile?teacher_id=${encodeURIComponent(resume.teacher_id)}`); }
+      catch (error) { return; }
+    }
+    if (!isRouteCurrent(epoch, null, 'teachers') || ticket !== teacherProfileRequestSequence) return;
+    const fields = [...residenceFields(), {
+      k: 'manual_profile', label: '管理员校准画像', type: 'textarea', required: true,
+      placeholder: '请完整填写讲师擅长主题、行业经验、授课对象、课程和资历，并注明需要进一步确认的条件。',
+      hint: '已带入现有专业事实供您核对。请保留仍然有效的内容并修正遗漏；保存后，这份完整画像将优先用于推荐。最多 10000 字。',
+    }];
+    openModal(`编辑专业画像 · ${teacher?.name || detail.teacher_name || '讲师'}`, renderForm(fields, { ...teacher, manual_profile: resumeProfileText(detail.manual_profile) || manualProfileDraft(detail.profile) }), {
+      wide: true,
+      kicker: '人工校准',
+      okIcon: 'save',
+      okText: '保存画像',
+      onOk: async () => {
+        const data = collectForm($('#modal-mask'), fields);
+        if (!data) return false;
+        if (data.manual_profile.length > 10000) { toast('校准画像不能超过 10000 字', true); return false; }
+        const target = Number(detail.id) > 0 ? { id: Number(detail.id) } : { teacher_id: Number(detail.teacher_id) };
+        await api('/teacher-resumes/profile', { body: { ...target, manual_profile: data.manual_profile, base_province: data.base_province, base_city: data.base_city } });
+        invalidateTeacherRecommendations();
+        state.teacherTab = 'resumes';
+        toast('人工专业画像已保存');
+        renderPage();
+      },
+    });
+  }
+
+  function reparseTeacherResume(resume) {
+    if (!canWrite()) return;
+    confirmBox(`重新解析【${resume.teacher_name || '该讲师'}】的简历？人工专业画像会保留。`, async () => {
+      await api('/teacher-resumes/reparse', { body: { teacher_id: Number(resume.teacher_id) } });
+      invalidateTeacherRecommendations();
+      state.teacherTab = 'resumes';
+      toast('已重新提交解析');
+      renderPage();
+    });
+  }
+
+  function deleteTeacherResume(resume) {
+    if (!canWrite()) return;
+    confirmBox(`确定删除【${resume.teacher_name || '该讲师'}】的简历原件与解析结果？讲师基础档案和历史评价不会删除。`, async () => {
+      await api('/teacher-resumes/delete', { body: { teacher_id: Number(resume.teacher_id) } });
+      invalidateTeacherRecommendations();
+      state.teacherTab = 'resumes';
+      toast('讲师简历已删除');
+      renderPage();
+    });
+  }
+
+  async function openResumeDetails(resume, teacher) {
+    if (!canWrite()) return;
+    const epoch = routeEpoch;
+    const ticket = ++teacherProfileRequestSequence;
+    let detail;
+    try {
+      detail = await api(`/teacher-resumes/profile?teacher_id=${encodeURIComponent(resume.teacher_id)}`);
+    } catch (error) {
+      return;
+    }
+    if (!isRouteCurrent(epoch, null, 'teachers') || ticket !== teacherProfileRequestSequence) return;
+    const manualProfile = resumeProfileText(detail.manual_profile);
+    const parsedProfile = detail.profile && typeof detail.profile === 'object' ? detail.profile : {};
+    const profileRows = [
+      ['擅长主题', listText(parsedProfile.tags)],
+      ['行业经验', listText(parsedProfile.industries)],
+      ['授课对象', listText(parsedProfile.audiences)],
+      ['专业资历', listText(parsedProfile.credentials)],
+      ['代表课程', listText(parsedProfile.courses)],
+      ['授课形式', listText(parsedProfile.delivery_modes)],
+    ].filter(([, values]) => values.length);
+    const parsedProfileHtml = `${parsedProfile.summary ? `<p class="resume-derived-summary">${esc(parsedProfile.summary)}</p>` : ''}${profileRows.length ? `<dl class="resume-derived-list">${profileRows.map(([label, values]) => `<div><dt>${esc(label)}</dt><dd>${values.map((value) => `<span>${esc(value)}</span>`).join('')}</dd></div>`).join('')}</dl>` : '<div class="resume-derived-empty">暂未提取到可展示的结构化画像</div>'}`;
+    const parseMessage = String(detail.parse_message || '').trim();
+    const serviceCases = listText(parsedProfile.service_cases);
+    const evidence = recommendationEvidence(parsedProfile.evidence);
+    openModal(`${teacher?.name || detail.teacher_name || '讲师'} · 简历解析`, `
+      <div class="resume-detail-head"><span class="person-avatar large">${esc((teacher?.name || detail.teacher_name || '讲师').slice(-2))}</span><div><h4>${esc(teacher?.name || detail.teacher_name || '讲师')} ${resumeStatusTag(detail)}</h4><p>${esc(teacher?.org || '单位待补充')} · ${esc(teacher?.title || '职称待补充')}</p></div><small>${esc(formatResumeTime(detail.updated_at))}</small></div>
+      <div class="resume-meta-strip"><span>${icon('file-text')}<b>${esc(detail.file_name || '简历文件')}</b><small>${esc(formatResumeBytes(detail.file_size))}</small></span><span>${icon('files')}<b>${esc(detail.page_count || '—')}</b><small>${/\.pptx$/i.test(detail.file_name || '') ? '幻灯片' : '页数'}</small></span><span>${icon('scan-text')}<b>${esc(resumeStatusInfo(detail.parse_status).label)}</b><small>解析状态</small></span></div>
+      ${parseMessage ? `<div class="resume-parse-message">${icon(resumeStatusInfo(detail.parse_status).tone === 'failed' ? 'circle-alert' : 'info')}<span>${esc(parseMessage)}</span></div>` : ''}
+      <div class="resume-claim-banner">${icon('badge-info')}<span>简历自述和管理员校准用于理解讲师能力；自述课时、满意度、客户案例不计入系统履约记录。</span></div>
+      <div class="resume-detail-grid">
+        <section><div class="section-title"><div><span>管理员校准画像</span><small>已保存的完整专业事实优先用于推荐</small></div></div><div class="resume-profile-copy">${manualProfile ? esc(manualProfile) : '尚未维护，可点击“编辑人工画像”核对并完善。'}</div></section>
+        <section><div class="section-title"><div><span>专业画像</span><small>${manualProfile ? '根据已校准资料整理，请核对关键信息' : '根据简历整理，请核对关键信息'}</small></div></div><div class="resume-profile-copy resume-derived-profile">${parsedProfileHtml}</div></section>
+        <section class="resume-facts-section"><div class="section-title"><div><span>简历自述数据</span><small>保留资料口径，供您核对</small></div></div>${resumeClaimMarkup(parsedProfile.resume_claims)}</section>
+        <section class="resume-facts-section"><div class="section-title"><div><span>行业与客户案例</span><small>来自讲师资料，项目情况需进一步确认</small></div></div>${serviceCases.length ? `<ul class="resume-service-cases">${serviceCases.map((item) => `<li>${esc(item)}</li>`).join('')}</ul>` : '<p class="resume-derived-empty">暂未提取到明确案例，可在校准画像中补充。</p>'}</section>
+      </div>
+      ${evidence.length ? `<details class="teacher-evidence"><summary>${icon('file-search')}查看资料依据</summary><ul>${evidence.map((item) => `<li>${esc(item)}</li>`).join('')}</ul></details>` : ''}
+      <div class="resume-detail-actions"><button type="button" class="btn gray" id="resume-detail-download">${icon('download')}下载原件</button><button type="button" class="btn gray" id="resume-detail-reparse">${icon('refresh-cw')}重新解析</button><button type="button" class="btn" id="resume-detail-edit">${icon('sliders-horizontal')}编辑人工画像</button></div>
+    `, { noFoot: true, wide: true, kicker: '简历与画像' });
+    $('#resume-detail-download').onclick = () => downloadTeacherResume(detail.teacher_id, detail.file_name);
+    $('#resume-detail-reparse').onclick = () => { closeModal(); reparseTeacherResume(resume); };
+    $('#resume-detail-edit').onclick = () => { closeModal(); openResumeProfileEditor({ ...resume, ...detail }, teacher); };
+  }
+
+  function renderTeacherLibrary(root, context) {
+    const { epoch, c, rows, projects, dispatches, resumeByTeacher } = context;
     const savedFilter = state.filters.teachers || {};
-    const inLib = rows.filter((r) => r.status === '在库').length;
-    const avgRate = rows.length ? rows.reduce((s, r) => s + Number(r.fee_rate || 0), 0) / rows.length : 0;
-    c.innerHTML = `<div class="module-summary three"><div><span>${icon('users-round')}</span><small>当前师资</small><b><span id="teachers-total">${rows.length}</span><em>人</em></b></div><div><span>${icon('user-check')}</span><small>当前在库</small><b><span id="teachers-inlib">${inLib}</span><em>人</em></b></div><div><span>${icon('badge-japanese-yen')}</span><small>当前平均课酬</small><b id="teachers-rate">¥ ${money(avgRate)}</b></div></div><div class="card data-card">
-      <div class="card-heading"><div><h2>师资档案</h2><p>当前显示 <span id="result-count">${rows.length}</span> 条记录 · 统一管理专长、联系方式与授课评价</p></div>${canWrite() ? `<button type="button" class="btn" id="add-btn">${icon('user-plus')}师资入库</button>` : ''}</div>
+    const fields = teacherFormFields();
+    root.innerHTML = `<div class="card data-card teacher-library-card">
+      <div class="card-heading"><div><h2>师资档案</h2><p>当前显示 <span id="result-count">${rows.length}</span> 条记录 · 档案、简历状态与履约评价统一查看</p></div>${canWrite() ? `<div class="teacher-head-actions"><button type="button" class="btn gray" id="teacher-add-manual">${icon('user-plus')}手工入库</button><button type="button" class="btn" id="teacher-upload-resume">${icon('file-up')}上传讲师简历</button></div>` : ''}</div>
       <div class="toolbar">
         <label class="search-box"><span class="sr-only">搜索师资姓名、单位或领域</span>${icon('search')}<input id="flt-kw" value="${esc(savedFilter.kw || '')}" placeholder="搜索：姓名/单位/领域" autocomplete="off"></label>
         <label class="select-filter"><span class="sr-only">按师资状态筛选</span><select id="flt-status"><option value="">全部状态</option><option ${savedFilter.status === '在库' ? 'selected' : ''}>在库</option><option ${savedFilter.status === '出库' ? 'selected' : ''}>出库</option></select></label>
@@ -2262,97 +2918,618 @@
       <div id="tbl"></div>
     </div>`;
 
-    const fields = [
-      { k: 'name', label: '姓名', required: true },
-      { k: 'gender', label: '性别', type: 'select', options: ['男', '女'] },
-      { k: 'org', label: '所在单位' },
-      { k: 'title', label: '职称/职务' },
-      { k: 'field', label: '专业领域', span2: true },
-      { k: 'phone', label: '联系电话' },
-      { k: 'email', label: '电子邮箱', type: 'email' },
-      { k: 'fee_rate', label: '课酬标准（元/课时）', type: 'number', required: true, min: 0, step: 100 },
-      { k: 'in_date', label: '入库日期', type: 'date' },
-      { k: 'intro', label: '师资简介', type: 'textarea' },
-    ];
-
     const cols = [
-      { k: 'id', l: '编号', mobileHide: true, render: (r) => `<span class="project-id">#T-${String(r.id).padStart(4, '0')}</span>` }, { k: 'name', l: '师资', render: (r) => `<div class="person-cell"><span class="person-avatar">${esc(r.name.slice(-2))}</span><span><b>${esc(r.name)}</b><small>${esc(r.title || '讲师')}</small></span></div>` }, { k: 'gender', l: '性别', mobileHide: true },
-      { k: 'org', l: '单位' }, { k: 'title', l: '职称', mobileHide: true }, { k: 'field', l: '专业领域' },
-      { k: 'fee_rate', l: '课酬标准', align: 'right', render: (r) => `¥ ${money(r.fee_rate)}/课时` },
-      { k: 'status', l: '状态', render: (r) => tag(r.status) },
+      { k: 'id', l: '编号', mobileHide: true, render: (row) => `<span class="project-id">#T-${String(row.id).padStart(4, '0')}</span>` },
+      { k: 'name', l: '师资', render: (row) => `<div class="person-cell"><span class="person-avatar">${esc(row.name.slice(-2))}</span><span><b>${esc(row.name)}</b><small>${esc(row.title || '讲师')}</small></span></div>` },
+      { k: 'org', l: '单位' },
+      { k: 'base_city', l: '常驻地区', render: (row) => esc(teacherResidenceText(row)) },
+      { k: 'field', l: '专业领域' },
+      ...(canWrite() ? [{ k: 'resume_status', l: '简历状态', render: (row) => resumeStatusTag(resumeByTeacher.get(String(row.id))) }] : []),
+      { k: 'fee_rate', l: '课酬标准', align: 'right', render: (row) => teacherFeeRateText(row.fee_rate) },
+      { k: 'status', l: '状态', render: (row) => tag(row.status) },
     ];
-
-    const actions = [
-      { l: '档案', cls: '', icon: 'contact-round', onClick: (r) => showTeacherEvals(r, projects, dispatches) },
-    ];
+    const actions = [{ l: '档案', cls: '', icon: 'contact-round', onClick: (row) => showTeacherEvals(row, projects, dispatches) }];
     if (canWrite()) {
-      actions.push({ l: '出库', cls: 'orange', show: (r) => r.status === '在库', onClick: (r) => confirmBox(`确定将师资【${r.name}】移出师资库？出库后不可参与新调度。`, async () => { await api('/teachers/checkout', { body: { id: r.id } }); toast('已出库'); renderPage(); }) });
-      actions.push({ l: '入库', cls: 'green', show: (r) => r.status === '出库', onClick: (r) => confirmBox(`确定将师资【${r.name}】重新入库？`, async () => { await api('/teachers/checkin', { body: { id: r.id } }); toast('已重新入库'); renderPage(); }) });
-      actions.push({ l: '编辑', cls: 'gray', onClick: (r) => openModal('编辑师资', renderForm(fields, r), { onOk: async () => { const d = collectForm($('#modal-mask'), fields); if (!d) return false; await api('/teachers', { body: { ...r, ...d } }); toast('已保存'); renderPage(); } }) });
-      actions.push({ l: '删除', cls: 'red', onClick: (r) => confirmBox(`仅未产生排课、课酬或评价的师资可以删除。确定检查并删除【${r.name}】？`, async () => { await api('/teachers/delete', { body: { id: r.id } }); toast('已删除'); renderPage(); }) });
+      actions.push({ l: '常驻地区', cls: 'gray', icon: 'map-pin', onClick: (row) => openModal(`常驻地区 · ${row.name}`, renderForm(residenceFields(), row), { onOk: async () => { const data = collectForm($('#modal-mask'), residenceFields()); if (!data) return false; await api('/teachers/residence', { body: { id: row.id, ...data } }); invalidateTeacherRecommendations(); toast('常驻地区已保存'); renderPage(); } }) });
+      actions.push({ l: '上传简历', cls: 'gray', icon: 'file-up', onClick: (row) => openTeacherResumeUpload(rows, row.id) });
+      actions.push({ l: '出库', cls: 'orange', show: (row) => row.status === '在库', onClick: (row) => confirmBox(`确定将师资【${row.name}】移出师资库？出库后不可参与新调度。`, async () => { await api('/teachers/checkout', { body: { id: row.id } }); invalidateTeacherRecommendations(); toast('已出库'); renderPage(); }) });
+      actions.push({ l: '入库', cls: 'green', show: (row) => row.status === '出库', onClick: (row) => confirmBox(`确定将师资【${row.name}】重新入库？`, async () => { await api('/teachers/checkin', { body: { id: row.id } }); invalidateTeacherRecommendations(); toast('已重新入库'); renderPage(); }) });
+      actions.push({ l: '编辑', cls: 'gray', onClick: (row) => openModal('编辑师资', renderForm(fields, row), { onOk: async () => { const data = collectForm($('#modal-mask'), fields); if (!data) return false; await api('/teachers', { body: { ...row, ...data } }); invalidateTeacherRecommendations(); toast('已保存'); renderPage(); } }) });
+      actions.push({ l: '删除', cls: 'red', onClick: (row) => confirmBox(`仅未产生排课、课酬或评价的师资可以删除。确定检查并删除【${row.name}】？`, async () => { await api('/teachers/delete', { body: { id: row.id } }); invalidateTeacherRecommendations(); toast('已删除'); renderPage(); }) });
     }
     const draw = (list) => {
-      if (!isRouteCurrent(epoch, c, 'teachers')) return;
-      const table = $('#tbl', c);
+      if (!isRouteCurrent(epoch, c, 'teachers') || !root.isConnected) return;
+      const table = $('#tbl', root);
       if (!table) return;
       table.innerHTML = renderTable(cols, list, actions, 'teachers');
       bindTableActions(table, list, actions);
-      const visibleInLib = list.filter((row) => row.status === '在库').length;
-      const visibleAvg = list.length ? list.reduce((sum, row) => sum + Number(row.fee_rate || 0), 0) / list.length : 0;
-      $('#result-count', c).textContent = list.length;
-      $('#teachers-total', c).textContent = list.length;
-      $('#teachers-inlib', c).textContent = visibleInLib;
-      $('#teachers-rate', c).textContent = `¥ ${money(visibleAvg)}`;
+      $('#result-count', root).textContent = list.length;
     };
     draw(rows);
     let filterController = null;
     addRouteCleanup(() => filterController?.abort(), epoch);
     const runFilter = async () => {
-      if (!isRouteCurrent(epoch, c, 'teachers')) return;
-      const p = new URLSearchParams();
-      const keyword = $('#flt-kw', c);
-      const status = $('#flt-status', c);
-      if (keyword.value) p.set('kw', keyword.value);
-      if (status.value) p.set('status', status.value);
-      state.filters.teachers = { kw: keyword.value.trim(), status: status.value };
+      if (!isRouteCurrent(epoch, c, 'teachers') || !$('#flt-kw', root)) return;
+      const params = new URLSearchParams();
+      const keyword = $('#flt-kw', root);
+      const status = $('#flt-status', root);
+      if (keyword.value) params.set('kw', keyword.value);
+      if (status.value) params.set('status', status.value);
+      state.filters.teachers = { ...state.filters.teachers, kw: keyword.value.trim(), status: status.value };
       writeRouteToUrl(true);
       filterController?.abort();
       const controller = new AbortController();
       filterController = controller;
       try {
-        const list = await api('/teachers?' + p.toString(), { signal: controller.signal });
+        const list = await api('/teachers?' + params.toString(), { signal: controller.signal });
         if (controller === filterController) draw(list);
       } catch (error) {
         if (!error || error.name !== 'AbortError') return;
       }
     };
-    $('#flt-btn', c).onclick = runFilter;
-    $('#flt-status', c).onchange = runFilter;
+    $('#flt-btn', root).onclick = runFilter;
+    $('#flt-status', root).onchange = runFilter;
     const liveFilter = debounce(runFilter, 280);
     addRouteCleanup(liveFilter.cancel, epoch);
-    $('#flt-kw', c).oninput = liveFilter;
-    $('#flt-kw', c).onkeydown = (event) => {
+    $('#flt-kw', root).oninput = liveFilter;
+    $('#flt-kw', root).onkeydown = (event) => {
       if (event.key === 'Enter') { event.preventDefault(); runFilter(); }
-      if (event.key === 'Escape') { event.preventDefault(); $('#flt-kw', c).value = ''; runFilter(); }
+      if (event.key === 'Escape') { event.preventDefault(); $('#flt-kw', root).value = ''; runFilter(); }
     };
-    if (savedFilter.kw || savedFilter.status) await runFilter();
-    const addBtn = $('#add-btn', c);
-    if (addBtn) addBtn.onclick = () => openModal('师资入库', renderForm(fields, { in_date: new Date().toISOString().slice(0, 10) }), {
-      onOk: async () => { const d = collectForm($('#modal-mask'), fields); if (!d) return false; d.status = '在库'; await api('/teachers', { body: d }); toast('师资已入库'); renderPage(); },
+    if (savedFilter.kw || savedFilter.status) runFilter();
+    if ($('#teacher-upload-resume', root)) $('#teacher-upload-resume', root).onclick = () => openTeacherResumeUpload(rows);
+    if ($('#teacher-add-manual', root)) $('#teacher-add-manual', root).onclick = () => openModal('师资入库', renderForm(fields, { in_date: new Date().toISOString().slice(0, 10) }), {
+      onOk: async () => { const data = collectForm($('#modal-mask'), fields); if (!data) return false; data.status = '在库'; await api('/teachers', { body: data }); invalidateTeacherRecommendations(); toast('师资已入库'); renderPage(); },
     });
+  }
+
+  function renderResumeManagement(root, context) {
+    if (!canWrite()) {
+      root.innerHTML = `<div class="recommend-permission-card"><span>${icon('lock-keyhole')}</span><h2>当前账号无权访问简历管理</h2><p>请使用管理员或业务管理员账号维护讲师简历与专业画像。</p></div>`;
+      return;
+    }
+    const { rows, resumes, resumeLoadError } = context;
+    const savedFilter = state.filters.teacherResumes || {};
+    const teacherById = new Map(rows.map((teacher) => [String(teacher.id), teacher]));
+    const resumeById = new Map(resumes.map((resume) => [String(resume.teacher_id), resume]));
+    const knownIds = new Set(rows.map((teacher) => String(teacher.id)));
+    const records = rows.map((teacher) => ({
+      ...(resumeById.get(String(teacher.id)) || {}),
+      id: teacher.id,
+      teacher_id: teacher.id,
+      teacher_name: teacher.name,
+      teacher_title: teacher.title,
+      teacher_org: teacher.org,
+      teacher_status: teacher.status,
+      parse_status: resumeById.get(String(teacher.id))?.parse_status || '未上传',
+    }));
+    resumes.filter((resume) => !knownIds.has(String(resume.teacher_id))).forEach((resume) => records.push({ ...resume, id: resume.teacher_id }));
+    root.innerHTML = `${resumeLoadError ? `<div class="resume-load-error" role="alert">${icon('cloud-alert')}<span><b>简历状态暂时无法同步</b><small>${esc(resumeLoadError)}</small></span></div>` : ''}<div class="card data-card resume-manage-card">
+      <div class="card-heading"><div><h2>简历管理</h2><p>跟踪 PDF/PPTX 解析、人工画像与推荐可用状态</p></div><div class="teacher-head-actions"><button type="button" class="btn gray" id="resume-manage-refresh">${icon('refresh-cw')}刷新状态</button>${canWrite() ? `<button type="button" class="btn" id="resume-manage-upload">${icon('file-up')}上传讲师简历</button>` : ''}</div></div>
+      ${canWrite() ? '' : `<div class="resume-viewer-note">${icon('shield')}当前账号无权访问此区域。</div>`}
+      <div class="toolbar resume-toolbar"><label class="search-box"><span class="sr-only">搜索讲师</span>${icon('search')}<input id="resume-flt-keyword" value="${esc(savedFilter.keyword || '')}" placeholder="搜索讲师姓名" autocomplete="off"></label><label class="select-filter"><span class="sr-only">按解析状态筛选</span><select id="resume-flt-status"><option value="">全部解析状态</option>${['未上传', '等待解析', '解析中', '待确认', '需人工补充', '可推荐', '解析失败'].map((status) => `<option ${savedFilter.status === status ? 'selected' : ''}>${status}</option>`).join('')}</select></label></div>
+      ${resumes.some((resume) => ['pending', 'processing'].includes(resumeStatusInfo(resume.parse_status).tone)) ? '<p class="resume-refresh-note" role="status">正在解析的简历会自动更新状态；也可以点击“刷新状态”。</p>' : ''}
+      <div id="resume-table"></div>
+    </div>`;
+    const cols = canWrite() ? [
+      { k: 'teacher_name', l: '讲师', render: (record) => `<div class="person-cell"><span class="person-avatar">${esc((record.teacher_name || '讲师').slice(-2))}</span><span><b>${esc(record.teacher_name || '未知讲师')}</b><small>${esc(record.teacher_title || '讲师')} · ${esc(record.teacher_status || '状态待确认')}</small></span></div>` },
+      { k: 'file_name', l: '简历文件', render: (record) => resumeHasFile(record) ? `<span class="resume-file-cell"><b>${esc(record.file_name || '简历文件')}</b><small>${esc(formatResumeBytes(record.file_size))}${record.page_count ? ` · ${esc(record.page_count)} ${/\.pptx$/i.test(record.file_name || '') ? '张' : '页'}` : ''}</small></span>` : '<span class="muted-cell">尚未上传</span>' },
+      { k: 'parse_status', l: '解析状态', render: resumeStatusTag },
+      { k: 'manual_profile', l: '人工画像', render: (record) => `<span class="resume-profile-cell">${esc((resumeProfileText(record.manual_profile) || '尚未维护').slice(0, 72))}</span>` },
+      { k: 'updated_at', l: '最近更新', render: (record) => esc(formatResumeTime(record.updated_at)) },
+    ] : [
+      { k: 'teacher_name', l: '讲师', render: (record) => `<div class="person-cell"><span class="person-avatar">${esc((record.teacher_name || '讲师').slice(-2))}</span><span><b>${esc(record.teacher_name || '未知讲师')}</b><small>${esc(record.teacher_title || '讲师')}</small></span></div>` },
+      { k: 'parse_status', l: '解析状态', render: resumeStatusTag },
+      { k: 'updated_at', l: '最近更新', render: (record) => esc(formatResumeTime(record.updated_at)) },
+    ];
+    const actions = canWrite() ? [
+      { l: '解析详情', cls: '', icon: 'scan-text', show: resumeHasFile, onClick: (record) => openResumeDetails(record, teacherById.get(String(record.teacher_id))) },
+      { l: '上传简历', cls: 'gray', icon: 'file-up', show: (record) => !resumeHasFile(record), onClick: (record) => openTeacherResumeUpload(rows, record.teacher_id) },
+      { l: '替换简历', cls: 'gray', icon: 'replace', show: resumeHasFile, onClick: (record) => openTeacherResumeUpload(rows, record.teacher_id) },
+      { l: '编辑画像', cls: 'gray', icon: 'sliders-horizontal', show: resumeHasFile, onClick: (record) => openResumeProfileEditor(record, teacherById.get(String(record.teacher_id))) },
+      { l: '下载原件', cls: 'gray', icon: 'download', show: resumeHasFile, onClick: (record) => downloadTeacherResume(record.teacher_id, record.file_name) },
+      { l: '重新解析', cls: 'gray', icon: 'refresh-cw', show: resumeHasFile, onClick: reparseTeacherResume },
+      { l: '删除简历', cls: 'red', icon: 'trash-2', show: resumeHasFile, onClick: deleteTeacherResume },
+    ] : null;
+    const draw = () => {
+      const keyword = String($('#resume-flt-keyword', root)?.value || '').trim().toLowerCase();
+      const status = String($('#resume-flt-status', root)?.value || '');
+      state.filters.teacherResumes = { keyword, status };
+      const visible = records.filter((record) => (!keyword || String(record.teacher_name || '').toLowerCase().includes(keyword)) && (!status || resumeStatusInfo(record.parse_status).label === status));
+      const table = $('#resume-table', root);
+      table.innerHTML = renderTable(cols, visible, actions, 'teacher-resumes');
+      if (actions) bindTableActions(table, visible, actions);
+    };
+    draw();
+    const filter = debounce(draw, 160);
+    $('#resume-flt-keyword', root).oninput = filter;
+    $('#resume-flt-status', root).onchange = draw;
+    if ($('#resume-manage-upload', root)) $('#resume-manage-upload', root).onclick = () => openTeacherResumeUpload(rows);
+    $('#resume-manage-refresh', root).onclick = () => renderPage();
+    let stopped = false;
+    let timer;
+    let pollController;
+    let attempts = 0;
+    const stop = () => { stopped = true; clearTimeout(timer); pollController?.abort(); filter.cancel(); };
+    context.stopTeacherTabPolling = stop;
+    addRouteCleanup(stop, context.epoch);
+    const stamp = (items) => JSON.stringify(items.map((item) => [item.teacher_id, item.parse_status, item.updated_at]));
+    const originalStamp = stamp(resumes);
+    const poll = async () => {
+      if (stopped || state.teacherTab !== 'resumes' || !isRouteCurrent(context.epoch, context.c, 'teachers') || !root.isConnected) return;
+      pollController = new AbortController();
+      try {
+        const payload = await api('/teacher-resumes/manage', { signal: pollController.signal });
+        if (stopped || !isRouteCurrent(context.epoch, context.c, 'teachers') || state.teacherTab !== 'resumes') return;
+        if (stamp(teacherResumeItems(payload)) !== originalStamp) { stop(); renderPage(); return; }
+      } catch (error) {
+        if (error?.name === 'AbortError') return;
+        stop();
+        return;
+      }
+      if (++attempts < 12) timer = setTimeout(poll, 2500);
+      else {
+        const note = $('.resume-refresh-note', root);
+        if (note) note.textContent = '解析仍在进行，可稍后点击“刷新状态”查看结果。';
+      }
+    };
+    if (resumes.some((resume) => ['pending', 'processing'].includes(resumeStatusInfo(resume.parse_status).tone))) timer = setTimeout(poll, 1500);
+  }
+
+  function demandRequirementText(demand) {
+    if (!demand) return '';
+    return [
+      demand.unit ? `客户单位：${demand.unit}` : '',
+      demand.title ? `培训主题：${demand.title}` : '',
+      demand.content ? `培训内容：${demand.content}` : '',
+      demand.teacher_req ? `师资要求：${demand.teacher_req}` : '',
+      demand.hours ? `预计课时：${demand.hours}` : '',
+      demand.expect_date ? `期望日期：${demand.expect_date}` : '',
+      demand.remark ? `补充说明：${demand.remark}` : '',
+    ].filter(Boolean).join('\n');
+  }
+
+  function guidedRequirementText(draft) {
+    const fields = [['unit', '客户单位'], ['topic', '培训主题'], ['audience', '参训对象'], ['goals', '希望解决的问题'], ['date', '期望日期'], ['hours', '预计课时'], ['preference', '师资要求'], ['extra', '补充说明']];
+    return fields.map(([key, label]) => {
+      const value = String(draft?.[key] ?? '').trim();
+      return value ? `${label}：${value}` : '';
+    }).filter(Boolean).join('\n');
+  }
+
+  function demandGuidedFields(demand) {
+    return { unit: String(demand?.unit || ''), topic: String(demand?.title || ''), audience: '', goals: String(demand?.content || ''), date: String(demand?.expect_date || ''), hours: Number(demand?.hours) > 0 ? String(demand.hours) : '', preference: String(demand?.teacher_req || ''), extra: String(demand?.remark || '') };
+  }
+
+  function recommendationPercent(value) {
+    const score = Number(value);
+    if (!Number.isFinite(score)) return 0;
+    return Math.max(0, Math.min(100, Math.round(score * 10) / 10));
+  }
+
+  function teacherSystemMetrics(teacherId, dispatches = [], evaluations = [], fallback = {}) {
+    const id = String(teacherId || '');
+    const completed = dispatches.filter((item) => String(item.teacher_id) === id && item.status === '已完成');
+    const teacherEvaluations = evaluations.filter((item) => String(item.teacher_id) === id);
+    const completedSessions = completed.length || Number(fallback.completed_sessions || fallback.completed_count || 0);
+    const completedHours = completed.length
+      ? completed.reduce((total, item) => total + Number(item.hours || 0), 0)
+      : Number(fallback.completed_hours || 0);
+    const evaluationCount = teacherEvaluations.length || Number(fallback.evaluation_count || fallback.eval_count || 0);
+    const evaluationAverage = teacherEvaluations.length
+      ? teacherEvaluations.reduce((total, item) => total + Number(item.score || 0), 0) / teacherEvaluations.length
+      : Number(fallback.evaluation_score || fallback.evaluation_average || 0);
+    return {
+      completedSessions: Number.isFinite(completedSessions) ? completedSessions : 0,
+      completedHours: Number.isFinite(completedHours) ? completedHours : 0,
+      evaluationCount: Number.isFinite(evaluationCount) ? evaluationCount : 0,
+      evaluationAverage: Number.isFinite(evaluationAverage) && evaluationCount > 0 ? evaluationAverage : 0,
+    };
+  }
+
+  function recommendationEvidence(value) {
+    return (Array.isArray(value) ? value : listText(value)).map((item) => {
+      if (!item || typeof item !== 'object') return String(item || '');
+      const page = item.page || item.page_number;
+      const text = item.text || item.quote || item.evidence || item.content || '';
+      return [page ? `第 ${page} 页` : '', text].filter(Boolean).join(' · ');
+    }).filter(Boolean);
+  }
+
+  function breakdownLabel(key) {
+    return ({ topic: '主题契合', topics: '主题契合', industry: '行业经验', industries: '行业经验', audiences: '授课对象', credentials: '专业资历', performance: '历史履约', budget: '课酬预算', keyword: '关键能力', keywords: '关键能力', profile: '专业画像', experience: '项目经验', evaluation: '履约评价', delivery: '授课适配', resume: '简历证据' })[String(key).toLowerCase()] || '其他匹配条件';
+  }
+
+  function renderRecommendationResults(target, payload, context) {
+    const analysis = payload?.analysis || payload?.requirement_analysis || {};
+    const dispatchPreferences = analysis.dispatch_preferences || {};
+    const recommendations = payload?.recommendations || payload?.results || payload?.candidates || [];
+    const groups = [
+      ['培训主题', listText(analysis.topics)],
+      ['客户行业', listText(analysis.industries)],
+      ['授课对象', listText(analysis.audiences)],
+      ['专业资历', listText(analysis.credentials)],
+    ].filter((group) => group[1].length);
+    const conditionFacts = [analysis.expected_date ? `授课日期：${analysis.expected_date}` : '', Number(analysis.hours) > 0 ? `课时：${num(analysis.hours)}` : '', Number(analysis.max_fee_rate) > 0 ? `课酬上限：¥ ${money(analysis.max_fee_rate)}/课时` : '', dispatchPreferences.training_city ? `授课地区：${dispatchPreferences.training_province} · ${dispatchPreferences.training_city}` : '', dispatchPreferences.training_mode ? `方式：${dispatchPreferences.training_mode}` : '', dispatchPreferences.training_period ? `时段：${dispatchPreferences.training_period}` : ''].filter(Boolean);
+    const shortfall = Number(payload?.shortfall ?? Math.max(0, 3 - recommendations.length));
+    const pendingResidence = Number(payload?.residence_pending_count || 0);
+    const shortageHtml = shortfall > 0 || pendingResidence > 0 ? `<div class="recommend-shortage" role="status">${icon('users-round')}<div><b>${shortfall > 0 ? `找到 ${recommendations.length} 位相关候选，距 3 位目标还缺 ${shortfall} 位` : `已找到 ${recommendations.length} 位相关候选`}</b><p>${shortfall > 0 ? '请补充相应专业师资或人工调整需求条件。不会用无关、冲突或超出硬预算的老师凑数。' : ''}${pendingResidence > 0 ? ` 其中 ${pendingResidence} 位常驻地区未补齐，仍是待补资料候选，不能视为调度已核实。` : ''}</p></div></div>` : '';
+    const excluded = Array.isArray(payload?.excluded) ? payload.excluded : [];
+    const excludedHtml = excluded.length ? `<details class="recommend-excluded" ${recommendations.length ? '' : 'open'}><summary>${icon('calendar-x')}已排除 ${excluded.length} 位候选，查看原因</summary><ul>${excluded.map((item) => `<li><b>${esc(item.teacher_name || item.name || '讲师')}</b><span>${esc(item.reason || '当前条件不适合，请进一步确认')}</span></li>`).join('')}</ul></details>` : '';
+    const analysisHtml = `<section class="recommend-analysis"><header class="recommend-profile-head"><h2>${icon('scan-search')}需求画像</h2><span>请核对识别结果</span></header>${groups.length ? `<dl class="recommend-profile-grid">${groups.map(([label, values]) => `<div><dt>${esc(label)}</dt><dd>${values.map((value) => esc(value)).join(' · ')}</dd></div>`).join('')}</dl>` : `<p class="recommend-profile-empty">${esc(analysis.summary || '暂未识别到明确专业条件，请补充培训主题与参训对象。')}</p>`}${conditionFacts.length ? `<p class="recommend-condition-facts">${conditionFacts.map((fact) => `<span>${esc(fact)}</span>`).join('')}</p>` : ''}<p class="recommend-condition-note">地点、差旅及特殊安排仍需人工确认。</p></section>`;
+    if (!recommendations.length) {
+      target.innerHTML = `${analysisHtml}${shortageHtml}${excludedHtml}<div class="recommend-empty">${icon('user-round-search')}<b>暂未找到合适候选</b><p>${excluded.length ? '请查看上方排除原因，再调整日期、课酬条件或补充更多讲师。' : '可补充培训主题、参训对象与行业后重试，也请检查在库讲师的专业资料是否完善。'}</p></div>`;
+      refreshIcons(target);
+      return;
+    }
+    const teacherById = new Map(context.rows.map((teacher) => [String(teacher.id), teacher]));
+    const cards = recommendations.map((item, index) => {
+      const teacher = item.teacher || teacherById.get(String(item.teacher_id)) || {};
+      const dispatchFit = item.dispatch_fit || {};
+      const name = item.teacher_name || teacher.name || '候选讲师';
+      const score = recommendationPercent(item.match_score ?? item.score);
+      const reasons = listText(item.reasons || item.match_reasons);
+      const gaps = listText(item.gaps || item.risks);
+      const evidence = recommendationEvidence(item.evidence || item.resume_evidence);
+      const verified = teacherSystemMetrics(item.teacher_id || teacher.id, [], [], item.system_metrics || { ...item.performance, evaluation_score: item.performance?.average_evaluation });
+      const hasResume = Boolean(item.resume_id || item.resume_status);
+      const resumeLabel = hasResume ? resumeStatusTag({ parse_status: item.resume_status || '待确认' }) : tag('仅基础档案');
+      const breakdown = Array.isArray(item.score_breakdown)
+        ? item.score_breakdown.map((entry, i) => [entry.label || entry.name || `维度 ${i + 1}`, entry.score ?? entry.value])
+        : Object.entries(item.score_breakdown || {});
+      return `<article class="teacher-match-card ${index === 0 ? 'is-top' : ''}">
+        <div class="teacher-match-main">
+          <header><span class="person-avatar large">${esc(name.slice(-2))}</span><div><h3>${esc(name)} ${resumeLabel}</h3><p>${esc(item.org || teacher.org || '单位待补充')} · ${esc(item.title || teacher.title || '讲师')}</p><small>${esc(item.field || teacher.field || '专业领域待补充')}</small></div><div class="teacher-match-score" aria-label="匹配参考分 ${score}，满分 100"><b>${score}<em>/ 100</em></b><small>匹配参考分</small></div></header>
+          <div class="teacher-match-facts"><span>常驻 <b>${esc(teacherResidenceText(item))}</b></span><span>课酬 <b>${teacherFeeRateText(item.fee_rate ?? teacher.fee_rate)}</b></span><span>系统已完成 <b>${num(verified.completedSessions)} 场</b></span><span>授课评价 <b>${verified.evaluationCount ? `${verified.evaluationAverage.toFixed(2)} / 5` : '暂无记录'}</b></span></div>
+          <details class="teacher-dispatch-fit"><summary>${icon('map-pin')}<b>${esc(dispatchFit.label || '调度待核实')}</b><span>${dispatchFit.arrival_day_conflict ? '提前到达日有授课记录，需核对衔接' : dispatchFit.arrival_day_before ? '异地上午课 · 提前一天到达待核实' : '查看调度核对事项'}</span>${icon('chevron-down')}</summary><ul>${listText(dispatchFit.notes).map((note) => `<li>${esc(note)}</li>`).join('')}</ul></details>
+          <div class="teacher-match-detail">
+            <section class="match-reasons"><b>${icon('badge-check')}推荐理由</b>${reasons.length ? `<ul>${reasons.map((reason) => `<li>${esc(reason)}</li>`).join('')}</ul>` : '<p>暂无细分理由</p>'}</section>
+            <section class="match-gaps"><b>${icon('triangle-alert')}缺口与待确认</b>${gaps.length ? `<ul>${gaps.map((gap) => `<li>${esc(gap)}</li>`).join('')}</ul>` : '<p>未发现明显缺口</p>'}</section>
+          </div>
+          <details class="teacher-match-audit"><summary>${icon('chart-no-axes-column')}匹配评分与授课记录${icon('chevron-down')}</summary>
+            ${breakdown.length ? `<div class="teacher-score-breakdown">${breakdown.map(([label, value]) => { const pct = recommendationPercent(value); const displayLabel = item.score_breakdown_details?.[label]?.label || breakdownLabel(label); return `<div><span><small>${esc(displayLabel)}</small><b>${pct}%</b></span><i><em style="width:${pct}%"></em></i></div>`; }).join('')}</div>` : ''}
+            <section class="teacher-verified-proof"><div><span>${icon('shield-check')}系统履约记录</span><small>仅统计本系统已完成课程与已提交评价</small></div><dl><div><dt>已完成场次</dt><dd>${num(verified.completedSessions)}</dd></div><div><dt>已完成课时</dt><dd>${num(verified.completedHours)}</dd></div><div><dt>评价均分</dt><dd>${verified.evaluationCount ? `${verified.evaluationAverage.toFixed(2)} <small>/ 5 分 · ${num(verified.evaluationCount)} 份</small>` : '暂无评价'}</dd></div></dl></section>
+          </details>
+          ${resumeClaimFacts(item.resume_claims).length ? `<details class="teacher-evidence"><summary>${icon('badge-info')}查看简历自述数据</summary><div class="recommend-resume-claims">${resumeClaimMarkup(item.resume_claims)}</div></details>` : ''}
+          ${evidence.length ? `<details class="teacher-evidence"><summary>${icon('file-search')}查看简历自述依据 <span>${evidence.length}</span></summary><div class="resume-claim-note">简历中的课时、满意度和客户案例属于讲师资料自述，不计入上方系统履约记录。</div><ul>${evidence.map((item) => `<li>${esc(item)}</li>`).join('')}</ul></details>` : ''}
+          <footer>${!dispatchFit.residence_complete ? `<button type="button" class="btn gray" data-recommend-residence="${esc(item.teacher_id || teacher.id || '')}">${icon('map-pin')}补充常驻地区</button>` : ''}${hasResume ? `<button type="button" class="btn gray" data-view-recommend-resume="${esc(item.teacher_id || teacher.id || '')}">${icon('file-search')}简历与画像</button>` : ''}<button type="button" class="btn gray" data-view-recommend-teacher="${esc(item.teacher_id || teacher.id || '')}">${icon('contact-round')}档案与授课记录</button></footer>
+        </div>
+      </article>`;
+    }).join('');
+    target.innerHTML = `${analysisHtml}${shortageHtml}<div class="recommend-results-head"><h2>推荐候选 <em>${recommendations.length}</em></h2><small>${esc(dispatchPreferences.ranking_policy || '按资料匹配程度排序')}</small></div><div class="teacher-match-list">${cards}</div>${excludedHtml}<div class="recommend-notice">${icon('info')}<span>本名单用于投标前选师资，不表示老师已确认授课。专业分不是胜任概率；无交通记录不能判断可达，系统不会自动建项目、排课或产生课酬。</span></div>`;
+    $$('[data-recommend-residence]', target).forEach((button) => { button.onclick = () => {
+      const teacher = teacherById.get(String(button.dataset.recommendResidence));
+      if (!teacher) return;
+      openModal(`常驻地区 · ${teacher.name}`, renderForm(residenceFields(), teacher), { onOk: async () => {
+        const data = collectForm($('#modal-mask'), residenceFields()); if (!data) return false;
+        await api('/teachers/residence', { body: { id: teacher.id, ...data } });
+        invalidateTeacherRecommendations(); toast('地区已保存，请重新匹配更新顺序'); renderPage();
+      } });
+    }; });
+    $$('[data-view-recommend-resume]', target).forEach((button) => {
+      button.onclick = () => {
+        const teacherId = button.dataset.viewRecommendResume;
+        openResumeDetails({ teacher_id: teacherId }, teacherById.get(String(teacherId)));
+      };
+    });
+    $$('[data-view-recommend-teacher]', target).forEach((button) => {
+      button.onclick = () => {
+        const teacher = teacherById.get(String(button.dataset.viewRecommendTeacher));
+        if (teacher) showTeacherEvals(teacher, context.projects, context.dispatches);
+        else toast('该讲师完整档案暂不可用', true);
+      };
+    });
+    refreshIcons(target);
+  }
+
+  function renderTeacherRecommendation(root, context) {
+    if (!canWrite()) {
+      root.innerHTML = `<div class="recommend-permission-card"><span>${icon('lock-keyhole')}</span><h2>智能推荐仅向授权运营人员开放</h2><p>只读账号可以查看师资基础档案，但不能访问讲师简历、解析结果或执行智能推荐。</p></div>`;
+      return;
+    }
+    const form = state.teacherRecommendationForm;
+    if (form.demandId && !context.demands.some((demand) => String(demand.id) === String(form.demandId))) {
+      form.demandId = '';
+      invalidateTeacherRecommendations();
+    }
+    const cached = state.cache.teacherRecommendationKey === teacherRecommendationKey() ? state.cache.teacherRecommendations : null;
+    let inputMode = form.inputMode || (state.teacherRequirementDraft ? 'raw' : 'guided');
+    let rawInitialized = form.rawInitialized ?? (inputMode === 'raw');
+    const guided = form.guided || {};
+    const logisticsFields = [
+      { k: 'training_province', label: '授课省份 / 地区', type: 'select', options: [{ v: '', l: '待确定' }, ...REGION_PROVINCES] },
+      { k: 'training_city', label: '授课城市 / 地区', regionProvinceKey: 'training_province', placeholder: '选择省份后输入或选择城市' },
+      { k: 'training_mode', label: '授课方式', type: 'select', options: ['待定', '线下', '线上'], value: '待定' },
+      { k: 'training_period', label: '授课时段', type: 'select', options: ['待定', '上午', '下午', '全天'], value: '待定' },
+    ];
+    const guidedField = (key, label, placeholder, limit = 200, type = 'text') => `<div class="form-item"><label for="recommend-guide-${key}">${esc(label)}${key === 'topic' ? '<span class="req">*</span>' : ''}</label><input id="recommend-guide-${key}" data-recommend-guide="${key}" type="${type}" maxlength="${limit}" value="${esc(guided[key] || '')}" placeholder="${esc(placeholder)}" ${key === 'topic' ? 'aria-required="true" aria-describedby="recommend-topic-error"' : ''}>${key === 'topic' ? '<span class="field-error" id="recommend-topic-error" aria-live="polite"></span>' : ''}</div>`;
+    root.innerHTML = `<div class="teacher-recommend-workbench">
+      <section class="recommend-input-card">
+        <div class="recommend-section-head"><div><h2>培训需求简报</h2><small>投标前准备 · 推荐师资 → 客户选师资 → 投标立项</small></div></div>
+        <div class="form-item recommend-import"><label for="recommend-demand">带入已有需求</label><select id="recommend-demand" aria-describedby="recommend-demand-help"><option value="">直接填写，或选择一条培训需求</option>${context.demands.map((demand) => `<option value="${esc(demand.id)}" ${String(form.demandId) === String(demand.id) ? 'selected' : ''}>#R-${String(demand.id).padStart(4, '0')}｜${esc(demand.title)}｜${esc(demand.unit || '单位待补充')}</option>`).join('')}</select><small id="recommend-demand-help">带入后可编辑，以当前文字为准。</small></div>
+        <div class="recommend-entry-modes" role="group" aria-label="需求填写方式"><button type="button" data-recommend-mode="guided" aria-pressed="${inputMode === 'guided'}" aria-controls="recommend-guided">填写要点</button><button type="button" data-recommend-mode="raw" aria-pressed="${inputMode === 'raw'}" aria-controls="recommend-raw">粘贴客户原话</button><small>两种草稿分别保留，以当前方式匹配。</small></div>
+        <div id="recommend-guided" ${inputMode === 'guided' ? '' : 'hidden'}>
+          <p class="recommend-guide-help">仅培训主题必填，其余信息可稍后补充。</p>
+          <div class="recommend-guide-grid">
+            ${guidedField('topic', '培训主题', '例如：客户投诉处理与服务礼仪')}
+            ${guidedField('audience', '参训对象', '例如：网点负责人、一线员工')}
+            ${guidedField('unit', '客户单位 / 行业', '例如：某商业银行 / 金融行业')}
+            ${guidedField('goals', '培训目标', '例如：提升投诉沟通能力，掌握实用话术', 1600)}
+          </div>
+          <details class="recommend-guide-more" ${guided.date || guided.hours || guided.preference || guided.extra ? 'open' : ''}><summary>补充时间与讲师偏好<span>选填</span>${icon('chevron-down')}</summary><div class="recommend-guide-grid">
+            ${guidedField('date', '计划授课日期', '', 80, 'date')}
+            <div class="recommend-hours-field">${guidedField('hours', '预计课时', '例如：6，未确定可留空', 32, 'number')}<span class="field-error" id="recommend-hours-error" aria-live="polite"></span></div>
+            ${guidedField('preference', '讲师经验 / 授课偏好', '例如：有银行授课经历、擅长案例演练', 1200)}
+            ${guidedField('extra', '其他要求', '例如：地点、线上或线下、授课风格', 1200)}
+          </div></details>
+          <details class="recommend-brief-preview"><summary>查看整理后的需求${icon('chevron-down')}</summary><p id="recommend-brief-text"></p></details>
+        </div>
+        <div class="form-item recommend-requirement-field" id="recommend-raw" ${inputMode === 'raw' ? '' : 'hidden'}><label for="recommend-requirement">客户原话<span class="req">*</span></label><textarea id="recommend-requirement" maxlength="10000" aria-describedby="recommend-requirement-help recommend-requirement-error" placeholder="直接粘贴客户的消息，也可以补充或修改。">${esc(form.rawDraft ?? state.teacherRequirementDraft ?? '')}</textarea><small id="recommend-requirement-help">将按这段文字匹配，不叠加另一种方式的草稿。</small><span class="field-error" id="recommend-requirement-error" aria-live="polite"></span></div>
+        <section class="recommend-logistics" aria-labelledby="recommend-logistics-title"><div class="recommend-logistics-heading"><h3 id="recommend-logistics-title">授课地点与调度</h3><label><input type="checkbox" id="recommend-prefer-local" ${form.logistics?.prefer_local !== false ? 'checked' : ''}>同档匹配优先同城</label></div><div id="recommend-logistics-fields">${renderForm(logisticsFields, form.logistics)}</div><small>这些条件在两种填写方式中共用。异地耗时、票价和差旅待核实；线上课程不参与地区排序。</small></section>
+        <details class="recommend-settings" id="recommend-settings" ${form.maxFeeRate || form.hardBudget ? 'open' : ''}><summary>${icon('sliders-horizontal')}筛选条件<small id="recommend-settings-summary"></small>${icon('chevron-down')}</summary><div class="recommend-settings-grid">
+          <div class="form-item recommend-budget"><label for="recommend-max-fee">最高课酬（元/课时）</label><input id="recommend-max-fee" type="number" min="0" step="0.01" inputmode="decimal" value="${esc(form.maxFeeRate)}" placeholder="留空表示不限" aria-describedby="recommend-budget-help recommend-budget-error"><small id="recommend-budget-help">按每课时金额筛选，不是总项目预算。</small><label class="recommend-budget-toggle"><input id="recommend-hard-budget" type="checkbox" ${form.hardBudget ? 'checked' : ''}><span>严格排除超出课酬上限的讲师</span></label><span class="field-error" id="recommend-budget-error" aria-live="polite"></span></div>
+          <div class="form-item recommend-input-options"><label for="recommend-count">推荐目标人数</label><select id="recommend-count">${[3, 5, 10].map((count) => `<option value="${count}" ${String(form.maxResults) === String(count) ? 'selected' : ''}>${count} 位</option>`).join('')}</select><small>至少 3 位供比较；相关师资不足时提示缺口，不用无关讲师补位。</small></div>
+        </div></details>
+        <div class="recommend-submit-row"><p id="recommend-status" role="status">${cached ? '已保留上次推荐结果，可调整需求后重新匹配。' : '提交后将在下方展示需求分析与推荐结果。'}</p><button type="button" class="btn recommend-run" id="recommend-run">${icon('arrow-right')}开始匹配讲师</button></div>
+        <p class="recommend-input-foot">${icon('shield-check')}本地规则匹配，不是大模型或实时交通查询。客户意向不等于讲师确认；推荐不会自动立项或安排授课。</p>
+      </section>
+      <section class="recommend-output" id="recommend-output" aria-label="讲师推荐结果" aria-live="polite" tabindex="-1" ${cached ? '' : 'hidden'}></section>
+    </div>`;
+    const demandSelect = $('#recommend-demand', root);
+    const logisticsRoot = $('#recommend-logistics-fields', root);
+    const logisticsInputs = $$('[data-k]', logisticsRoot);
+    const preferLocal = $('#recommend-prefer-local', root);
+    const readLogistics = () => ({ ...Object.fromEntries(logisticsInputs.map((input) => [input.dataset.k, input.value])), prefer_local: preferLocal.checked });
+    const requirement = $('#recommend-requirement', root);
+    const guideInputs = $$('[data-recommend-guide]', root);
+    const hoursInput = $('#recommend-guide-hours', root);
+    hoursInput.min = '0'; hoursInput.step = 'any'; hoursInput.inputMode = 'decimal';
+    hoursInput.setAttribute('aria-describedby', 'recommend-hours-error');
+    const modeButtons = $$('[data-recommend-mode]', root);
+    const readGuided = () => Object.fromEntries(guideInputs.map((input) => [input.dataset.recommendGuide, input.value]));
+    const currentRequirement = () => inputMode === 'guided' ? guidedRequirementText(readGuided()) : requirement.value;
+    const updateBrief = () => { $('#recommend-brief-text', root).textContent = guidedRequirementText(readGuided()) || '填写上方要点后，这里会自动整理。不确定的信息可以留空。'; };
+    const displayMode = () => {
+      $('#recommend-guided', root).hidden = inputMode !== 'guided';
+      $('#recommend-raw', root).hidden = inputMode !== 'raw';
+      modeButtons.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.recommendMode === inputMode)));
+    };
+    updateBrief(); displayMode();
+    const output = $('#recommend-output', root);
+    const count = $('#recommend-count', root);
+    const maxFee = $('#recommend-max-fee', root);
+    const hardBudget = $('#recommend-hard-budget', root);
+    const settings = $('#recommend-settings', root);
+    const status = $('#recommend-status', root);
+    const updateSettingsSummary = () => {
+      const fee = Number(maxFee.value);
+      $('#recommend-settings-summary', root).textContent = `${maxFee.value && fee > 0 ? `¥ ${money(fee)}/课时${hardBudget.checked ? ' · 严格限制' : ''}` : '课酬不限'} · 目标 ${count.value} 位`;
+    };
+    updateSettingsSummary();
+    let activeRequest = null;
+    const persistForm = () => {
+      state.teacherRequirementDraft = currentRequirement();
+      state.teacherRecommendationForm = { demandId: demandSelect.value, maxResults: count.value, maxFeeRate: maxFee.value, hardBudget: hardBudget.checked, inputMode, guided: readGuided(), rawDraft: requirement.value, rawInitialized, logistics: readLogistics() };
+    };
+    const markRecommendationDirty = () => {
+      persistForm();
+      invalidateTeacherRecommendations();
+      if (!output.hidden) status.textContent = '条件已更新，请重新匹配。';
+      output.hidden = true;
+      output.innerHTML = '';
+      updateSettingsSummary();
+    };
+    guideInputs.forEach((input) => { input.oninput = () => {
+      if (input.dataset.recommendGuide === 'topic') {
+        $('#recommend-topic-error', root).textContent = '';
+        $('#recommend-guide-topic', root).removeAttribute('aria-invalid');
+      }
+      if (input.dataset.recommendGuide === 'hours') { $('#recommend-hours-error', root).textContent = ''; hoursInput.removeAttribute('aria-invalid'); }
+      updateBrief(); markRecommendationDirty();
+    }; });
+    logisticsInputs.forEach((input) => { input.oninput = markRecommendationDirty; input.onchange = markRecommendationDirty; });
+    preferLocal.onchange = markRecommendationDirty;
+    modeButtons.forEach((button) => { button.onclick = () => {
+      if (button.dataset.recommendMode === inputMode) return;
+      if (button.dataset.recommendMode === 'raw' && !rawInitialized) { requirement.value = guidedRequirementText(readGuided()); rawInitialized = true; }
+      inputMode = button.dataset.recommendMode;
+      displayMode(); markRecommendationDirty();
+    }; });
+    demandSelect.onchange = () => {
+      const demand = context.demands.find((item) => String(item.id) === demandSelect.value);
+      if (demand) {
+        requirement.value = demandRequirementText(demand);
+        rawInitialized = true;
+        const imported = demandGuidedFields(demand);
+        logisticsInputs.forEach((input) => { input.value = demand[input.dataset.k] || (['training_mode', 'training_period'].includes(input.dataset.k) ? '待定' : ''); });
+        refreshRegionSuggestions(logisticsInputs.find((input) => input.dataset.k === 'training_province'), true);
+        guideInputs.forEach((input) => { input.value = imported[input.dataset.recommendGuide] || ''; });
+        if (imported.date || imported.hours || imported.preference || imported.extra) $('.recommend-guide-more', root).open = true;
+        $('#recommend-requirement-error', root).textContent = '';
+        requirement.removeAttribute('aria-invalid');
+        $('#recommend-topic-error', root).textContent = '';
+        $('#recommend-guide-topic', root).removeAttribute('aria-invalid');
+        $('#recommend-hours-error', root).textContent = ''; hoursInput.removeAttribute('aria-invalid');
+        updateBrief();
+        (inputMode === 'guided' ? $('#recommend-guide-topic', root) : requirement).focus();
+      }
+      markRecommendationDirty();
+    };
+    requirement.oninput = () => { rawInitialized = true; $('#recommend-requirement-error', root).textContent = ''; requirement.removeAttribute('aria-invalid'); markRecommendationDirty(); };
+    count.onchange = markRecommendationDirty;
+    maxFee.oninput = () => { $('#recommend-budget-error', root).textContent = ''; markRecommendationDirty(); };
+    hardBudget.onchange = () => { $('#recommend-budget-error', root).textContent = ''; markRecommendationDirty(); };
+    if (cached) renderRecommendationResults(output, cached, context);
+    $('#recommend-run', root).onclick = async () => {
+      $('#recommend-requirement-error', root).textContent = '';
+      $('#recommend-budget-error', root).textContent = '';
+      const text = currentRequirement().trim();
+      if (inputMode === 'guided' && !$('#recommend-guide-topic', root).value.trim()) {
+        $('#recommend-topic-error', root).textContent = '请填写培训主题，例如：客户服务。';
+        $('#recommend-guide-topic', root).setAttribute('aria-invalid', 'true');
+        $('#recommend-guide-topic', root).focus(); return;
+      }
+      if (!text) { $('#recommend-requirement-error', root).textContent = '请填写客户培训需求'; requirement.setAttribute('aria-invalid', 'true'); requirement.focus(); return; }
+      if (inputMode === 'guided' && (hoursInput.validity.badInput || (hoursInput.value.trim() && (!Number.isFinite(Number(hoursInput.value)) || Number(hoursInput.value) <= 0)))) {
+        $('.recommend-guide-more', root).open = true;
+        $('#recommend-hours-error', root).textContent = '课时应为大于 0 的数字，未确定可留空。';
+        hoursInput.setAttribute('aria-invalid', 'true'); hoursInput.focus(); return;
+      }
+      if (text.length > 10000) { status.textContent = '需求内容超过 10000 字，请精简后重试。'; return; }
+      const logistics = collectForm(logisticsRoot, logisticsFields);
+      if (!logistics) return;
+      if (Boolean(logistics.training_province) !== Boolean(logistics.training_city)) {
+        status.textContent = '授课省份和城市请一起填写；地点未确定时可以都留空。';
+        $('[data-k="' + (logistics.training_province ? 'training_city' : 'training_province') + '"]', logisticsRoot).focus(); return;
+      }
+      const feeValue = maxFee.value.trim();
+      const fee = Number(feeValue);
+      if (maxFee.validity.badInput || (feeValue && (!Number.isFinite(fee) || fee <= 0))) {
+        settings.open = true; $('#recommend-budget-error', root).textContent = '最高课酬应为大于 0 的金额，或留空不限制'; maxFee.focus(); return;
+      }
+      if (hardBudget.checked && !feeValue) {
+        settings.open = true; $('#recommend-budget-error', root).textContent = '使用严格限制前，请先填写最高课酬'; maxFee.focus(); return;
+      }
+      persistForm();
+      cancelTeacherRecommendation();
+      const requestSequence = teacherRecommendationSequence;
+      const requestKey = teacherRecommendationKey();
+      const controller = new AbortController();
+      teacherRecommendationController = controller;
+      activeRequest = controller;
+      delete state.cache.teacherRecommendations;
+      delete state.cache.teacherRecommendationKey;
+      const button = $('#recommend-run', root);
+      const old = button.innerHTML;
+      const controls = [demandSelect, requirement, count, maxFee, hardBudget, preferLocal, ...logisticsInputs, ...guideInputs, ...modeButtons];
+      controls.forEach((control) => { control.disabled = true; });
+      button.disabled = true;
+      button.classList.add('is-loading');
+      button.innerHTML = `${icon('loader-circle', 'spin')}正在识别与匹配`;
+      output.hidden = false;
+      status.textContent = '正在核对需求与讲师资料…';
+      output.setAttribute('aria-busy', 'true');
+      output.innerHTML = `<div class="matching-progress"><div>${icon('scan-search')}<b>正在核对讲师资料</b></div><p>分析培训需求，检索对应经历与推荐依据。</p><i aria-hidden="true"></i></div>`;
+      refreshIcons(output);
+      refreshIcons(button);
+      try {
+        const body = { requirement: text, max_results: Number(count.value), hard_budget: hardBudget.checked };
+        Object.assign(body, logistics, { prefer_local: preferLocal.checked });
+        if (feeValue) body.max_fee_rate = fee;
+        const result = await api('/teacher-recommendations', { body, signal: controller.signal });
+        if (controller.signal.aborted || requestSequence !== teacherRecommendationSequence || requestKey !== teacherRecommendationKey() || !isRouteCurrent(context.epoch, context.c, 'teachers') || state.teacherTab !== 'recommend' || !output.isConnected) return;
+        state.cache.teacherRecommendations = result;
+        state.cache.teacherRecommendationKey = requestKey;
+        renderRecommendationResults(output, result, context);
+        status.textContent = Number(result.shortfall) > 0 ? `已找到 ${result.returned_count} 位相关候选，距 3 位目标还缺 ${result.shortfall} 位。` : '已生成候选名单，请先核对资料与调度条件，再与客户确认。';
+        output.focus({ preventScroll: true });
+        output.scrollIntoView({ block: 'start', behavior: 'auto' });
+      } catch (error) {
+        if (error?.name === 'AbortError' || controller.signal.aborted || requestSequence !== teacherRecommendationSequence || !isRouteCurrent(context.epoch, context.c, 'teachers') || !output.isConnected) return;
+        output.innerHTML = `<div class="recommend-empty">${icon('cloud-alert')}<b>本次推荐未完成</b><p>${esc(error?.message || '请稍后重试，已输入的客户要求会继续保留。')}</p></div>`;
+        status.textContent = '本次匹配未完成，您填写的内容已保留。';
+        refreshIcons(output);
+      } finally {
+        if (teacherRecommendationController === controller) teacherRecommendationController = null;
+        if (activeRequest === controller && output.isConnected) {
+          activeRequest = null;
+          output.removeAttribute('aria-busy');
+          controls.forEach((control) => { control.disabled = false; });
+          if (button.isConnected) { button.disabled = false; button.classList.remove('is-loading'); button.innerHTML = old; refreshIcons(button); }
+        }
+      }
+    };
+  }
+
+  async function pageTeachers(c) {
+    const epoch = routeEpoch;
+    const resumeRequest = canWrite() ? api('/teacher-resumes/manage').catch((error) => ({ items: [], _loadError: error.message || '加载失败' })) : Promise.resolve({ items: [] });
+    const evaluationRequest = canWrite() ? api('/teacher_evals') : Promise.resolve([]);
+    const demandRequest = canWrite() ? api('/demands') : Promise.resolve([]);
+    const [rows, projects, dispatches, demands, evaluations, resumePayload] = await Promise.all([api('/teachers'), api('/projects'), api('/dispatches'), demandRequest, evaluationRequest, resumeRequest]);
+    if (!isRouteCurrent(epoch, c, 'teachers')) return;
+    teacherResumeUploadConfig = resumePayload?.config || resumePayload?.upload_config || resumePayload || {};
+    const resumes = teacherResumeItems(resumePayload);
+    const resumeByTeacher = new Map(resumes.map((resume) => [String(resume.teacher_id), resume]));
+    const inLib = rows.filter((row) => row.status === '在库').length;
+    const ready = resumes.filter((resume) => resumeStatusInfo(resume.parse_status).tone === 'ready').length;
+    const attention = resumes.filter((resume) => ['failed', 'review', 'pending', 'processing'].includes(resumeStatusInfo(resume.parse_status).tone)).length;
+    const tabs = [{ key: 'library', label: '师资库', art: 'faculty' }];
+    if (canWrite()) tabs.push(
+      { key: 'resumes', label: '简历管理', art: 'documents', count: attention || '' },
+      { key: 'recommend', label: '智能推荐', art: 'recommend' },
+    );
+    if (!tabs.some((tabItem) => tabItem.key === state.teacherTab)) state.teacherTab = 'library';
+    const confirmedRates = rows.map((row) => Number(row.fee_rate)).filter((rate) => Number.isFinite(rate) && rate > 0);
+    const avgRate = confirmedRates.length ? confirmedRates.reduce((total, rate) => total + rate, 0) / confirmedRates.length : 0;
+    const summary = canWrite()
+      ? `<div class="module-summary four teacher-summary"><div><span>${icon('users-round')}</span><small>当前师资</small><b>${rows.length}<em>人</em></b></div><div><span>${icon('user-check')}</span><small>当前在库</small><b>${inLib}<em>人</em></b></div><div><span>${icon('file-check-2')}</span><small>简历可推荐</small><b>${ready}<em>份</em></b></div><div><span>${icon('scan-line')}</span><small>解析待处理</small><b>${attention}<em>份</em></b></div></div>`
+      : `<div class="module-summary three teacher-summary"><div><span>${icon('users-round')}</span><small>当前师资</small><b>${rows.length}<em>人</em></b></div><div><span>${icon('user-check')}</span><small>当前在库</small><b>${inLib}<em>人</em></b></div><div><span>${icon('badge-japanese-yen')}</span><small>已确认平均课酬</small><b>${confirmedRates.length ? `¥ ${money(avgRate)}` : '待确认'}</b></div></div>`;
+    const tabBar = canWrite() ? `<div class="teacher-mode-tabs" role="tablist" aria-label="师资资源功能">${tabs.map((tabItem) => `<button type="button" role="tab" id="teacher-tab-${tabItem.key}" aria-controls="teacher-tab-panel" aria-selected="${state.teacherTab === tabItem.key}" tabindex="${state.teacherTab === tabItem.key ? '0' : '-1'}" data-teacher-tab="${tabItem.key}" class="${state.teacherTab === tabItem.key ? 'active' : ''}">${businessArt(tabItem.art)}<span>${tabItem.label}</span>${tabItem.count ? `<em>${tabItem.count}</em>` : ''}</button>`).join('')}</div>` : '';
+    c.innerHTML = `<div class="teacher-console">
+      <div class="teacher-console-head">${tabBar}${summary}</div>
+      <div class="teacher-tab-panel" id="teacher-tab-panel" role="${canWrite() ? 'tabpanel' : 'region'}" ${canWrite() ? `aria-labelledby="teacher-tab-${esc(state.teacherTab)}"` : 'aria-label="师资库"'}></div>
+    </div>`;
+    const panel = $('#teacher-tab-panel', c);
+    const context = { epoch, c, rows, projects, dispatches, demands, evaluations, resumes, resumeByTeacher, resumeLoadError: resumePayload?._loadError || '' };
+    addRouteCleanup(() => { cancelTeacherRecommendation(); context.stopTeacherTabPolling?.(); teacherProfileRequestSequence += 1; }, epoch);
+    const showTab = (key, focus = false) => {
+      cancelTeacherRecommendation();
+      context.stopTeacherTabPolling?.();
+      context.stopTeacherTabPolling = null;
+      teacherProfileRequestSequence += 1;
+      state.teacherTab = key;
+      $$('[data-teacher-tab]', c).forEach((button) => {
+        const active = button.dataset.teacherTab === key;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-selected', String(active));
+        button.tabIndex = active ? 0 : -1;
+        if (active && focus) button.focus();
+      });
+      if (canWrite()) panel.setAttribute('aria-labelledby', `teacher-tab-${key}`);
+      if (key === 'resumes') renderResumeManagement(panel, context);
+      else if (key === 'recommend') renderTeacherRecommendation(panel, context);
+      else renderTeacherLibrary(panel, context);
+      refreshIcons(panel);
+    };
+    $$('[data-teacher-tab]', c).forEach((button, index, buttons) => {
+      button.onclick = () => showTab(button.dataset.teacherTab);
+      button.onkeydown = (event) => {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+        event.preventDefault();
+        let next = index;
+        if (event.key === 'ArrowLeft') next = (index - 1 + buttons.length) % buttons.length;
+        if (event.key === 'ArrowRight') next = (index + 1) % buttons.length;
+        if (event.key === 'Home') next = 0;
+        if (event.key === 'End') next = buttons.length - 1;
+        showTab(buttons[next].dataset.teacherTab, true);
+      };
+    });
+    showTab(state.teacherTab);
   }
 
   async function showTeacherEvals(t, projects, dispatches = []) {
     const epoch = routeEpoch;
+    const ticket = ++teacherProfileRequestSequence;
     const evals = await api('/teacher_evals?teacher_id=' + t.id);
-    if (!isRouteCurrent(epoch, null, 'teachers')) return;
-    const deliveredProjectIds = new Set(dispatches.filter((item) => String(item.teacher_id) === String(t.id) && item.status === '已完成').map((item) => String(item.project_id)));
+    if (!isRouteCurrent(epoch, null, 'teachers') || ticket !== teacherProfileRequestSequence) return;
+    const completedDeliveries = dispatches.filter((item) => String(item.teacher_id) === String(t.id) && item.status === '已完成').sort((left, right) => String(right.teach_date || '').localeCompare(String(left.teach_date || '')) || Number(right.id) - Number(left.id));
+    const deliveredProjectIds = new Set(completedDeliveries.map((item) => String(item.project_id)));
+    const projectById = new Map(projects.map((project) => [String(project.id), project]));
     const eligibleProjects = projects.filter((project) => project.status !== '已归档' && deliveredProjectIds.has(String(project.id)));
     const avg = evals.length ? (evals.reduce((s, e) => s + Number(e.score || 0), 0) / evals.length).toFixed(2) : '—';
+    const verified = teacherSystemMetrics(t.id, dispatches, evals);
     openModal(t.name, `
-      <div class="teacher-profile"><span class="person-avatar large">${esc(t.name.slice(-2))}</span><div><h3>${esc(t.name)} ${tag(t.status)}</h3><p>${esc(t.org || '未填写单位')} · ${esc(t.title || '未填写职称')}</p><div><span>${icon('tags')}${esc(t.field || '未填写专业领域')}</span><span>${icon('badge-japanese-yen')}¥ ${money(t.fee_rate)} / 课时</span></div></div><strong>${avg}<small>综合评分</small></strong></div>
-      <div class="teacher-info"><p><small>联系电话</small><span>${esc(t.phone || '—')}</span></p><p><small>电子邮箱</small><span>${esc(t.email || '—')}</span></p><p><small>入库日期</small><span>${esc(t.in_date || '—')}</span></p><p><small>授课评价</small><span>${evals.length} 条</span></p></div>
+      <div class="teacher-profile"><span class="person-avatar large">${esc(t.name.slice(-2))}</span><div><h3>${esc(t.name)} ${tag(t.status)}</h3><p>${esc(t.org || '未填写单位')} · ${esc(t.title || '未填写职称')}</p><div><span>${icon('tags')}${esc(t.field || '未填写专业领域')}</span><span>${icon('badge-japanese-yen')}${teacherFeeRateText(t.fee_rate)}</span></div></div><strong>${avg}<small>系统履约评分</small></strong></div>
+      <section class="teacher-profile-proof"><div><span>${icon('shield-check')}系统履约记录</span><small>仅统计研序中已完成的课程与已提交评价，不等同于简历自述。</small></div><dl><div><dt>已完成场次</dt><dd>${num(verified.completedSessions)}</dd></div><div><dt>已完成课时</dt><dd>${num(verified.completedHours)}</dd></div><div><dt>评价均分</dt><dd>${verified.evaluationCount ? verified.evaluationAverage.toFixed(2) : '—'}</dd></div><div><dt>评价数量</dt><dd>${num(verified.evaluationCount)}</dd></div></dl></section>
+      <div class="teacher-info"><p><small>常驻地区</small><span>${esc(teacherResidenceText(t))}</span></p><p><small>联系电话</small><span>${esc(t.phone || '—')}</span></p><p><small>电子邮箱</small><span>${esc(t.email || '—')}</span></p><p><small>入库日期</small><span>${esc(t.in_date || '—')}</span></p><p><small>授课评价</small><span>${evals.length} 条</span></p></div>
       <div class="teacher-intro"><small>师资简介</small><p>${esc(t.intro || '暂无简介')}</p></div>
+      <div class="section-title response-title"><div><span>授课记录</span><small>每条已完成排课计为一场；新增课程请在项目排课中维护并确认完成。</small></div></div>
+      ${completedDeliveries.length ? renderTable([
+        { k: 'teach_date', l: '授课日期' }, { k: 'subject', l: '授课主题' },
+        { k: 'project_title', l: '培训项目', render: (record) => projectById.has(String(record.project_id)) ? `<button type="button" class="teacher-delivery-project" data-teacher-delivery-project="${esc(record.project_id)}">${esc(record.project_title || projectById.get(String(record.project_id))?.title || '查看项目')}${icon('arrow-up-right')}</button>` : esc(record.project_title || '项目待确认') },
+        { k: 'hours', l: '课时', align: 'right', render: (record) => num(record.hours) },
+      ], completedDeliveries, null, 'teacher-deliveries') : '<div class="inline-note">暂未记录已完成课程。录入项目排课并确认完成后，场次与课时会自动汇总到此处。</div>'}
       <div class="section-title response-title"><div><span>历史评价</span><small>来自培训项目的真实反馈</small></div></div>
       ${renderTable([
         { k: 'project_title', l: '培训项目' }, { k: 'score', l: '评分' },
@@ -2369,6 +3546,9 @@
         <div style="text-align:right;margin-top:10px"><button type="button" class="btn" id="eval-add">${icon('send')}提交评价</button></div>
       </div>` : canWrite() ? `<div class="inline-note">${icon('info')}该讲师暂无已完成授课记录，完成课程交付后即可新增评价。</div>` : ''}
     `, { noFoot: true, wide: true, kicker: '师资完整档案' });
+    $$('[data-teacher-delivery-project]', $('#modal-mask')).forEach((button) => {
+      button.onclick = () => { closeModal(); navigateTo('project_detail', { projectId: button.dataset.teacherDeliveryProject }); };
+    });
     const btn = $('#eval-add');
     if (btn) btn.onclick = async () => {
       const d = collectForm($('#modal-mask'), [
@@ -2379,6 +3559,7 @@
       d.teacher_id = t.id;
       d.score = Number(d.score);
       await api('/teacher_evals', { body: d });
+      invalidateTeacherRecommendations();
       toast('评价已提交');
       closeModal();
       showTeacherEvals(t, projects, dispatches);

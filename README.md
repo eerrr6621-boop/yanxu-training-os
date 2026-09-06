@@ -1,23 +1,22 @@
 # Yanxu Training OS · 研序培训运营中心
 
-A full-lifecycle training-operations platform: from client demand to bid, project, scheduling, delivery, evaluation and financial settlement — in one zero-dependency system.
+A full-lifecycle training-operations platform: from client demand to bid, project, faculty matching, scheduling, delivery, evaluation and financial settlement.
 
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![java](https://img.shields.io/badge/Java-17-orange.svg)](src/com/training/Main.java)
 [![no-build](https://img.shields.io/badge/frontend-no--build-brightgreen.svg)](web/)
 [![db](https://img.shields.io/badge/db-embedded%20H2-lightgrey.svg)](src/com/training/Db.java)
-[![tests](https://img.shields.io/badge/regression-145%20checks-success.svg)](test.js)
+[![tests](https://github.com/eerrr6621-boop/yanxu-training-os/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/eerrr6621-boop/yanxu-training-os/actions/workflows/ci.yml)
 
 > 中文文档见 [README_zh.md](README_zh.md)
 
-![Operations Cockpit](docs/screenshots/dashboard-cockpit.png)
+Current release: **1.9.0** (2026-09-07). See the [live site](https://training.jxyftd.tech/),
+[product updates](https://training.jxyftd.tech/updates.html), and [release verification](docs/RELEASE_V13.md).
 
-| ![Login](docs/screenshots/login-desktop.png) | ![Insights](docs/screenshots/report.png) |
-|:---:|:---:|
-| Light-premium login with rotating role headline | Business insights with live charts |
-
-All screenshots use the repository's isolated demo seed; no production records
-or credentials are included.
+The V13 interface uses a continuous project workspace, quiet navigation and
+native system typography. See the [visual maintenance guide](docs/DESIGN_V13.md).
+Existing files in `docs/screenshots/` are historical demo-only screenshots, not
+the current V13 interface; they contain no production records or credentials.
 
 ## What it is
 
@@ -33,14 +32,15 @@ It is deliberately built with **no framework and no build step**: a single Java 
 ## Highlights
 
 - **Operations Cockpit (今日运营)** — a single continuous “command deck” that auto-ranks what to do now: overdue invitations, classes starting soon, scheduling gaps, material readiness and collection follow-ups, with severity filters (all / urgent / watch / routine), a day-grouped class timeline, per-project health bars and a finance snapshot band.
-- **V10 technology showcase** — the established purple/blue visual language now has a new ImageGen hero and transparent PNG brand mark, with a responsive presentation layer shared by login, navigation and business surfaces.
+- **V13 clarity** — the established technology-showcase identity is now quieter: a new ImageGen transparent mark, native typography, continuous workspaces, a light sidebar and a compact search/account toolbar. Desktop, tablet and phone share the same visual rules.
 - **Public training-material library** — a no-login download center for course packs and templates, with editable multi-file upload queues for system admins and business managers, publishing controls, download counts and safe file storage.
+- **Private faculty intelligence** — upload PDF or PPTX instructor profiles, review the extracted professional profile, and turn an existing demand or pasted client brief into explainable teacher recommendations. Verified delivery metrics stay separate from claims written in a resume.
 - **Project workspace** — risk-first view per project: blockers and warnings are merged per business record and deep-link to the exact row that needs action; completion and archive are gated by real closure checks (hours scheduled & confirmed, collections, fees).
 - **Role-based access** — `admin` / `manager` / `viewer`, enforced server-side on every write endpoint and mirrored in the UI (read-only users get no write affordances).
 - **Evaluation surveys** — draft → publish → anonymous public answer link → live statistics (score distribution, single-choice charts, text feedback) → close.
 - **Money that adds up** — instructor fees auto-computed from confirmed hours × rate with duplicate-generation protection; collections support partial payments and settlement; costs roll into an estimated balance.
 - **Responsive & accessible** — desktop / tablet / phone layouts, keyboard navigation, focus management, `prefers-reduced-motion` respected everywhere.
-- **Regression suite** — 52 end-to-end API checks + 93 business-integrity and security checks, runnable only against an isolated loopback instance.
+- **Regression suite** — 52 end-to-end API checks, 137 business-integrity/security checks and 68 faculty-matching checks; three fresh isolated loopback instances, 257 API checks in total, plus separate frontend, locality/migration and offline weather suites.
 
 ## Quick start
 
@@ -65,7 +65,7 @@ Then open <http://localhost:8080>. Demo mode seeds a **fresh, isolated** databas
 
 | Layer | Choice | Notes |
 |---|---|---|
-| Backend | Java 17, JDK `com.sun.net.httpserver` | No Spring; single process, explicit routing in `Api.java` / `Materials.java` |
+| Backend | Java 17, JDK `com.sun.net.httpserver` | No Spring; single process, explicit routing in `Api.java`, `Materials.java` and `TeacherIntelligence.java` |
 | Database | Embedded H2 | Schema + compatible migrations in `Db.java` |
 | Auth | Salted PBKDF2 + in-memory sliding sessions (12 h) | HttpOnly cookie; legacy hash/token compatibility migration |
 | Frontend | Vanilla JS SPA, no build step | `web/app.js`; CSS layers `style → studio → ledger → v10` |
@@ -73,32 +73,51 @@ Then open <http://localhost:8080>. Demo mode seeds a **fresh, isolated** databas
 | Icons | Lucide (vendored) + hand-drawn SVG set | Custom gradient job-icon set on the landing page |
 
 ```
-src/com/training/   Main.java  Api.java  Materials.java  Db.java  Auth.java  Json.java
+src/com/training/   Main.java  Api.java  Materials.java  TeacherIntelligence.java  Db.java  Auth.java  Json.java
 web/                index.html app.js materials.html materials.js materials.css v10.css …
-lib/                h2.jar     ecj.jar
+lib/                h2.jar     ecj.jar     pdfbox-app-3.0.8.jar
 test.js             end-to-end API regression (writes data — use isolated DB)
 test_integrity.js   business-invariant regression (writes data — use isolated DB)
 ```
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for endpoint groups, workflow rules and the deployment topology, [docs/SECURITY.md](docs/SECURITY.md) for the security model, and [CHANGELOG.md](CHANGELOG.md) for the design evolution (Ledger V4 → Technology Showcase V10).
 
+Faculty operators can follow the [faculty guide (Chinese)](docs/FACULTY_GUIDE.md)
+for resume maintenance, matching limits and verified delivery metrics. Matching
+is local and rule-based; it does not use an external language model or OCR.
+
 ## Running the regression suite
 
-The suites create and modify records — never point them at a production database. Spin up an isolated instance with a throwaway data directory:
+The suites create and modify records — never point them at a production database.
+The release-check script compiles Java into a temporary directory, starts a fresh
+loopback-only database for each suite, and stops every instance afterward:
 
 ```bash
-java -Dbootstrap.demo=true -Ddata.dir=/tmp/yx-iso -Dbind.address=127.0.0.1 \
-     -cp "out:lib/h2.jar" com.training.Main 18081 &
-
-TRAINING_API_BASE=http://127.0.0.1:18081/api node test.js
-TRAINING_API_BASE=http://127.0.0.1:18081/api node test_integrity.js
+bash scripts/check.sh
 ```
 
-Expected: `52 通过, 0 失败` and `93 通过, 0 失败`.
+Offline frontend checks, 95 financial/icon-mapping/stage assertions, deterministic
+login-book lifecycle/interaction and curved-page geometry assertions, and a 14-asset
+mapping/renderer/PNG-decode gate run first. All three
+API suites (`test.js`, `test_integrity.js`, `test_faculty.js`) must also pass.
+The third covers recommendation relevance, manual-profile retention, claims,
+budget and schedule constraints.
+
+For frontend-only diagnostics without Java or a database, run
+`node scripts/check_frontend.cjs`, `node scripts/test_frontend.cjs`,
+`node scripts/test_login_book.cjs`, `node scripts/test_book_geometry.mjs` and
+`node scripts/check_business_art.cjs`.
+Optionally add `--base-url http://127.0.0.1:8080` to the first command to verify
+served static resource status, MIME and hashes using read-only HTTP requests.
+The frontend gate also parses and links the local login ESM dependency closure
+(including vendored Three.js core) without evaluating it. Run
+`node scripts/test_local_esm.cjs` to test missing files/exports and boundary checks.
+Dynamic module paths must be string literals; computed imports need a separately
+reviewed explicit manifest and are not inferred by this gate.
 
 ## Maintenance
 
-Every release must compile the Java 17 backend and run all 145 checks against two
+Every release must compile the Java 17 backend and run all regression checks against three
 separate throwaway, loopback-only databases. Production data and credentials are
 never part of this quality gate. Security-sensitive changes should also update
 [docs/SECURITY.md](docs/SECURITY.md) and the release notes in
@@ -106,21 +125,30 @@ never part of this quality gate. Security-sensitive changes should also update
 
 ## Deployment (reference)
 
-The reference production topology is a systemd service bound to `127.0.0.1` behind an nginx TLS reverse proxy, with the H2 file owned by a dedicated unprivileged user and hardened unit options (`ProtectSystem=strict`, `PrivateTmp=true`, `NoNewPrivileges=true`). Front-end releases are atomic: stage → checksum-verify → snapshot `web-before` → swap → verify, with a one-command rollback path. No credentials, IPs or private data are shipped in this repository.
+The reference production topology is a systemd service bound to `127.0.0.1` behind an nginx TLS reverse proxy, with the H2 file owned by a dedicated unprivileged user and hardened unit options (`ProtectSystem=strict`, `PrivateTmp=true`, `NoNewPrivileges=true`). Front-end releases are atomic: stage → checksum-verify → snapshot `web-before` → swap → verify, with a one-command rollback path. No credentials, visitor IP records or private business data are shipped in this repository.
+
+R7 adds an optional local-IP city/weather surface and public update timeline.
+Weather is disabled until configured; see [docs/WEATHER.md](docs/WEATHER.md) for
+provider credentials, trusted proxy requirements and privacy/accuracy boundaries.
+Version 1.9.0 was deployed and verified on 2026-09-07. Public update notes contain
+only actual releases, with daily grouping and verified timestamps. Source pushes
+and production deployments are tracked separately.
 
 ## Vendor assets & licenses
 
 - [ECharts](https://github.com/apache/echarts) — Apache-2.0 (vendored `web/echarts.min.js`)
 - [Lucide](https://github.com/lucide-icons/lucide) — ISC (vendored `web/lucide.min.js`)
 - [H2 Database Engine](https://github.com/h2database/h2database) — MPL-2.0 / EPL-1.0 (`lib/h2.jar`)
+- [Apache PDFBox](https://pdfbox.apache.org/) — Apache-2.0 (`lib/pdfbox-app-3.0.8.jar`)
 - Eclipse ECJ compiler — EPL-2.0 (`lib/ecj.jar`, used only by the launch scripts)
+- [ip2region](https://github.com/lionsoul2014/ip2region) — Apache-2.0 OR MIT (Java 3.3.7 and pinned v3.17.0 offline city data; source/checksums in `lib/ip2region/README.md`)
 
 Full redistributed license and notice texts are collected in
 [third_party_licenses](third_party_licenses/README.md).
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Short version: keep the backend dependency-free, keep the frontend build-free, scope new V10 visual work to `v10.css`, and run both regression suites against separate fresh loopback-only databases before proposing a change.
+See [CONTRIBUTING.md](CONTRIBUTING.md). Short version: keep backend dependencies minimal and vendored with their licenses, keep the frontend build-free, scope new V10 visual work to `v10.css`, and run all regression suites against separate fresh loopback-only databases before proposing a change.
 
 ## License
 

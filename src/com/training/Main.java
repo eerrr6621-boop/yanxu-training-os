@@ -13,7 +13,7 @@ import java.util.zip.GZIPOutputStream;
 
 /**
  * 培训全流程管理系统 - 启动入口
- * 用法: java -cp "out;lib/h2.jar" com.training.Main [端口]
+ * 用法: java -cp "out;lib/h2.jar;lib/pdfbox-app-3.0.8.jar" com.training.Main [端口]
  * 默认端口 8080，浏览器访问 http://localhost:8080
  */
 public class Main {
@@ -26,6 +26,7 @@ public class Main {
         MIME.put("json", "application/json; charset=utf-8");
         MIME.put("png", "image/png");
         MIME.put("jpg", "image/jpeg");
+        MIME.put("webp", "image/webp");
         MIME.put("svg", "image/svg+xml");
         MIME.put("ico", "image/x-icon");
         MIME.put("woff2", "font/woff2");
@@ -39,6 +40,7 @@ public class Main {
         }
         // 初始化数据库（自动建表+示例数据）
         Db.init();
+        TeacherIntelligence.init();
 
         // 定位 web 目录（支持从项目根目录或 jar 同级启动）
         webRoot = findWebRoot();
@@ -49,7 +51,11 @@ public class Main {
         server.createContext("/", ex -> {
             try {
                 String path = ex.getRequestURI().getPath();
-                if (path.startsWith("/api/materials")) {
+                if (path.equals("/api/visitor-context")) {
+                    Weather.handle(ex);
+                } else if (path.startsWith("/api/teacher-resumes") || path.startsWith("/api/teacher-recommendations")) {
+                    TeacherIntelligence.handle(ex);
+                } else if (path.startsWith("/api/materials")) {
                     Materials.handle(ex);
                 } else if (path.startsWith("/api/")) {
                     Api.handle(ex);

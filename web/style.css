@@ -31,6 +31,8 @@
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
+/* Accessible labels must remain available without occupying visual layout. */
+.sr-only { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: -1px !important; overflow: hidden !important; clip: rect(0, 0, 0, 0) !important; clip-path: inset(50%) !important; white-space: nowrap !important; border: 0 !important; }
 html { color-scheme: light; }
 body {
   min-width: 320px;

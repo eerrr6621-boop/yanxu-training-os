@@ -46,7 +46,7 @@ fi
 if [ "$NEEDS_COMPILE" -eq 1 ]; then
   echo "正在更新本地程序…"
   mkdir -p out
-  "$JAVA_BIN" -jar lib/ecj.jar -17 -encoding UTF-8 -cp lib/h2.jar -d out src/com/training/*.java
+  "$JAVA_BIN" -jar lib/ecj.jar -17 -encoding UTF-8 -cp "lib/h2.jar:lib/pdfbox-app-3.0.8.jar:lib/ip2region-3.3.7.jar" -d out src/com/training/*.java
 fi
 
 echo "研序培训运营中心已启动：http://localhost:$PORT"
@@ -56,4 +56,4 @@ if [ "$DEMO_MODE" -eq 1 ]; then
   DEMO_BIND_ADDRESS="${TRAINING_BIND_ADDRESS:-127.0.0.1}"
   JAVA_ARGS+=(-Dbootstrap.demo=true -Ddata.dir=demo-data "-Dbind.address=$DEMO_BIND_ADDRESS")
 fi
-exec "$JAVA_BIN" "${JAVA_ARGS[@]}" -cp "out:lib/h2.jar" com.training.Main "$PORT"
+exec "$JAVA_BIN" "${JAVA_ARGS[@]}" -cp "out:lib/h2.jar:lib/pdfbox-app-3.0.8.jar:lib/ip2region-3.3.7.jar" com.training.Main "$PORT"

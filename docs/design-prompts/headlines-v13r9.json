@@ -1,0 +1,78 @@
+{
+  "date": "2026-09-06",
+  "iteration": "v13-r9",
+  "tool": "built-in ImageGen; one generation per title, no retries",
+  "reference": "design/login/v13r8-originals/just-use-arrow.png",
+  "authorization": "用户明确允许去掉误生成的棋盘格、整理透明边距并等比缩小；保留字形与高清原稿。",
+  "postprocessing": "Local sharp/JS blue-chroma alpha matting, core RGB preserved, edge decontamination; proportional Lanczos3 resize to 960×240, lossless WebP. No glyph redraw or warp.",
+  "entries": [
+    {
+      "title": "培训运营",
+      "original": "design/login/v13r9-originals/training-operations.png",
+      "originalSize": [
+        2172,
+        724
+      ],
+      "originalHasAlpha": false,
+      "web": "web/assets/book-headline-operations-v13r9.webp",
+      "webSize": [
+        960,
+        240
+      ],
+      "webHasAlpha": true,
+      "sha256": "ddaadbb2fed7bcfe17cbc6038b6606c493b51dc07f9f7c6fa95fcd61c7cb5d70",
+      "prompt": "Use case: logo-brand\nAsset type: a single transparent PNG Chinese title wordmark for a 3D book-page carousel, displayed about 175 pixels wide.\nInput images: Image 1 is a FONT STYLE REFERENCE ONLY, not an edit target. Use only its premium modern geometric bold Chinese sans-serif lettering characteristics: generous open structures, strong substantial strokes, and very subtly rounded terminals. Do not copy any text or arrow from the reference.\nPrimary request: Generate exactly one new title asset whose only visible content is the exact simplified Chinese title \"培训运营\", rendered verbatim once as four correct characters on one horizontal line.\nTypography: Continue the same modern geometric bold Chinese sans-serif family as the reference. Confident main-heading weight, open clearly readable counters and structures, subtly rounded stroke ends. All four characters have equal visual size, identical stroke weight, the same baseline and consistent natural compact spacing without touching. Use natural square Chinese character proportions, never stretched or squeezed.\nColor palette: Every visible stroke is flat solid brand cobalt blue #425be2. Clean anti-aliased edges, no gradients, textures or secondary colors.\nComposition: Landscape canvas with a width-to-height ratio of exactly 3:1, same consistent framing for this title series. The centered four-character group occupies approximately 82 percent of canvas width. Character height follows natural undistorted Chinese proportions. Optically center the title as a group both horizontally and vertically, leaving transparent safe margins on all four sides. Flat straight-on orthographic artwork, no perspective.\nBackground: Genuinely transparent PNG background with real alpha transparency, including all surrounding negative space and all open character counters. Do not render a white, black, colored or checkerboard background.\nConstraints: One title only, no variants, no grid. No arrows, extra symbols, extra text, duplicated characters, original reference text, logo, book, page, entire interface, circles, buttons, capsules, decorations, stroke cracks, sliced corners, italic, calligraphy, shadows, glow, gradients, textures, bevels, or 3D. Prioritize clarity when reduced to 175 pixels wide."
+    },
+    {
+      "title": "师资推荐",
+      "original": "design/login/v13r9-originals/faculty-recommendation.png",
+      "originalSize": [
+        2172,
+        724
+      ],
+      "originalHasAlpha": false,
+      "web": "web/assets/book-headline-faculty-v13r9.webp",
+      "webSize": [
+        960,
+        240
+      ],
+      "webHasAlpha": true,
+      "sha256": "1c0fc80dd45df39ad30028a529670cc3072de460b61cff973848080321f81e45",
+      "prompt": "Use case: logo-brand\nAsset type: a single transparent PNG Chinese title wordmark for a 3D book-page carousel, displayed about 175 pixels wide.\nInput images: Image 1 is a FONT STYLE REFERENCE ONLY, not an edit target. Use only its premium modern geometric bold Chinese sans-serif lettering characteristics: generous open structures, strong substantial strokes, and very subtly rounded terminals. Do not copy any text or arrow from the reference.\nPrimary request: Generate exactly one new title asset whose only visible content is the exact simplified Chinese title \"师资推荐\", rendered verbatim once as four correct characters on one horizontal line.\nTypography: Continue the same modern geometric bold Chinese sans-serif family as the reference. Confident main-heading weight, open clearly readable counters and structures, subtly rounded stroke ends. All four characters have equal visual size, identical stroke weight, the same baseline and consistent natural compact spacing without touching. Use natural square Chinese character proportions, never stretched or squeezed.\nColor palette: Every visible stroke is flat solid brand cobalt blue #425be2. Clean anti-aliased edges, no gradients, textures or secondary colors.\nComposition: Landscape canvas with a width-to-height ratio of exactly 3:1, same consistent framing for this title series. The centered four-character group occupies approximately 82 percent of canvas width. Character height follows natural undistorted Chinese proportions. Optically center the title as a group both horizontally and vertically, leaving transparent safe margins on all four sides. Flat straight-on orthographic artwork, no perspective.\nBackground: Genuinely transparent PNG background with real alpha transparency, including all surrounding negative space and all open character counters. Do not render a white, black, colored or checkerboard background.\nConstraints: One title only, no variants, no grid. No arrows, extra symbols, extra text, duplicated characters, original reference text, logo, book, page, entire interface, circles, buttons, capsules, decorations, stroke cracks, sliced corners, italic, calligraphy, shadows, glow, gradients, textures, bevels, or 3D. Prioritize clarity when reduced to 175 pixels wide."
+    },
+    {
+      "title": "课程交付",
+      "original": "design/login/v13r9-originals/course-delivery.png",
+      "originalSize": [
+        1536,
+        1024
+      ],
+      "originalHasAlpha": false,
+      "web": "web/assets/book-headline-delivery-v13r9.webp",
+      "webSize": [
+        960,
+        240
+      ],
+      "webHasAlpha": true,
+      "sha256": "bc08b025264e9d3ccb372ff6897c1a9f9f5ca3e80dea59ef5749bd4d71e703ca",
+      "prompt": "Use case: logo-brand\nAsset type: a single transparent PNG Chinese title wordmark for a 3D book-page carousel, displayed about 175 pixels wide.\nInput images: Image 1 is a FONT STYLE REFERENCE ONLY, not an edit target. Use only its premium modern geometric bold Chinese sans-serif lettering characteristics: generous open structures, strong substantial strokes, and very subtly rounded terminals. Do not copy any text or arrow from the reference.\nPrimary request: Generate exactly one new title asset whose only visible content is the exact simplified Chinese title \"课程交付\", rendered verbatim once as four correct characters on one horizontal line.\nTypography: Continue the same modern geometric bold Chinese sans-serif family as the reference. Confident main-heading weight, open clearly readable counters and structures, subtly rounded stroke ends. All four characters have equal visual size, identical stroke weight, the same baseline and consistent natural compact spacing without touching. Use natural square Chinese character proportions, never stretched or squeezed.\nColor palette: Every visible stroke is flat solid brand cobalt blue #425be2. Clean anti-aliased edges, no gradients, textures or secondary colors.\nComposition: Landscape canvas with a width-to-height ratio of exactly 3:1, same consistent framing for this title series. The centered four-character group occupies approximately 82 percent of canvas width. Character height follows natural undistorted Chinese proportions. Optically center the title as a group both horizontally and vertically, leaving transparent safe margins on all four sides. Flat straight-on orthographic artwork, no perspective.\nBackground: Genuinely transparent PNG background with real alpha transparency, including all surrounding negative space and all open character counters. Do not render a white, black, colored or checkerboard background.\nConstraints: One title only, no variants, no grid. No arrows, extra symbols, extra text, duplicated characters, original reference text, logo, book, page, entire interface, circles, buttons, capsules, decorations, stroke cracks, sliced corners, italic, calligraphy, shadows, glow, gradients, textures, bevels, or 3D. Prioritize clarity when reduced to 175 pixels wide."
+    },
+    {
+      "title": "项目管理",
+      "original": "design/login/v13r9-originals/project-management.png",
+      "originalSize": [
+        1536,
+        1024
+      ],
+      "originalHasAlpha": false,
+      "web": "web/assets/book-headline-projects-v13r9.webp",
+      "webSize": [
+        960,
+        240
+      ],
+      "webHasAlpha": true,
+      "sha256": "115ace241e9dfc2a9e2be34a4fe7809128ffb268ac815c7a98155928141c2f82",
+      "prompt": "Use case: logo-brand\nAsset type: a single transparent PNG Chinese title wordmark for a 3D book-page carousel, displayed about 175 pixels wide.\nInput images: Image 1 is a FONT STYLE REFERENCE ONLY, not an edit target. Use only its premium modern geometric bold Chinese sans-serif lettering characteristics: generous open structures, strong substantial strokes, and very subtly rounded terminals. Do not copy any text or arrow from the reference.\nPrimary request: Generate exactly one new title asset whose only visible content is the exact simplified Chinese title \"项目管理\", rendered verbatim once as four correct characters on one horizontal line.\nTypography: Continue the same modern geometric bold Chinese sans-serif family as the reference. Confident main-heading weight, open clearly readable counters and structures, subtly rounded stroke ends. All four characters have equal visual size, identical stroke weight, the same baseline and consistent natural compact spacing without touching. Use natural square Chinese character proportions, never stretched or squeezed.\nColor palette: Every visible stroke is flat solid brand cobalt blue #425be2. Clean anti-aliased edges, no gradients, textures or secondary colors.\nComposition: Landscape canvas with a width-to-height ratio of exactly 3:1, same consistent framing for this title series. The centered four-character group occupies approximately 82 percent of canvas width. Character height follows natural undistorted Chinese proportions. Optically center the title as a group both horizontally and vertically, leaving transparent safe margins on all four sides. Flat straight-on orthographic artwork, no perspective.\nBackground: Genuinely transparent PNG background with real alpha transparency, including all surrounding negative space and all open character counters. Do not render a white, black, colored or checkerboard background.\nConstraints: One title only, no variants, no grid. No arrows, extra symbols, extra text, duplicated characters, original reference text, logo, book, page, entire interface, circles, buttons, capsules, decorations, stroke cracks, sliced corners, italic, calligraphy, shadows, glow, gradients, textures, bevels, or 3D. Prioritize clarity when reduced to 175 pixels wide."
+    }
+  ]
+}

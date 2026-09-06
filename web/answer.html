@@ -1,22 +1,23 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-build="yanxu-v10">
+<html lang="zh-CN" data-build="yanxu-v13-release-r1">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#f6f7ff">
   <meta name="description" content="研序培训效果评估问卷">
   <title>培训效果评估 · 研序</title>
-  <link rel="icon" href="/assets/yx-mark-v10.png?v=20260813v10r3" type="image/png">
-  <link rel="stylesheet" href="/style.css?v=20260813v10r3">
+  <link rel="icon" href="/assets/yx-mark-v13.png?v=20260906v13" type="image/png">
+  <link rel="stylesheet" href="/style.css?v=20260906v13">
   <link rel="stylesheet" href="/studio.css?v=20260813v10r3">
   <link rel="stylesheet" href="/answer-v10.css?v=20260813v10r3">
+  <link rel="stylesheet" href="/v13.css?v=20260907v13r1-notes2">
 </head>
-<body class="answer-page">
+<body class="answer-page yx-v13">
   <main class="answer-wrap" id="app">
-    <div class="answer-brand" aria-label="研序培训运营中心"><span class="answer-brand-mark"><img class="brand-symbol" src="/assets/yx-mark-v10.png?v=20260813v10r3" alt=""></span><span class="answer-brand-copy"><b>研序</b><small>TRAINING EXPERIENCE</small></span></div>
+    <div class="answer-brand" aria-label="研序培训运营中心"><span class="answer-brand-mark"><img class="brand-symbol" src="/assets/yx-mark-v13.png?v=20260906v13" alt=""></span><span class="answer-brand-copy"><b>研序</b><small>TRAINING EXPERIENCE</small></span></div>
     <div class="answer-card"><div class="answer-skeleton" role="status" aria-label="正在加载问卷" aria-busy="true"><span></span><span></span><span></span><span></span></div></div>
   </main>
-  <script src="/lucide.min.js?v=20260813v10r3"></script>
+  <script src="/lucide.min.js?v=20260906v13"></script>
   <script>
     const $ = (s, el) => (el || document).querySelector(s);
     const $$ = (s, el) => Array.from((el || document).querySelectorAll(s));
@@ -40,7 +41,7 @@
     }
 
     function brand() {
-      return `<div class="answer-brand" aria-label="研序培训运营中心"><span class="answer-brand-mark"><img class="brand-symbol" src="/assets/yx-mark-v10.png?v=20260813v10r3" alt=""></span><span class="answer-brand-copy"><b>研序</b><small>TRAINING EXPERIENCE</small></span></div>`;
+      return `<div class="answer-brand" aria-label="研序培训运营中心"><span class="answer-brand-mark"><img class="brand-symbol" src="/assets/yx-mark-v13.png?v=20260906v13" alt=""></span><span class="answer-brand-copy"><b>研序</b><small>TRAINING EXPERIENCE</small></span></div>`;
     }
 
     function showError(title, detail = '如有疑问，请联系培训组织方。') {
