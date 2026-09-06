@@ -1,5 +1,6 @@
 import * as THREE from '/vendor/three-r171/three.module.min.js';
-import { createPageSurface } from '/scene/book-surface.js';
+import { createPageSurface } from '/scene/book-surface.js?v=20260907-return';
+import { loadBookArtwork } from '/scene/book-artwork.js?v=20260907-return';
 import { createPaperBlock, pageRestRelief } from '/scene/book-binding.js?v=20260906v13r9';
 import { HEADLINES, fitHeadlinePrint } from '/scene/book-headlines.js?v=20260906v13r9';
 
@@ -7,27 +8,37 @@ import { HEADLINES, fitHeadlinePrint } from '/scene/book-headlines.js?v=20260906
 const PAGE_W = 1.55, PAGE_H = 2.1, REST_BEND = 2.8, PAPER_DEPTH = .11;
 const PRINT_W = 768, PRINT_H = 1024;
 const ASSETS = {
-  brand: '/assets/yx-mark-v13.png',
-  endorsement: '/assets/book-endorsement-v13r8.png',
-  paper: '/assets/book-paper-v13r7.jpg',
-  ...Object.fromEntries(HEADLINES.map(({ key, image }) => [key, image])),
+  brand: '/assets/yx-mark-v13.png?v=20260906v13',
+  endorsement: '/assets/book-endorsement-v13r8.png?v=20260906v13r8',
+  paper: '/assets/book-paper-v13r7.jpg?v=20260906v13r7',
+  ...Object.fromEntries(HEADLINES.map(({ key, image }) => [key, image + '?v=20260906v13r9'])),
 };
+let artworkPromise;
+export function prepareBookAssets() {
+  if (!artworkPromise) {
+    artworkPromise = loadBookArtwork(ASSETS).then((images) => {
+      // Retry missing prints on a future mount, never change an already visible scene.
+      if (Object.keys(images).length !== Object.keys(ASSETS).length) artworkPromise = null;
+      return images;
+    });
+  }
+  return artworkPromise;
+}
 
-export function createBookScene(host, { onInvalidate = () => {}, onContextLost = () => {} } = {}) {
+export function createBookScene(host, { artwork = {}, onContextLost = () => {} } = {}) {
   let disposed = false, renderer, shadowLight;
-  const geometries = new Set(), materials = new Set(), textures = new Set(), pendingImages = [];
+  const geometries = new Set(), materials = new Set(), textures = new Set();
   const scene = new THREE.Scene();
   const book = new THREE.Group();
   scene.add(book);
   const geo = (value) => { geometries.add(value); return value; };
   const mat = (value) => { materials.add(value); return value; };
-  const images = {}, prints = [], paperMaterials = [];
+  const images = artwork, paperMaterials = [];
   let lastState = { topic: 0, transition: null, pitch: 0, yaw: 0 };
 
   function dispose() {
     if (disposed) return;
     disposed = true;
-    pendingImages.forEach(({ image, load, error }) => { image.removeEventListener('load', load); image.removeEventListener('error', error); });
     renderer?.domElement.removeEventListener('webglcontextlost', lost);
     geometries.forEach((item) => item.dispose());
     materials.forEach((item) => item.dispose());
@@ -112,7 +123,7 @@ export function createBookScene(host, { onInvalidate = () => {}, onContextLost =
             // Preserve the generated art and alpha. Account for its transparent margins optically.
             ctx.drawImage(images.endorsement, 105, 495, 551, 551 / 3);
           } else {
-            // Readable fallback while the optional local brand print loads.
+            // Stable readable fallback if the optional local print was unavailable.
             ctx.fillStyle = '#26374e'; ctx.font = '500 94px "PingFang SC", "Microsoft YaHei", sans-serif';
             ctx.fillText('就用', 184, 625);
             ctx.strokeStyle = '#425be2'; ctx.lineWidth = 8; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
@@ -126,7 +137,7 @@ export function createBookScene(host, { onInvalidate = () => {}, onContextLost =
         }
         texture.needsUpdate = true;
       }
-      prints.push(repaint); repaint(); return { texture, repaint };
+      repaint(); return { texture, repaint };
     }
     const paper = (map, side = THREE.FrontSide) => {
       const value = mat(new THREE.MeshStandardMaterial({ map, color: 0xffffff, roughness: .91, metalness: 0, side }));
@@ -214,15 +225,19 @@ export function createBookScene(host, { onInvalidate = () => {}, onContextLost =
       if (textChanged) leftPrint.repaint();
       renderer.render(scene, camera);
     }
+    let viewport = null;
     function resize() {
       if (disposed) return;
       const width = Math.max(1, host.clientWidth), height = Math.max(1, host.clientHeight);
       const ratio = Math.min(window.devicePixelRatio || 1, 1.7, Math.sqrt(1500000 / (width * height)));
+      // Restoring an unchanged page must not clear/reallocate the drawing buffer.
+      if (viewport && viewport.width === width && viewport.height === height && viewport.ratio === ratio) return;
+      viewport = { width, height, ratio };
       renderer.setPixelRatio(ratio); renderer.setSize(width, height, false);
       camera.aspect = width / height;
       const viewHeight = Math.max(2.8, 3.65 / camera.aspect);
       camera.fov = THREE.MathUtils.radToDeg(2 * Math.atan(viewHeight / (2 * camera.position.z)));
-      camera.updateProjectionMatrix(); render();
+      camera.updateProjectionMatrix();
     }
     function pick(clientX, clientY) {
       if (disposed) return null;
@@ -234,21 +249,13 @@ export function createBookScene(host, { onInvalidate = () => {}, onContextLost =
       const local = book.worldToLocal(hit.point.clone());
       return { side: local.x < 0 ? 'left' : 'right', x: local.x, y: local.y };
     }
-    Object.entries(ASSETS).forEach(([name, url]) => {
-      const image = new Image();
-      const load = () => {
-        if (disposed) return; images[name] = image;
-        if (name === 'paper') {
-          const relief = new THREE.Texture(image); relief.needsUpdate = true; textures.add(relief);
-          relief.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
-          paperMaterials.forEach(material => { material.bumpMap = relief; material.bumpScale = .002; material.needsUpdate = true; });
-        }
-        prints.forEach((repaint) => repaint()); onInvalidate();
-      };
-      const error = () => { if (!disposed) onInvalidate(); };
-      pendingImages.push({ image, load, error }); image.addEventListener('load', load); image.addEventListener('error', error); image.src = url;
-    });
-    resize();
+    if (images.paper) {
+      const relief = new THREE.Texture(images.paper); relief.needsUpdate = true; textures.add(relief);
+      relief.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
+      paperMaterials.forEach(material => { material.bumpMap = relief; material.bumpScale = .002; });
+    }
+    // Compile/upload the final materials and render the complete first frame while hidden.
+    resize(); render();
     return { render, resize, pick, dispose, revision: THREE.REVISION };
   } catch (error) { dispose(); throw error; }
 }

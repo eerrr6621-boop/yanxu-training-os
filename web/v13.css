@@ -250,7 +250,7 @@ html body.yx-v13 .book-stage { position: relative; width: 100%; height: clamp(38
 html body.yx-v13 .book-stage.is-dragging { cursor: grabbing; }
 html body.yx-v13 .book-stage:focus-visible { outline: 2px solid #8999b9; outline-offset: 4px; }
 html body.yx-v13 .book-stage[aria-disabled="true"] { cursor: default; }
-html body.yx-v13 .book-three-canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; pointer-events: none; filter: drop-shadow(0 12px 14px #344b7012); }
+html body.yx-v13 .book-three-canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; pointer-events: none; opacity: 0; transition: opacity .18s ease-out; filter: drop-shadow(0 12px 14px #344b7012); }
 html body.yx-v13 .book-fallback { position: absolute; left: 7%; top: 50%; transform: translateY(-50%) rotate(-4deg); width: 86%; aspect-ratio: 1.48; display: grid; grid-template-columns: 1fr 1fr; border-radius: 4px; background: #fdfdfb; border: 3px solid #8d9bb2; box-shadow: 0 20px 30px -20px #33446240; }
 html body.yx-v13 .book-fallback-left { display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 16px; padding-left: 0; border-right: 1px solid #e1e4e9; color: #26374e; font-size: clamp(16px,2vw,26px); line-height: 1.5; font-weight: 500; }
 html body.yx-v13 .book-fallback-left strong { color: #3955c7; font-size: 1.2em; font-weight: 600; white-space: nowrap; }
@@ -262,6 +262,9 @@ html body.yx-v13 .book-fallback-right { display: flex; align-items: center; just
 html body.yx-v13 .book-fallback-right .brand-symbol { width: 66px; height: 66px; }
 html body.yx-v13 .book-fallback-right b { font-weight: 500; letter-spacing: .15em; }
 html body.yx-v13 .login-learning[data-book-ready="true"] .book-fallback { display: none; }
+html body.yx-v13 .login-learning[data-motion-state="loading-visual"] .book-fallback { visibility: hidden; }
+html body.yx-v13 .login-learning[data-book-ready="true"] .book-three-canvas { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { html body.yx-v13 .book-three-canvas { transition: none; } }
 html body.yx-v13 .orbit-panel { width: 100%; max-width: 466px; min-width: 0; min-height: 0; justify-self: center; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: clamp(28px,3vw,42px); border: 1px solid #ffffffed; border-radius: 26px; background: linear-gradient(135deg,#ffffffde,#ffffff8c); box-shadow: 0 2px 2px #20354d02,0 24px 80px -32px #263f6530,inset 0 0 0 1px #e8edf48a; backdrop-filter: blur(22px); }
 html body.yx-v13 .login-panel-heading, html body.yx-v13 #login-form { width: 100%; max-width: 384px; }
 html body.yx-v13 .login-product-name { display: block; margin-bottom: 10px; color: #76869a; font-size: 12px; letter-spacing: .16em; }

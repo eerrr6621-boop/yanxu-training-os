@@ -470,7 +470,7 @@ async function main() {
     check('default renderer import is same-origin and versioned', /import\(['"]\/scene\/login-book-three\.js\?v=[A-Za-z0-9._-]+['"]\)/.test(motion));
     const imports = [...renderer.matchAll(/\bfrom\s+['"]([^'"]+)['"]/g)].map((match) => match[1]);
     check('renderer imports pinned local Three r171', imports.includes('/vendor/three-r171/three.module.min.js'), imports.join(','));
-    check('renderer imports local page surface', imports.includes('/scene/book-surface.js'), imports.join(','));
+    check('renderer imports versioned local page surface', imports.includes('/scene/book-surface.js?v=20260907-return'), imports.join(','));
     check('renderer has no remote or bare specifier', imports.every((value) => value.startsWith('/') && !value.startsWith('//')), imports.join(','));
     imports.forEach((specifier) => check('module dependency exists: ' + specifier, fs.existsSync(path.join(webRoot, new URL(specifier, 'http://local.test').pathname.slice(1)))));
     const threeSource = fs.readFileSync(threePath, 'utf8');
@@ -483,8 +483,8 @@ async function main() {
     const mounted = /<script\b[^>]*\bsrc=["'](\/login-motion\.js\?v=([^"']+))["']/i.exec(index);
     const dynamicVersion = /login-book-three\.js\?v=([A-Za-z0-9._-]+)/.exec(motion)?.[1] || '';
     check('index mounts login-motion once', (index.match(/src=["']\/login-motion\.js\?/g) || []).length === 1);
-    check('HTML refreshes the corrected autoplay controller', mounted?.[2] === '20260907-autoplay2', mounted?.[2] || 'missing');
-    check('unchanged Three scene stays pinned', dynamicVersion === '20260906v13r10', dynamicVersion);
+    check('HTML refreshes the return lifecycle controller', mounted?.[2] === '20260907-return', mounted?.[2] || 'missing');
+    check('complete first-frame renderer is refreshed', dynamicVersion === '20260907-return', dynamicVersion);
     const app = fs.readFileSync(path.join(webRoot, 'app.js'), 'utf8');
     check('book is an illustration, not a hidden pause button', /data-login-book role="img"/.test(app) && !/data-login-book role="button"|点击暂停文字轮播/.test(app));
   });
@@ -498,7 +498,7 @@ async function main() {
     check('loader starts in a microtask', harness.loadCalls === 0);
     check('pre-load state is loading-visual', state(harness) === 'loading-visual', state(harness));
     check('pre-load book is aria-disabled', harness.book.getAttribute('aria-disabled') === 'true', harness.book.getAttribute('aria-disabled'));
-    check('pre-load creates no timer or RAF', harness.scheduler.pendingTimers() === 0 && harness.scheduler.pendingFrames() === 0);
+    check('pre-load has only the bounded visual watchdog and no RAF', harness.scheduler.pendingTimers() === 1 && harness.scheduler.nextTimerDueIn() === 8000 && harness.scheduler.pendingFrames() === 0);
     const same = harness.mount();
     check('repeat mount returns same facade', same === controller);
     await microtasks();
@@ -513,6 +513,53 @@ async function main() {
     await microtasks();
     check('late module does not create a scene', harness.kit.stats.createCalls === 0, harness.kit.stats.createCalls);
     check('late module cannot overwrite destroyed state', state(harness) === 'destroyed' && !harness.root.dataset.bookReady, JSON.stringify(harness.root.dataset));
+  });
+
+  await group('stalled module falls back without blocking authentication', async () => {
+    const deferred = createDeferred(), h = createHarness(motion, {loadScene: () => deferred.promise});
+    const c = h.mount(); await microtasks(); h.scheduler.advanceTimers(8000);
+    check('stalled import becomes a stable fallback', state(h) === 'unavailable' && h.form.isConnected && !listenerTotal(h) && !h.scheduler.pendingTimers());
+    deferred.resolve(h.kit.module); await c.ready;
+    check('late timed-out import never creates a visible scene', !h.kit.stats.createCalls && !h.root.dataset.bookReady);
+  });
+
+  await group('artwork batch gates scene visibility without blocking login', async () => {
+    const deferred = createDeferred(), h = createHarness(motion);
+    h.kit.module.prepareBookAssets = () => deferred.promise;
+    const c = h.mount(); await microtasks();
+    check('loading images does not create or expose a partial scene', !h.kit.stats.createCalls && !h.root.dataset.bookReady && state(h) === 'loading-visual');
+    c.setPhase('loading');
+    check('authentication remains responsive while prints decode', h.root.dataset.motionPhase === 'loading' && h.form.isConnected);
+    const artwork = { brand: {} }; deferred.resolve(artwork); await c.ready;
+    check('complete artwork is handed to the first scene', h.kit.stats.hooks[0].artwork === artwork && h.root.dataset.bookReady === 'true');
+    check('pending login stays locked after preparation', state(h) === 'loading' && !h.scheduler.pendingTimers());
+    c.destroy();
+    for (const detach of [false, true]) {
+      const d = createDeferred(), pending = createHarness(motion);
+      pending.kit.module.prepareBookAssets = () => d.promise;
+      const pc = pending.mount(); await microtasks();
+      if (detach) pending.root.remove(); else pc.destroy();
+      d.resolve({}); await pc.ready;
+      check('leaving during image decode never creates an abandoned scene: ' + detach, !pending.kit.stats.createCalls && !listenerTotal(pending));
+    }
+    const broken = createHarness(motion);
+    broken.kit.module.prepareBookAssets = () => Promise.reject(new Error('decode failure'));
+    await boot(broken);
+    check('preparation failure preserves login and stable fallback', state(broken) === 'unavailable' && broken.form.isConnected && !broken.kit.stats.createCalls);
+    for (const leavePermanently of [false, true]) {
+      const prepared = createDeferred(), away = createHarness(motion);
+      away.kit.module.prepareBookAssets = () => prepared.promise;
+      const ac = away.mount(); await microtasks();
+      event(away.window, 'pagehide', {persisted: true});
+      prepared.resolve({}); await microtasks();
+      check('completed images do not create a GPU scene while away: ' + leavePermanently,
+        !away.kit.stats.createCalls && !away.root.dataset.bookReady && !away.scheduler.pendingTimers());
+      if (leavePermanently) ac.destroy(); else event(away.window, 'pageshow', {persisted: true});
+      await ac.ready;
+      check('deferred scene builds only if still needed: ' + leavePermanently,
+        away.kit.stats.createCalls === (leavePermanently ? 0 : 1));
+      ac.destroy();
+    }
   });
 
   await group('detached root before import resolves', async () => {
@@ -694,6 +741,44 @@ async function main() {
     h.scheduler.runFrames();
     check('resumed transition commits once', topic(h)===1 && h.scheduler.pendingTimers()===1);
     c.destroy();
+  });
+
+  await group('back-forward restoration keeps the existing scene and remaining wait', async () => {
+    const h = createHarness(motion), c = await boot(h);
+    h.scheduler.advanceTimers(2600); h.scheduler.runFrames(); h.scheduler.advanceTimers(700);
+    const original = h.kit.scene;
+    for (let cycle = 0; cycle < 3; cycle++) {
+      pointer(h.book, 'pointermove', {clientX: 30});
+      event(h.window, 'pagehide', {persisted: true});
+      const renders = original.renders.length;
+      event(h.document, 'visibilitychange'); event(h.window, 'resize');
+      original.invalidate(); h.scheduler.advanceTimers(100000);
+      check('pagehide suspends before document.hidden becomes true: ' + cycle,
+        !h.scheduler.pendingTimers() && !h.scheduler.pendingFrames() && original.renders.length === renders && state(h) === 'hidden');
+      event(h.window, 'pageshow', {persisted: true});
+      check('restoration requests just one initial redraw: ' + cycle, original.renders.length === renders + 1);
+      h.scheduler.runFrames();
+      check('restoration reuses the same scene and headline: ' + cycle, h.kit.scene === original && h.kit.stats.createCalls === 1 && topic(h) === 1 && !original.disposeCalls);
+      check('restoration resumes the saved hold with one timer: ' + cycle, h.scheduler.pendingTimers() === 1 && h.scheduler.nextTimerDueIn() === 2300);
+    }
+    h.scheduler.advanceTimers(2300); h.scheduler.stepFrame(16);
+    const progress = latestRender(h).transition.progress;
+    event(h.window, 'pagehide', {persisted: true});
+    h.document.hidden = true; event(h.document, 'visibilitychange');
+    event(h.window, 'pageshow', {persisted: true});
+    check('pageshow while hidden does not restart animation', !h.scheduler.pendingTimers() && !h.scheduler.pendingFrames());
+    h.document.hidden = false; event(h.document, 'visibilitychange');
+    check('mid-transition restoration retains its frame', latestRender(h).transition.progress === progress);
+    h.scheduler.runFrames();
+    check('restored transition advances once', topic(h) === 2 && h.scheduler.pendingTimers() === 1);
+    event(h.window, 'pagehide', {persisted: true}); h.document.activeElement = h.input;
+    event(h.window, 'pageshow', {persisted: true});
+    check('restoration respects actual input focus', state(h) === 'focused' && !h.scheduler.pendingTimers());
+    event(h.window, 'pagehide', {persisted: true}); h.document.activeElement = h.book;
+    event(h.window, 'pageshow', {persisted: true});
+    check('stale form focus does not leave restoration paused', state(h) === 'playing' && h.scheduler.pendingTimers() === 1);
+    c.destroy(); event(h.window, 'pageshow', {persisted: true});
+    check('destroyed login is not resurrected by history events', !listenerTotal(h) && !h.scheduler.pendingTimers() && h.kit.stats.createCalls === 1);
   });
 
   await group('reduced motion uses fixed spread and no automatic work', async () => {
