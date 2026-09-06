@@ -3,7 +3,7 @@
   'use strict';
   const instances = new WeakMap();
   let rendererModule;
-  const defaultLoad = () => (rendererModule ||= import('/scene/login-book-three.js?v=20260906v13r10').catch((error) => { rendererModule = null; throw error; }));
+  const defaultLoad = () => (rendererModule ||= import('/scene/login-book-three.js?v=20260907-return').catch((error) => { rendererModule = null; throw error; }));
   const FIRST_WAIT = 2600, HOLD = 3000, SWAP_MS = 680, TOPIC_COUNT = 4;
   const noop = () => ({ setPhase() {}, destroy() {} });
   function mount(root, { loadScene = defaultLoad } = {}) {
@@ -14,10 +14,11 @@
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
     const fine = window.matchMedia('(pointer: fine)');
     const removers = [];
-    let scene = null, destroyed = false, phase = 'idle', observer;
+    let scene = null, destroyed = false, suspended = false, phase = 'idle', observer, resumePreparation;
     let topic = 0, transition = null, focused = false, dragging = false;
     let timer = 0, frame = 0, generation = 0, deadline = 0, remaining = FIRST_WAIT, previous = 0;
     let pointer = null;
+    let visualTimer = 0;
     const view = { pitch: 0, yaw: 0 }, target = { pitch: 0, yaw: 0 };
     const clamp = (value, limit) => Math.max(-limit, Math.min(limit, value));
     function on(node, type, callback, options) {
@@ -26,7 +27,7 @@
       removers.push(() => node.removeEventListener(type, callback, options));
     }
     function locked() { return phase === 'loading' || phase === 'success'; }
-    function halted() { return focused || dragging || document.hidden || reduced.matches || locked(); }
+    function halted() { return focused || dragging || suspended || document.hidden || reduced.matches || locked(); }
     function moving() { return ['pitch', 'yaw'].some((key) => Math.abs(view[key] - target[key]) > .0004); }
     function stop() {
       generation += 1;
@@ -37,23 +38,23 @@
     function attribute(name, value) { if (book.getAttribute(name) !== value) book.setAttribute(name, value); }
     function labels() {
       root.dataset.bookTopic = String(topic);
-      root.dataset.motionState = destroyed ? 'destroyed' : !scene ? 'loading-visual' : reduced.matches ? 'reduced' : document.hidden ? 'hidden' : focused ? 'focused' : locked() ? phase : dragging ? 'dragging' : transition ? 'changing' : 'playing';
+      root.dataset.motionState = destroyed ? 'destroyed' : !scene ? 'loading-visual' : reduced.matches ? 'reduced' : suspended || document.hidden ? 'hidden' : focused ? 'focused' : locked() ? phase : dragging ? 'dragging' : transition ? 'changing' : 'playing';
       attribute('aria-label', '培训运营、师资推荐、课程交付、项目管理，就用研序。' + (reduced.matches ? '已减少动态效果。' : '主题自动轮播，可拖动查看书本。'));
       attribute('aria-disabled', String(!scene || reduced.matches || locked()));
     }
     function draw() {
-      if (!scene || destroyed || document.hidden) return;
+      if (!scene || destroyed || suspended || document.hidden) return;
       try { scene.render({ topic, transition: transition ? { next: transition.next, progress: transition.elapsed / SWAP_MS } : null, ...view }); }
       catch (_) { fail(); }
     }
     function frameLoop() {
-      if (frame || destroyed || !scene || document.hidden) return;
+      if (frame || destroyed || !scene || suspended || document.hidden) return;
       const token = generation;
       function tick(now) {
         if (destroyed || token !== generation) return;
         frame = 0;
         if (!root.isConnected) { destroy(); return; }
-        if (document.hidden) return;
+        if (suspended || document.hidden) return;
         const dt = previous ? Math.min(50, Math.max(0, now - previous)) : 16;
         previous = now;
         const blend = reduced.matches ? 1 : 1 - Math.exp(-dt / 110);
@@ -87,8 +88,9 @@
     }
     function sync() {
       if (destroyed) return;
+      watchPreparation();
       stop(); labels();
-      if (!scene || document.hidden) return;
+      if (!scene || suspended || document.hidden) return;
       draw();
       if ((transition && !halted()) || moving()) frameLoop();
       waitForNext();
@@ -114,9 +116,19 @@
       book.classList.remove('is-dragging');
     }
     function neutral() { target.pitch = target.yaw = 0; }
+    function watchPreparation() {
+      if (visualTimer) { window.clearTimeout(visualTimer); visualTimer = 0; }
+      // A stalled module request must not leave the book area blank indefinitely.
+      if (!destroyed && !scene && !suspended && !document.hidden) visualTimer = window.setTimeout(fail, 8000);
+    }
+    function resumeVisualPreparation() {
+      if (!suspended && !document.hidden) { const resume = resumePreparation; resumePreparation = null; resume?.(); }
+    }
     function destroy() {
       if (destroyed) return;
       destroyed = true; stop(); releasePointer(); observer?.disconnect();
+      watchPreparation();
+      resumePreparation?.(); resumePreparation = null;
       removers.splice(0).forEach((remove) => remove());
       const currentScene = scene; scene = null;
       try { currentScene?.dispose(); } catch (_) { /* Visual teardown cannot block authentication. */ }
@@ -179,18 +191,41 @@
     on(window, 'blur', () => { if (pointer) { releasePointer(); neutral(); sync(); } });
     on(form, 'focusin', () => { focused = true; releasePointer(); neutral(); settleText(); sync(); });
     on(form, 'focusout', (event) => { if (!form.contains(event.relatedTarget)) { focused = false; sync(); } });
-    on(document, 'visibilitychange', () => { releasePointer(); neutral(); if (!document.hidden) resize(); sync(); });
+    on(document, 'visibilitychange', () => {
+      releasePointer(); neutral();
+      if (!document.hidden) { resumeVisualPreparation(); resize(false); }
+      sync();
+    });
+    // Keep the scene alive in the back/forward cache, but never run timers in it.
+    on(window, 'pagehide', () => { suspended = true; releasePointer(); neutral(); sync(); });
+    on(window, 'pageshow', () => {
+      if (suspended) {
+        suspended = false;
+        focused = !!form?.contains(document.activeElement);
+        resumeVisualPreparation(); resize(false); sync();
+      }
+    });
     on(reduced, 'change', () => {
       neutral(); view.pitch = view.yaw = 0;
       if (reduced.matches) { releasePointer(); settleText(); }
       sync();
     });
-    function resize() { if (!destroyed && scene && !document.hidden) { try { scene.resize(); draw(); } catch (_) { fail(); } } }
+    function resize(redraw = true) {
+      if (!destroyed && scene && !suspended && !document.hidden) {
+        try { scene.resize(); if (redraw) draw(); } catch (_) { fail(); }
+      }
+    }
     on(window, 'resize', resize);
     if (window.ResizeObserver) { observer = new window.ResizeObserver(resize); observer.observe(book); }
-    controller.ready = Promise.resolve().then(loadScene).then((module) => {
+    watchPreparation();
+    controller.ready = Promise.resolve().then(loadScene).then(async (module) => {
       if (destroyed || !root.isConnected) { destroy(); return; }
-      const created = module.createBookScene(book, { onInvalidate: draw, onContextLost: fail });
+      const artwork = await module.prepareBookAssets?.();
+      while (!destroyed && root.isConnected && (suspended || document.hidden)) {
+        await new Promise((resolve) => { resumePreparation = resolve; });
+      }
+      if (destroyed || !root.isConnected) { destroy(); return; }
+      const created = module.createBookScene(book, { artwork, onInvalidate: draw, onContextLost: fail });
       if (destroyed) { created.dispose(); return; }
       scene = created;
       root.dataset.bookReady = 'true'; root.dataset.bookEngine = 'three-r' + created.revision;

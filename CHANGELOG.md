@@ -33,6 +33,12 @@ All notable changes to Yanxu Training OS. Dates follow the production release hi
   authentication, hidden-page and reduced-motion protections remain intact.
 - Rewrote every public release entry around supported capabilities and user outcomes,
   preserving original dates, version boundaries and honest feature limitations.
+- Returning from update notes reuses a verified preceding homepage history entry
+  where supported, retaining the book scene and carousel progress. Other navigation
+  keeps a normal home link, including direct visits and modified clicks.
+- Prepare and decode book artwork before the first visible frame, apply the final
+  paper material once, and avoid reallocating an unchanged canvas on restoration.
+  Missing artwork falls back safely without interrupting authentication.
 
 ### R11 preview iteration
 - Enlarged login public navigation to 17px on desktop / 16px on mobile. Added one
