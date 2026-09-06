@@ -483,7 +483,10 @@ async function main() {
     const mounted = /<script\b[^>]*\bsrc=["'](\/login-motion\.js\?v=([^"']+))["']/i.exec(index);
     const dynamicVersion = /login-book-three\.js\?v=([A-Za-z0-9._-]+)/.exec(motion)?.[1] || '';
     check('index mounts login-motion once', (index.match(/src=["']\/login-motion\.js\?/g) || []).length === 1);
-    check('HTML login-motion cache key matches Three generation', Boolean(mounted && dynamicVersion && mounted[2] === dynamicVersion), `${mounted?.[2] || 'missing'} vs ${dynamicVersion || 'missing'}`);
+    check('HTML refreshes the corrected autoplay controller', mounted?.[2] === '20260907-autoplay', mounted?.[2] || 'missing');
+    check('unchanged Three scene stays pinned', dynamicVersion === '20260906v13r10', dynamicVersion);
+    const app = fs.readFileSync(path.join(webRoot, 'app.js'), 'utf8');
+    check('book is an illustration, not a hidden pause button', /data-login-book role="img"/.test(app) && !/data-login-book role="button"|点击暂停文字轮播/.test(app));
   });
 
   await group('synchronous facade and delayed unload', async () => {
@@ -580,45 +583,58 @@ async function main() {
     controller.destroy();
   });
 
-  await group('user pause, remaining wait and stale callbacks', async () => {
+  await group('incidental clicks and keyboard events never stop autoplay', async () => {
     const h = createHarness(motion), c = await boot(h);
-    const stale = h.scheduler.timerIds()[0];
     h.scheduler.advanceTimers(700);
-    check('Space prevents default and pauses', key(h.book,' ').defaultPrevented && state(h) === 'paused');
-    check('explicit paused state is accessible', h.book.getAttribute('aria-pressed') === 'true' && /继续文字轮播/.test(h.book.getAttribute('aria-label')));
-    check('paused has no work', h.scheduler.pendingTimers() === 0 && h.scheduler.pendingFrames() === 0);
-    h.scheduler.forceTimer(stale); h.scheduler.advanceTimers(60000);
-    check('no catch-up or stale timer transition', topic(h) === 0 && h.scheduler.pendingFrames() === 0);
-    key(h.book,' ');
-    check('resume uses saved 1900ms', h.scheduler.nextTimerDueIn() === 1900 && h.book.getAttribute('aria-pressed') === 'false');
-    check('held key ignored', key(h.book,' ',true).defaultPrevented && state(h) === 'playing');
+    for (const value of [' ', 'Enter']) {
+      check(value + ' does not intercept keyboard or pause', !key(h.book,value).defaultPrevented && state(h) === 'playing');
+      check(value + ' key repeat cannot pause', !key(h.book,value,true).defaultPrevented && state(h) === 'playing');
+    }
+    for (const detail of [0, 1, 2]) event(h.book,'click',{detail});
+    check('no hidden pause button semantics', h.book.getAttribute('aria-pressed') === null && !/暂停|继续文字轮播/.test(h.book.getAttribute('aria-label')));
+    check('clicks preserve the remaining wait', h.scheduler.nextTimerDueIn() === 1900);
     h.scheduler.advanceTimers(1900);
     for(let i=0;i<9;i++) h.scheduler.stepFrame(50);
+    const progress = latestRender(h).transition.progress;
+    pointer(h.book,'pointerdown',{pointerId:30});
+    check('press alone leaves an in-progress transition running', state(h) === 'changing' && latestRender(h).transition.progress === progress);
+    pointer(h.book,'pointerup',{pointerId:30}); event(h.book,'click',{detail:1});
+    h.scheduler.runFrames();
+    check('tap during a swap completes normally', topic(h) === 1 && state(h) === 'playing' && h.scheduler.pendingTimers() === 1);
+    const stale = h.scheduler.timerIds()[0];
+    event(h.form,'focusin');
+    h.scheduler.forceTimer(stale);
+    check('stale timer cannot animate during form focus', state(h) === 'focused' && !h.scheduler.pendingFrames());
+    event(h.form,'focusout',{relatedTarget:h.book});
+    h.scheduler.advanceTimers(3000); h.scheduler.stepFrame(16);
     const staleFrame = h.scheduler.frameIds()[0];
-    key(h.book,' ');
-    check('mid-swap pause settles readable incoming headline', topic(h) === 1 && !latestRender(h).transition && state(h) === 'paused');
+    c.setPhase('loading');
     const renders=h.kit.scene.renders.length;
     h.scheduler.forceFrame(staleFrame, h.scheduler.now+5000);
     check('cancelled RAF cannot render', h.kit.scene.renders.length === renders);
-    c.setPhase('loading'); c.setPhase('error');
-    check('failed login preserves user pause', state(h) === 'paused' && h.scheduler.pendingTimers() === 0);
-    key(h.book,'Enter');
-    check('Enter resumes with full hold after settled transition', state(h) === 'playing' && h.scheduler.nextTimerDueIn() === 3000);
+    c.setPhase('error');
+    check('failed login resumes automatically outside form focus', state(h) === 'playing' && h.scheduler.pendingTimers() === 1);
     c.destroy();
   });
 
-  await group('tap toggles text, drag only changes perspective', async () => {
+  await group('taps preserve autoplay, drag only changes perspective', async () => {
     const h=createHarness(motion), c=await boot(h);
     pointer(h.book,'pointerdown',{pointerId:7});
-    check('hit captures pointer and stops timer', h.book.capturedPointers.has(7) && state(h)==='dragging' && !h.scheduler.pendingTimers());
+    check('hit captures pointer without stopping timer', h.book.capturedPointers.has(7) && state(h)==='playing' && h.scheduler.pendingTimers()===1);
     const small=pointer(h.book,'pointermove',{pointerId:7,clientX:26});
     check('six pixels still a tap', !small.defaultPrevented && !h.book.classList.contains('is-dragging'));
     pointer(h.book,'pointerup',{pointerId:7,clientX:26});
-    check('tap pauses without changing topic', state(h)==='paused' && topic(h)===0 && !h.book.capturedPointers.has(7));
+    check('tap never pauses or changes topic', state(h)==='playing' && topic(h)===0 && !h.book.capturedPointers.has(7));
     event(h.book,'click',{detail:1});
-    check('native follow-up click does not toggle twice', state(h)==='paused');
+    check('native follow-up click keeps autoplay', state(h)==='playing');
     event(h.book,'click',{detail:0});
-    check('assistive click resumes', state(h)==='playing');
+    check('assistive click keeps autoplay', state(h)==='playing');
+    for (let i=0;i<20;i++) {
+      pointer(h.book,'pointerdown',{pointerId:70+i,pointerType:'touch'});
+      pointer(h.book,'pointerup',{pointerId:70+i,pointerType:'touch'});
+      event(h.book,'click',{detail:1});
+    }
+    check('repeated touch taps retain exactly one scheduled advance', state(h)==='playing' && h.scheduler.pendingTimers()===1 && h.scheduler.nextTimerDueIn()===2600);
     for(const k of ['ArrowLeft','ArrowRight','Home']){
       const ev=key(h.book,k);
       check('removed page key has no action: '+k, !ev.defaultPrevented && topic(h)===0 && !h.scheduler.pendingFrames());
@@ -691,7 +707,7 @@ async function main() {
     const deferred=createDeferred(), h=createHarness(motion,{loadScene:()=>deferred.promise}), c=h.mount();
     c.setPhase('loading'); await microtasks(); deferred.resolve(h.kit.module); await c.ready;
     check('buffered loading blocks first timer', state(h)==='loading' && !h.scheduler.pendingTimers() && !h.scheduler.pendingFrames());
-    for(const k of [' ','Enter']) check('loading guards '+k, key(h.book,k).defaultPrevented && !h.scheduler.pendingTimers());
+    for(const k of [' ','Enter']) check('loading has no keyboard toggle '+k, !key(h.book,k).defaultPrevented && !h.scheduler.pendingTimers());
     pointer(h.book,'pointerdown'); check('loading guards capture', h.book.capturedPointers.size===0);
     c.setPhase('error'); check('error resumes intended remaining hold', state(h)==='playing' && h.scheduler.nextTimerDueIn()===2600);
     c.setPhase('nonsense'); check('unknown phase normalizes', h.root.dataset.motionPhase==='idle');

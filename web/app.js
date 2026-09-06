@@ -795,7 +795,7 @@
         </header>
         <div class="login-layout">
           <section class="login-visual" data-login-visual aria-label="培训运营，就用研序">
-            <div class="book-stage" data-login-book role="button" tabindex="0" aria-label="培训运营，就用研序。点击暂停文字轮播" title="点击暂停 / 继续 · 拖动查看">
+            <div class="book-stage" data-login-book role="img" aria-label="培训运营、师资推荐、课程交付、项目管理，就用研序。主题自动轮播。" title="拖动查看书本">
               <div class="book-fallback" aria-hidden="true">
                 <div class="book-fallback-left"><strong class="book-heading-art"><img src="/assets/book-headline-operations-v13r9.webp" alt="培训运营" width="960" height="240"></strong><span class="book-endorsement"><img src="/assets/book-endorsement-v13r8.png" alt="就用 →" width="960" height="320"></span></div>
                 <div class="book-fallback-right">${brandSymbol()}<b>研序</b></div>

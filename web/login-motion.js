@@ -15,7 +15,7 @@
     const fine = window.matchMedia('(pointer: fine)');
     const removers = [];
     let scene = null, destroyed = false, phase = 'idle', observer;
-    let topic = 0, transition = null, paused = false, focused = false, dragging = false;
+    let topic = 0, transition = null, focused = false, dragging = false;
     let timer = 0, frame = 0, generation = 0, deadline = 0, remaining = FIRST_WAIT, previous = 0;
     let pointer = null;
     const view = { pitch: 0, yaw: 0 }, target = { pitch: 0, yaw: 0 };
@@ -26,7 +26,7 @@
       removers.push(() => node.removeEventListener(type, callback, options));
     }
     function locked() { return phase === 'loading' || phase === 'success'; }
-    function halted() { return paused || focused || dragging || document.hidden || reduced.matches || locked(); }
+    function halted() { return focused || dragging || document.hidden || reduced.matches || locked(); }
     function moving() { return ['pitch', 'yaw'].some((key) => Math.abs(view[key] - target[key]) > .0004); }
     function stop() {
       generation += 1;
@@ -37,9 +37,8 @@
     function attribute(name, value) { if (book.getAttribute(name) !== value) book.setAttribute(name, value); }
     function labels() {
       root.dataset.bookTopic = String(topic);
-      root.dataset.motionState = destroyed ? 'destroyed' : !scene ? 'loading-visual' : reduced.matches ? 'reduced' : document.hidden ? 'hidden' : focused ? 'focused' : locked() ? phase : dragging ? 'dragging' : paused ? 'paused' : transition ? 'changing' : 'playing';
-      attribute('aria-label', '培训运营、师资推荐、课程交付、项目管理，就用研序。' + (reduced.matches ? '已减少动态效果。' : paused ? '点击或按空格继续文字轮播。' : '点击或按空格暂停文字轮播。'));
-      attribute('aria-pressed', String(paused));
+      root.dataset.motionState = destroyed ? 'destroyed' : !scene ? 'loading-visual' : reduced.matches ? 'reduced' : document.hidden ? 'hidden' : focused ? 'focused' : locked() ? phase : dragging ? 'dragging' : transition ? 'changing' : 'playing';
+      attribute('aria-label', '培训运营、师资推荐、课程交付、项目管理，就用研序。' + (reduced.matches ? '已减少动态效果。' : '主题自动轮播，可拖动查看书本。'));
       attribute('aria-disabled', String(!scene || reduced.matches || locked()));
     }
     function draw() {
@@ -99,10 +98,6 @@
       topic = transition.elapsed >= SWAP_MS * .5 ? transition.next : topic;
       transition = null; remaining = HOLD;
     }
-    function toggle() {
-      if (destroyed || !scene || locked() || reduced.matches) return;
-      paused = !paused; settleText(); sync();
-    }
     function fail() {
       if (destroyed) return;
       destroy(); root.dataset.motionState = 'unavailable';
@@ -143,21 +138,23 @@
       if (!scene || reduced.matches || (event.button !== undefined && event.button !== 0) || pointer || locked()) return;
       if (!safePick(event.clientX, event.clientY)) return;
       pointer = { id: event.pointerId, x: event.clientX, y: event.clientY, pitch: target.pitch, yaw: target.yaw, moved: false };
-      dragging = true; settleText(); sync();
+      // A press is not a drag. Incidental taps must not interrupt the carousel.
       try { book.setPointerCapture?.(event.pointerId); } catch (_) {}
     });
     on(book, 'pointermove', (event) => {
       if (!scene || reduced.matches || locked() || focused) return;
       if (pointer && pointer.id === event.pointerId) {
         const dx = event.clientX - pointer.x, dy = event.clientY - pointer.y;
-        if (Math.hypot(dx, dy) > 6) pointer.moved = true;
+        if (!pointer.moved && Math.hypot(dx, dy) > 6) {
+          pointer.moved = true; dragging = true; settleText(); sync();
+        }
         if (pointer.moved) {
           if (event.cancelable) event.preventDefault();
           target.yaw = clamp(pointer.yaw + dx * .0015, .18);
           target.pitch = clamp(pointer.pitch + dy * .0012, .12);
           book.classList.add('is-dragging'); frameLoop();
         }
-      } else if (fine.matches && !paused && event.pointerType !== 'touch') {
+      } else if (fine.matches && event.pointerType !== 'touch') {
         const hit = safePick(event.clientX, event.clientY);
         target.yaw = clamp((hit?.x || 0) * .025, .045);
         target.pitch = clamp(-(hit?.y || 0) * .025, .035);
@@ -166,18 +163,12 @@
     }, { passive: false });
     on(book, 'pointerup', (event) => {
       if (!pointer || pointer.id !== event.pointerId) return;
-      const old = pointer; releasePointer(); neutral();
-      if (!old.moved) toggle(); else sync();
+      releasePointer(); neutral(); sync();
     });
     for (const type of ['pointercancel', 'lostpointercapture']) on(book, type, (event) => {
       if (pointer && pointer.id === event.pointerId) { releasePointer(); neutral(); sync(); }
     });
     on(book, 'pointerleave', () => { if (!pointer) { neutral(); frameLoop(); } });
-    on(book, 'click', (event) => { if (event.detail === 0) toggle(); });
-    on(book, 'keydown', (event) => {
-      if (!['Enter', ' '].includes(event.key)) return;
-      event.preventDefault(); if (!event.repeat) toggle();
-    });
     on(form, 'focusin', () => { focused = true; releasePointer(); neutral(); settleText(); sync(); });
     on(form, 'focusout', (event) => { if (!form.contains(event.relatedTarget)) { focused = false; sync(); } });
     on(document, 'visibilitychange', () => { releasePointer(); neutral(); if (!document.hidden) resize(); sync(); });

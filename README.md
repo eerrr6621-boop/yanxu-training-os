@@ -6,9 +6,12 @@ A full-lifecycle training-operations platform: from client demand to bid, projec
 [![java](https://img.shields.io/badge/Java-17-orange.svg)](src/com/training/Main.java)
 [![no-build](https://img.shields.io/badge/frontend-no--build-brightgreen.svg)](web/)
 [![db](https://img.shields.io/badge/db-embedded%20H2-lightgrey.svg)](src/com/training/Db.java)
-[![tests](https://img.shields.io/badge/regression-221%20checks-success.svg)](scripts/check.sh)
+[![tests](https://github.com/eerrr6621-boop/yanxu-training-os/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/eerrr6621-boop/yanxu-training-os/actions/workflows/ci.yml)
 
 > 中文文档见 [README_zh.md](README_zh.md)
+
+Current release: **1.9.0** (2026-09-07). See the [live site](https://training.jxyftd.tech/),
+[product updates](https://training.jxyftd.tech/updates.html), and [release verification](docs/RELEASE_V13.md).
 
 The V13 interface uses a continuous project workspace, quiet navigation and
 native system typography. See the [visual maintenance guide](docs/DESIGN_V13.md).
@@ -37,7 +40,7 @@ It is deliberately built with **no framework and no build step**: a single Java 
 - **Evaluation surveys** — draft → publish → anonymous public answer link → live statistics (score distribution, single-choice charts, text feedback) → close.
 - **Money that adds up** — instructor fees auto-computed from confirmed hours × rate with duplicate-generation protection; collections support partial payments and settlement; costs roll into an estimated balance.
 - **Responsive & accessible** — desktop / tablet / phone layouts, keyboard navigation, focus management, `prefers-reduced-motion` respected everywhere.
-- **Regression suite** — 52 end-to-end API checks, 137 business-integrity/security checks and 32 faculty-matching checks; three fresh isolated loopback instances, 221 checks in total.
+- **Regression suite** — 52 end-to-end API checks, 137 business-integrity/security checks and 68 faculty-matching checks; three fresh isolated loopback instances, 257 API checks in total, plus separate frontend, locality/migration and offline weather suites.
 
 ## Quick start
 

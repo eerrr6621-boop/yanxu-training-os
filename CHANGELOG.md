@@ -22,11 +22,17 @@ All notable changes to Yanxu Training OS. Dates follow the production release hi
 - Consolidated weather attribution into one accurate provider line. The QWeather
   homepage and every required metadata attribution link remain keyboard accessible;
   removed the standalone numbered source label without implying sponsorship.
-- GitHub synchronization is separate and remains pending workflow authorization
-  until a remote push and CI are independently verified.
+- GitHub workflow authorization was completed on 2026-09-07. Repository
+  synchronization is verified independently through the main branch and CI;
+  website activation alone does not imply a successful source push.
 - Simplified the public update timeline: larger aligned dates, no internal counters
   or missing-time captions, with verified timestamps retained. Added author email
   and a public source link in the notes footer only, leaving login navigation unchanged.
+- Removed the hidden click/keyboard pause toggle from the login book. Incidental
+  taps preserve autoplay; only an actual drag suspends it until release. Form focus,
+  authentication, hidden-page and reduced-motion protections remain intact.
+- Rewrote every public release entry around supported capabilities and user outcomes,
+  preserving original dates, version boundaries and honest feature limitations.
 
 ### R11 preview iteration
 - Enlarged login public navigation to 17px on desktop / 16px on mobile. Added one
