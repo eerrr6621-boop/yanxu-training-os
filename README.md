@@ -122,7 +122,12 @@ never part of this quality gate. Security-sensitive changes should also update
 
 ## Deployment (reference)
 
-The reference production topology is a systemd service bound to `127.0.0.1` behind an nginx TLS reverse proxy, with the H2 file owned by a dedicated unprivileged user and hardened unit options (`ProtectSystem=strict`, `PrivateTmp=true`, `NoNewPrivileges=true`). Front-end releases are atomic: stage → checksum-verify → snapshot `web-before` → swap → verify, with a one-command rollback path. No credentials, IPs or private data are shipped in this repository.
+The reference production topology is a systemd service bound to `127.0.0.1` behind an nginx TLS reverse proxy, with the H2 file owned by a dedicated unprivileged user and hardened unit options (`ProtectSystem=strict`, `PrivateTmp=true`, `NoNewPrivileges=true`). Front-end releases are atomic: stage → checksum-verify → snapshot `web-before` → swap → verify, with a one-command rollback path. No credentials, visitor IP records or private business data are shipped in this repository.
+
+R7 adds an optional local-IP city/weather surface and public update timeline.
+Weather is disabled until configured; see [docs/WEATHER.md](docs/WEATHER.md) for
+provider credentials, trusted proxy requirements and privacy/accuracy boundaries.
+This preview iteration is not a production deployment.
 
 ## Vendor assets & licenses
 
@@ -131,6 +136,7 @@ The reference production topology is a systemd service bound to `127.0.0.1` behi
 - [H2 Database Engine](https://github.com/h2database/h2database) — MPL-2.0 / EPL-1.0 (`lib/h2.jar`)
 - [Apache PDFBox](https://pdfbox.apache.org/) — Apache-2.0 (`lib/pdfbox-app-3.0.8.jar`)
 - Eclipse ECJ compiler — EPL-2.0 (`lib/ecj.jar`, used only by the launch scripts)
+- [ip2region](https://github.com/lionsoul2014/ip2region) — Apache-2.0 OR MIT (Java 3.3.7 and pinned v3.17.0 offline city data; source/checksums in `lib/ip2region/README.md`)
 
 Full redistributed license and notice texts are collected in
 [third_party_licenses](third_party_licenses/README.md).

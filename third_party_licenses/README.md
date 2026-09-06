@@ -11,6 +11,7 @@ following third-party artifacts under their own licenses:
 | Apache PDFBox application (`lib/pdfbox-app-3.0.8.jar`) | 3.0.8 | `PDFBOX-LICENSE.txt`, `PDFBOX-NOTICE.txt` (Apache-2.0) |
 | Lucide (`web/lucide.min.js`) | 1.8.0 | `LUCIDE-LICENSE.txt` (ISC) |
 | Three.js (`web/vendor/three-r171/`) | r171 | `THREE-LICENSE.txt` (MIT) |
+| ip2region Java and offline IPv4/IPv6 data (`lib/ip2region-3.3.7.jar`, `lib/ip2region/`) | Java 3.3.7 / data v3.17.0 | [`IP2REGION-LICENSE.md`](IP2REGION-LICENSE.md), also beside data in `lib/ip2region/LICENSE.md` (Apache-2.0 OR MIT); source and hashes in `lib/ip2region/README.md` |
 
 The license texts are provided for redistribution compliance and do not change
 the license of this project's original source code. Upstream copyright and

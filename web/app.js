@@ -182,7 +182,9 @@
   let loginRotSwap = null;
   let v7GlowHandler = null;
   let loginMotion = null;
+  let environmentPanel = null;
   function disposeLoginExperience() {
+    environmentPanel?.destroy(); environmentPanel = null;
     try { loginMotion?.destroy(); } catch (_) { /* Optional artwork must not block navigation. */ }
     finally { loginMotion = null; }
   }
@@ -786,9 +788,10 @@
     sceneBridge.setMode('login');
     document.getElementById('app').innerHTML = `
       <main class="v6-login login-learning" aria-label="研序登录">
+        <div class="login-ambient" aria-hidden="true"><span></span><span></span></div>
         <header class="login-topbar">
           <div class="orbit-brand">${brandSymbol()}<span>研序</span></div>
-          <a class="login-materials" href="/materials.html">${businessArt('materials')}<span>培训资料下载</span>${icon('arrow-up-right')}</a>
+          <nav class="login-public-nav" aria-label="公共页面"><a class="login-materials" href="/materials.html">${businessArt('materials')}<span>培训资料下载</span>${icon('arrow-up-right')}</a><a class="login-history" href="/updates.html">往期更新</a></nav>
         </header>
         <div class="login-layout">
           <section class="login-visual" data-login-visual aria-label="研序功能翻页介绍">
@@ -800,7 +803,8 @@
             </div>
           </section>
           <section class="orbit-panel" aria-labelledby="login-heading">
-            <div class="login-panel-heading"><span class="login-product-name">培训运营工作台</span><h1 id="login-heading">登录研序</h1></div>
+            <div class="login-environment" data-environment><div class="environment-time"><time data-local-clock aria-label="设备本地时间">—</time><span data-local-date></span></div><div class="environment-weather" data-local-weather aria-label="所在城市天气">正在获取天气…</div></div>
+            <div class="login-panel-heading"><span class="login-product-name">YANXU / WORKSPACE</span><h1 id="login-heading">欢迎回到研序</h1></div>
             <form id="login-form">
               <div class="login-err" id="login-err" role="alert" aria-live="polite"></div>
               <div class="login-credentials">
@@ -811,10 +815,12 @@
               <div class="v10-caps" id="caps-lock-note" role="status" aria-live="polite"></div>
               <button type="submit" class="login-submit" id="login-btn"><span>进入工作台</span>${icon('arrow-right')}</button>
             </form>
+            <a class="login-release-link" href="/updates.html"><span>了解研序的每一次进步</span>${icon('arrow-up-right')}</a>
           </section>
         </div>
       </main>`;
     refreshIcons(document.getElementById('app'));
+    environmentPanel = window.YanxuEnvironment?.mount($('[data-environment]'));
     const v6bg = $('.v6-bg');
     if (v6bg && !document.body.classList.contains('yx-v13') && !prefersReducedMotion() && window.matchMedia('(pointer: fine)').matches) {
       if (v6PointerHandler) window.removeEventListener('pointermove', v6PointerHandler);
@@ -1069,6 +1075,7 @@
             ${groups.map((g) => `<div class="nav-group"><div class="nav-label">${esc(g.name)}</div>${g.items.map((n) =>
               `<button type="button" class="nav-item ${selectedNavigation === n.k ? 'active' : ''}" data-nav="${n.k}" ${selectedNavigation === n.k ? 'aria-current="page"' : ''}>${businessArt(n.art)}<span>${n.l}</span></button>`).join('')}</div>`).join('')}
           </nav>
+          <a class="sidebar-updates" href="/updates.html">${icon('history')}<span>往期更新</span>${icon('arrow-up-right')}</a>
         </aside>
         <button type="button" class="sidebar-scrim" id="sidebar-scrim" aria-label="关闭导航" aria-hidden="true" tabindex="-1"></button>
         <div class="main">
@@ -1076,6 +1083,7 @@
           <div class="topbar">
             <div class="topbar-start"><button type="button" class="icon-btn menu-btn" id="menu-btn" aria-label="打开导航" aria-controls="primary-sidebar" aria-expanded="false">${icon('menu')}</button><div class="topbar-title"><div><div class="page-title" id="page-title"></div><div class="page-subtitle" id="page-subtitle"></div></div></div></div>
             <div class="topbar-actions">
+              <div class="topbar-environment" data-environment><div class="environment-time"><time data-local-clock aria-label="设备本地时间">—</time><span data-local-date></span></div><div class="environment-weather" data-local-weather aria-label="所在城市天气">正在获取天气…</div></div>
               <button type="button" class="top-command" id="global-command" aria-label="搜索功能或项目" title="搜索功能或项目（⌘ K / Ctrl K）">${icon('search')}<span>搜索</span></button>
               <details class="user user-menu" id="user-menu">
                 <summary aria-label="打开账户菜单" title="${esc(u.name || u.username)} · ${esc(u.roleName)}"><span class="user-avatar" aria-hidden="true">${icon('user-round')}</span><span class="user-name"><b>${esc(u.name || u.username)}</b></span>${icon('chevron-down')}</summary>
@@ -1099,6 +1107,7 @@
         </nav>
       </div>`;
     $$('.nav-item').forEach((n) => (n.onclick = () => navigateTo(n.dataset.nav)));
+    environmentPanel = window.YanxuEnvironment?.mount($('[data-environment]'));
     $('#btn-logout').onclick = () => confirmBox('确定退出研序工作台？当前账号需要重新验证后才能继续访问。', async () => {
       // 只有服务端确认撤销会话后才切回登录页。网络失败时保留当前画面，
       // 避免 HttpOnly Cookie 仍有效却向用户显示“已安全退出”。

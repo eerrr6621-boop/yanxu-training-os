@@ -10,6 +10,8 @@ node scripts/test_login_book.cjs
 node scripts/test_book_geometry.mjs
 node scripts/test_book_binding.cjs
 node scripts/check_business_art.cjs
+node scripts/test_r7.cjs
+node scripts/test_environment.cjs
 check_root="$(mktemp -d "${TMPDIR:-/tmp}/yanxu-check.XXXXXX")"
 check_pid=""
 check_java="${TRAINING_CHECK_JAVA:-java}"
@@ -22,9 +24,11 @@ cleanup() {
 trap cleanup EXIT
 mkdir -p "$check_root/out"
 "$check_java" -jar lib/ecj.jar -17 -encoding UTF-8 \
-  -cp 'lib/h2.jar:lib/pdfbox-app-3.0.8.jar' -d "$check_root/out" src/com/training/*.java
+  -cp 'lib/h2.jar:lib/pdfbox-app-3.0.8.jar:lib/ip2region-3.3.7.jar' -d "$check_root/out" src/com/training/*.java
 "$check_java" -jar lib/ecj.jar -17 -encoding UTF-8 -cp "$check_root/out:lib/h2.jar:lib/pdfbox-app-3.0.8.jar" -d "$check_root/out" scripts/DispatchPreferenceTest.java
 "$check_java" -cp "$check_root/out:lib/h2.jar:lib/pdfbox-app-3.0.8.jar" com.training.DispatchPreferenceTest
+"$check_java" -jar lib/ecj.jar -17 -encoding UTF-8 -cp "$check_root/out:lib/ip2region-3.3.7.jar" -d "$check_root/out" scripts/WeatherTest.java
+"$check_java" -cp "$check_root/out:lib/ip2region-3.3.7.jar" com.training.WeatherTest
 for check_file in web/app.js web/materials.js test.js test_integrity.js test_faculty.js; do
   node --check "$check_file"
 done
@@ -35,7 +39,7 @@ run_suite() {
   mkdir -p "$check_root/${suite%.js}"
   "$check_java" -Dfile.encoding=UTF-8 -Dbootstrap.demo=true -Dbind.address=127.0.0.1 \
     -Ddata.dir="$check_root/${suite%.js}" \
-    -cp "$check_root/out:lib/h2.jar:lib/pdfbox-app-3.0.8.jar" com.training.Main "$port" \
+    -cp "$check_root/out:lib/h2.jar:lib/pdfbox-app-3.0.8.jar:lib/ip2region-3.3.7.jar" com.training.Main "$port" \
     >"$check_root/${suite%.js}.log" 2>&1 &
   check_pid=$!
   for ((attempt = 0; attempt < 80; attempt++)); do

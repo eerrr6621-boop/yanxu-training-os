@@ -10,6 +10,7 @@ const ASSETS = {
   projects: '/assets/icons/projects-v13.png',
   faculty: '/assets/icons/faculty-v13.png',
   calendar: '/assets/icons/calendar-v13.png',
+  paper: '/assets/book-paper-v13r7.jpg',
 };
 const CONTENT = [
   { title: '培训运营', tags: '需求 · 项目 · 进度', art: 'projects', lines: ['专业匹配', '有据可依。'] },
@@ -25,7 +26,7 @@ export function createBookScene(host, { onInvalidate = () => {}, onContextLost =
   scene.add(book);
   const geo = (value) => { geometries.add(value); return value; };
   const mat = (value) => { materials.add(value); return value; };
-  const images = {}, prints = [];
+  const images = {}, prints = [], paperMaterials = [];
   let lastState = { page: 0, turn: null, pitch: 0, yaw: 0, hover: 0 };
 
   function dispose() {
@@ -57,8 +58,8 @@ export function createBookScene(host, { onInvalidate = () => {}, onContextLost =
     const camera = new THREE.PerspectiveCamera(30, 1, .1, 30);
     camera.position.set(0, .05, 6.5);
     camera.lookAt(0, 0, 0);
-    scene.add(new THREE.HemisphereLight(0xe8f0ff, 0x52647d, 1));
-    const key = new THREE.DirectionalLight(0xfffcf6, 3.1);
+    scene.add(new THREE.HemisphereLight(0xf6f8ff, 0x8994a2, 1.2));
+    const key = new THREE.DirectionalLight(0xffffff, 2.7);
     shadowLight = key;
     key.position.set(-3.2, 4.5, 5.5);
     key.castShadow = true;
@@ -80,7 +81,8 @@ export function createBookScene(host, { onInvalidate = () => {}, onContextLost =
       if (mirror) { texture.repeat.x = -1; texture.offset.x = 1; }
       textures.add(texture);
       function repaint() {
-        ctx.fillStyle = '#fafbf9'; ctx.fillRect(0, 0, PRINT_W, PRINT_H);
+        ctx.fillStyle = '#fbfcfa'; ctx.fillRect(0, 0, PRINT_W, PRINT_H);
+        if (images.paper) { ctx.globalAlpha = .28; ctx.drawImage(images.paper, 0, 0, PRINT_W, PRINT_H); ctx.globalAlpha = 1; }
         const edge = ctx.createLinearGradient(0, 0, PRINT_W, 0);
         if (kind === 'left') { edge.addColorStop(.935, 'rgba(68,64,59,0)'); edge.addColorStop(1, 'rgba(68,64,59,.075)'); }
         else { edge.addColorStop(0, 'rgba(68,64,59,.075)'); edge.addColorStop(.065, 'rgba(68,64,59,0)'); }
@@ -103,12 +105,15 @@ export function createBookScene(host, { onInvalidate = () => {}, onContextLost =
       }
       prints.push(repaint); repaint(); return texture;
     }
-    const paper = (map, side = THREE.FrontSide) => mat(new THREE.MeshStandardMaterial({ map, color: 0xffffff, roughness: .94, metalness: 0, side }));
-    const coverMaterial = mat(new THREE.MeshStandardMaterial({ color: 0x30435b, roughness: .85, metalness: 0 }));
+    const paper = (map, side = THREE.FrontSide) => {
+      const value = mat(new THREE.MeshStandardMaterial({ map, color: 0xffffff, roughness: .91, metalness: 0, side }));
+      paperMaterials.push(value); return value;
+    };
+    const coverMaterial = mat(new THREE.MeshStandardMaterial({ color: 0xb9c6d6, roughness: .72, metalness: .08 }));
     const edgeCanvas = document.createElement('canvas'); edgeCanvas.width = 256; edgeCanvas.height = 128;
     const edgeContext = edgeCanvas.getContext('2d');
     if (!edgeContext) throw new Error('Paper edge print unavailable');
-    edgeContext.fillStyle = '#e9e5dc'; edgeContext.fillRect(0, 0, 256, 128);
+    edgeContext.fillStyle = '#e9eaE7'; edgeContext.fillRect(0, 0, 256, 128);
     for (let row = 1; row < 128; row += 3) {
       edgeContext.fillStyle = row % 16 === 1 ? 'rgba(85,76,62,.09)' : 'rgba(85,76,62,.035)';
       edgeContext.fillRect(0, row, 256, .65);
@@ -223,7 +228,15 @@ export function createBookScene(host, { onInvalidate = () => {}, onContextLost =
     }
     Object.entries(ASSETS).forEach(([name, url]) => {
       const image = new Image();
-      const load = () => { if (disposed) return; images[name] = image; prints.forEach((repaint) => repaint()); onInvalidate(); };
+      const load = () => {
+        if (disposed) return; images[name] = image;
+        if (name === 'paper') {
+          const relief = new THREE.Texture(image); relief.needsUpdate = true; textures.add(relief);
+          relief.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
+          paperMaterials.forEach(material => { material.bumpMap = relief; material.bumpScale = .006; material.needsUpdate = true; });
+        }
+        prints.forEach((repaint) => repaint()); onInvalidate();
+      };
       const error = () => { if (!disposed) onInvalidate(); };
       pendingImages.push({ image, load, error }); image.addEventListener('load', load); image.addEventListener('error', error); image.src = url;
     });

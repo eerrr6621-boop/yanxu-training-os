@@ -4,6 +4,24 @@ All notable changes to Yanxu Training OS. Dates follow the production release hi
 
 ## [1.9.0] — 2026-09-06 · Clarity & Native-feeling Workspace
 
+### R7 preview iteration
+- Replaced the ink-blue login stage and sidebar with a continuous silver-white
+  workspace, restrained moving light, a focused credential panel and local clock.
+  ImageGen fine-fiber paper is used in the live Three.js page material; the finite
+  introduction, page interaction, reduced motion and disposal remain intact.
+- Redesigned public materials as category navigation and compact file rows, with
+  empty/filter recovery, readable summaries and unchanged batch management rights.
+- Added a public update timeline with 18 documented releases/preview iterations.
+  Recorded dates and preview status are explicit, without inventing deployment dates.
+- Added optional silent IP-based weather: bundled IPv4/IPv6 city lookup is local;
+  only province/city is sent to QWeather. No browser geolocation, city picker,
+  guessed districts, retained visitor IPs or server-location fallback.
+  City cache, single-flight, bounded background work and a provider request budget
+  isolate failures from authentication. Requires operator weather credentials;
+  no live provider was configured or called during this iteration.
+- Added offline weather, 80-request concurrency, public history and asset integrity
+  checks. R7 remains local preview; GitHub push and production deployment are pending.
+
 ### R6 preview iteration
 - Explicit pre-bid recommendation entry from customer demands, carrying independent
   training region, delivery mode and time-of-day fields without creating projects.

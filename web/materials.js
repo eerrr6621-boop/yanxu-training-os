@@ -47,7 +47,7 @@
   }
 
   function dateLabel(value) {
-    if (!value) return '刚刚更新';
+    if (!value) return '日期未记录';
     const date = new Date(String(value).replace(' ', 'T'));
     if (Number.isNaN(date.getTime())) return String(value).slice(0, 10);
     return new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'short', day: 'numeric' }).format(date);
@@ -89,12 +89,16 @@
   function renderGrid() {
     const root = $('#material-grid');
     const items = visibleItems();
+    $('#library-heading').textContent = state.category;
     root.setAttribute('aria-busy', 'false');
     $('#library-summary').textContent = state.canManage ? `显示 ${items.length} / ${state.items.length} 份资料（含下架内容）` : `找到 ${items.length} 份可下载资料`;
     $('#material-count').textContent = state.items.filter((item) => item.status === undefined || item.status === '上架').length;
     $('#category-count').textContent = new Set(state.items.filter((item) => item.status === undefined || item.status === '上架').map((item) => item.category || '综合学习包')).size;
     if (!items.length) {
-      root.innerHTML = `<div class="material-empty">${icon(state.query ? 'search-x' : 'library')}<b>${state.query ? '没有匹配的资料' : '资料正在整理中'}</b><p>${state.query ? '换个关键词或分类再试试。' : '管理员上架后会第一时间出现在这里。'}</p></div>`;
+      const filtered = Boolean(state.query.trim()) || state.category !== '全部资料';
+      root.innerHTML = `<div class="material-empty">${icon(filtered ? 'search-x' : 'files')}<b>${filtered ? '没有找到匹配资料' : state.canManage ? '从第一份学习包开始' : '暂无公开资料'}</b><p>${filtered ? '试试其他关键词，或返回全部资料。' : state.canManage ? '上传课程讲义、工具模板或压缩包，支持批量添加。' : '新的学习资料上架后，将在这里提供下载。'}</p>${filtered ? '<button type="button" class="material-empty-action" data-reset-filter>查看全部资料</button>' : state.canManage ? '<button type="button" class="material-empty-action" data-empty-upload>上传资料</button>' : ''}</div>`;
+      $('[data-reset-filter]', root)?.addEventListener('click', () => { state.category = '全部资料'; state.query = ''; $('#material-search').value = ''; renderCategories(); renderGrid(); });
+      $('[data-empty-upload]', root)?.addEventListener('click', openUpload);
       refreshIcons(root);
       return;
     }
@@ -106,22 +110,18 @@
         <button type="button" data-toggle="${item.id}" title="${online ? '下架' : '上架'}" aria-label="${online ? '下架' : '上架'} ${esc(item.title)}">${icon(online ? 'archive' : 'cloud-upload')}</button>
         <button type="button" class="danger" data-delete="${item.id}" title="删除资料" aria-label="删除 ${esc(item.title)}">${icon('trash-2')}</button>` : '';
       return `<article class="material-card ${online ? '' : 'is-offline'}" data-material-id="${item.id}">
-        <div class="material-card-top"><span class="file-icon">${icon(fileIcon(item.file_name))}</span><div class="file-badges"><span>${esc(extension)}</span>${item.version ? `<span>${esc(item.version)}</span>` : ''}${state.canManage ? `<span class="status-${online ? 'online' : 'offline'}">${online ? '已上架' : '已下架'}</span>` : ''}</div></div>
+        <span class="file-icon">${icon(fileIcon(item.file_name))}<small>${esc(extension)}</small></span>
+        <div class="material-file-info"><div class="file-badges"><span>${esc(item.category || '综合学习包')}</span>${item.version ? `<span>${esc(item.version)}</span>` : ''}${state.canManage ? `<span class="status-${online ? 'online' : 'offline'}">${online ? '已上架' : '已下架'}</span>` : ''}</div>
         <h3>${esc(item.title)}</h3>
-        <p>${esc(item.summary || '该学习包暂未填写简介，可直接下载查看完整内容。')}</p>
-        <div class="file-meta"><span>${icon('layers-3')}${esc(item.category || '综合学习包')}</span><span>${icon('hard-drive-download')}${sizeLabel(item.file_size)}</span><span>${icon('calendar-days')}${dateLabel(item.updated_at || item.created_at)}</span><span>${icon('download')}${Number(item.download_count || 0).toLocaleString('zh-CN')} 次</span></div>
+        ${item.summary ? `<p>${esc(item.summary)}</p>` : ''}
+        <div class="file-meta"><span>${sizeLabel(item.file_size)}</span><span>更新于 ${dateLabel(item.updated_at || item.created_at)}</span><span>${Number(item.download_count || 0).toLocaleString('zh-CN')} 次下载</span></div></div>
         <div class="material-card-actions">
-          ${online ? `<a class="download-button" href="/api/materials/download?id=${encodeURIComponent(item.id)}" data-download="${item.id}">${icon('download')}下载学习包</a>` : `<span class="download-disabled">当前已下架</span>`}
+          ${online ? `<a class="download-button" href="/api/materials/download?id=${encodeURIComponent(item.id)}" data-download="${item.id}" aria-label="下载 ${esc(item.title)}">${icon('download')}下载</a>` : `<span class="download-disabled">已下架</span>`}
           ${actions}
         </div>
       </article>`;
     }).join('');
-    $$('[data-download]', root).forEach((link) => {
-      link.onclick = () => {
-        const item = state.items.find((row) => String(row.id) === link.dataset.download);
-        if (item) { item.download_count = Number(item.download_count || 0) + 1; setTimeout(renderGrid, 500); }
-      };
-    });
+    // Download counters are server facts; a click alone is not a successful download.
     if (state.canManage) bindAdminActions(root);
     refreshIcons(root);
   }
@@ -180,7 +180,7 @@
       ${withFile ? '' : `<div class="material-field wide"><label for="material-name">学习包名称 <em>*</em></label><input id="material-name" name="title" maxlength="120" required value="${esc(item?.title || '')}" placeholder="例如：客户服务沟通技巧工具包"></div>`}
       <div class="material-field"><label for="material-category">资料分类 <em>*</em></label><input id="material-category" name="category" maxlength="40" required value="${esc(item?.category || '综合学习包')}" placeholder="课程讲义 / 工具模板"></div>
       <div class="material-field"><label for="material-version">版本信息</label><input id="material-version" name="version" maxlength="32" value="${esc(item?.version || '')}" placeholder="例如：2026 版 / V2.1"></div>
-      <div class="material-field wide"><label for="material-summary">资料简介</label><textarea id="material-summary" name="summary" maxlength="500" placeholder="简要说明内容、适用对象和使用方式">${esc(item?.summary || '')}</textarea><small>最多 500 个字符，访客会在资料卡片中看到前两行。</small></div>
+      <div class="material-field wide"><label for="material-summary">资料简介</label><textarea id="material-summary" name="summary" maxlength="500" placeholder="简要说明内容、适用对象和使用方式">${esc(item?.summary || '')}</textarea><small>最多 500 个字符，资料列表展示前两行。</small></div>
       <div class="material-field"><label for="material-status">发布状态</label><select id="material-status" name="status"><option value="上架" ${!item || item.status === '上架' ? 'selected' : ''}>立即上架</option><option value="下架" ${item?.status === '下架' ? 'selected' : ''}>暂存为下架</option></select></div>
       ${withFile ? `<div class="material-field wide"><label>学习包文件 <em>*</em></label><label class="file-drop" id="file-drop">${icon('files')}<b>批量选择，或将多份文件拖到这里</b><span>支持 PDF、Word、PPT、Excel、ZIP · 单个不超过 ${sizeLabel(state.maxBytes)} · 每批最多 ${MAX_BATCH_FILES} 份</span><input id="material-file" type="file" multiple accept="${state.extensions.map((extension) => '.' + extension).join(',')}"></label><div class="batch-file-list" id="batch-file-list" hidden></div><small>资料标题会根据文件名自动生成，可在上传前逐份修改；分类、版本、简介和发布状态会应用到本批全部文件。</small></div>` : ''}
       <div class="material-dialog-foot"><button type="button" class="dialog-cancel" data-close>取消</button><button type="submit" class="dialog-submit">${icon(withFile ? 'cloud-upload' : 'save')}<span>${withFile ? '选择文件后上传' : '保存修改'}</span></button></div>
@@ -399,7 +399,8 @@
       renderGrid();
     } catch (error) {
       $('#material-grid').setAttribute('aria-busy', 'false');
-      $('#material-grid').innerHTML = `<div class="material-empty">${icon('cloud-alert')}<b>资料暂时无法加载</b><p>${esc(error.message)}</p></div>`;
+      $('#material-grid').innerHTML = `<div class="material-empty">${icon('cloud-alert')}<b>资料暂时无法加载</b><p>${esc(error.message)}</p><button type="button" class="material-empty-action" data-retry>重新加载</button></div>`;
+      $('[data-retry]')?.addEventListener('click', loadItems);
       $('#library-summary').textContent = '同步失败';
       refreshIcons($('#material-grid'));
     }

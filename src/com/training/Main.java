@@ -50,7 +50,9 @@ public class Main {
         server.createContext("/", ex -> {
             try {
                 String path = ex.getRequestURI().getPath();
-                if (path.startsWith("/api/teacher-resumes") || path.startsWith("/api/teacher-recommendations")) {
+                if (path.equals("/api/visitor-context")) {
+                    Weather.handle(ex);
+                } else if (path.startsWith("/api/teacher-resumes") || path.startsWith("/api/teacher-recommendations")) {
                     TeacherIntelligence.handle(ex);
                 } else if (path.startsWith("/api/materials")) {
                     Materials.handle(ex);

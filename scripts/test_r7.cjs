@@ -1,0 +1,15 @@
+'use strict';
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict'),crypto=require('node:crypto');
+let checks=0;const check=(condition,message)=>{assert.ok(condition,message);checks++;};
+const context={};vm.runInNewContext(fs.readFileSync('web/releases.js','utf8'),context);
+const releases=context.YanxuReleases;check(releases.length===18,'all 18 recorded iterations');check(new Set(releases.map(x=>x.id)).size===18,'unique IDs');
+for(const item of releases){check(/^\d{4}-\d{2}(?:-\d{2})?$/.test(item.date),'record precision');check(['published','preview','history'].includes(item.status),'explicit status');check(item.changes.length>=2,'useful notes');}
+check(releases.find(x=>x.id==='initial').date==='2026-07','do not invent initial day');check(!releases.some(x=>x.id==='v13-r2'),'do not invent absent R2');
+const html=fs.readFileSync('web/materials.html','utf8'),app=fs.readFileSync('web/app.js','utf8'),environment=fs.readFileSync('web/environment.js','utf8');
+for(const id of ['material-grid','material-categories','admin-actions','add-material','material-search'])check(html.split('id="'+id+'"').length===2,'preserved unique hook '+id);
+check(/materials\.js\?v=20260906v13r7/.test(html),'new markup cache version');check(/v13\.css\?v=20260906v13r7/.test(html),'new CSS cache version');
+check(!/navigator\.geolocation|localStorage|sessionStorage/.test(environment),'no permission prompt/IP persistence');check(!/<select|city-input|city-select/.test(environment),'no manual city selection');
+check(app.includes('environmentPanel?.destroy()'),'disposable lifecycle');
+check(fs.statSync('web/assets/book-paper-v13r7.jpg').size<100000,'paper browser budget <100KB');
+for(const [file,hash] of [['lib/ip2region-3.3.7.jar','0d8f392d55b6fd4acb6b33fc26e851b2717ac870c758dba74b61303efed54cab'],['lib/ip2region/ip2region_v4.xdb','6307a9696f5711f84bcb8b25f07894de68a64a0ed4a1cc7e990562dd3084f210'],['lib/ip2region/ip2region_v6.xdb','5b93da35ac28bc316dccc54a758381f7a874ae0461dd51ff5df5e34815586f11']])check(crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex')===hash,'pinned dependency '+file);
+console.log(JSON.stringify({ok:true,suite:'R7 history, silent weather contract, asset integrity',checks}));
