@@ -4,6 +4,20 @@ All notable changes to Yanxu Training OS. Dates follow the production release hi
 
 ## [1.9.0] — 2026-09-06 · Clarity & Native-feeling Workspace
 
+### R10 preview iteration
+- Added one built-in ImageGen silver-white refractive background across the login
+  page, keeping the center quiet and pale blue optical detail toward the bottom.
+  Original PNG retained; same-size WebP is 22,764 bytes, with no cropping/repainting.
+- Removed the oversized Three.js shadow plane and local radial halo that produced
+  a clipped rectangle. Replaced them with a small silhouette-following shadow.
+- Replaced the two blurred ambient ovals with one restrained full-page light sweep;
+  focus, hidden, authentication, pause and reduced-motion rules still apply. Form
+  focus/busy and visual loading/failure now also pause without a working WebGL scene.
+- Added background isolation/integrity regressions and the 21st preview history entry.
+  No backend, login credentials, weather, materials or recommendation logic changed.
+- Local preview only; GitHub push and production deployment remain pending their
+  existing authorization blockers.
+
 ### R9 preview iteration
 - Generated four custom title wordmarks with built-in ImageGen. With explicit user
   permission, removed baked checkerboard backgrounds, retained the glyphs and raw

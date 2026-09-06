@@ -788,7 +788,7 @@
     sceneBridge.setMode('login');
     document.getElementById('app').innerHTML = `
       <main class="v6-login login-learning" aria-label="研序登录">
-        <div class="login-ambient" aria-hidden="true"><span></span><span></span></div>
+        <div class="login-ambient" aria-hidden="true"><span></span></div>
         <header class="login-topbar">
           <div class="orbit-brand">${brandSymbol()}<span>研序</span></div>
           <nav class="login-public-nav" aria-label="公共页面"><a class="login-materials" href="/materials.html">${businessArt('materials')}<span>培训资料下载</span>${icon('arrow-up-right')}</a><a class="login-history" href="/updates.html">往期更新</a></nav>

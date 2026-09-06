@@ -10,6 +10,7 @@ node scripts/test_login_book.cjs
 node scripts/test_book_geometry.mjs
 node scripts/test_book_binding.cjs
 node scripts/test_book_headlines.cjs
+node scripts/test_login_background.cjs
 node scripts/check_business_art.cjs
 node scripts/test_r7.cjs
 node scripts/test_environment.cjs

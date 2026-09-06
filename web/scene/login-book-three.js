@@ -168,19 +168,8 @@ export function createBookScene(host, { onInvalidate = () => {}, onContextLost =
     }
     const spine = new THREE.Mesh(geo(new THREE.CylinderGeometry(.058, .058, PAGE_H + .025, 24)), coverMaterial);
     spine.scale.x = 1.4; spine.position.z = -.094; book.add(spine);
-    // A soft contact pool grounds the book without a hard rectangular backdrop.
-    const shadowCanvas = document.createElement('canvas'); shadowCanvas.width = shadowCanvas.height = 128;
-    const shadowContext = shadowCanvas.getContext('2d');
-    if (shadowContext) {
-      const gradient = shadowContext.createRadialGradient(64, 64, 5, 64, 64, 64);
-      gradient.addColorStop(0, 'rgba(3,8,18,.18)');
-      gradient.addColorStop(.5, 'rgba(3,8,18,.08)');
-      gradient.addColorStop(1, 'rgba(3,8,18,0)');
-      shadowContext.fillStyle = gradient; shadowContext.fillRect(0, 0, 128, 128);
-      const shadowTexture = new THREE.CanvasTexture(shadowCanvas); shadowTexture.colorSpace = THREE.SRGBColorSpace; textures.add(shadowTexture);
-      const pool = new THREE.Mesh(geo(new THREE.PlaneGeometry(4.4, 2.9)), mat(new THREE.MeshBasicMaterial({ map: shadowTexture, transparent: true, depthWrite: false, toneMapped: false })));
-      pool.position.set(.07, -.2, -.82); scene.add(pool);
-    }
+    // Keep canvas alpha empty outside the book. A large shadow plane was clipped
+    // at the canvas boundary; CSS now follows only the book's actual silhouette.
 
     function surface(frontTexture, backTexture, baseZ) {
       const data = createPageSurface({ width: PAGE_W, height: PAGE_H, cols: 48, rows: 12, bend: .45, cornerCurl: .055 });

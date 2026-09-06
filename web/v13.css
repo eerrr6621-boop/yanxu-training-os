@@ -228,12 +228,13 @@ html body.yx-v13 .v9-snap-cell b, html body.yx-v13 .v9-snap-cell.big b { color: 
 
 /* Login is the brand surface, not a duplicate dashboard. */
 html body.yx-v13 .login-learning.v6-login { position: relative; min-height: 100svh; display: block; overflow-x: clip; isolation: isolate; background: #f8fafd; color: #29394f; }
-html body.yx-v13 .login-ambient { position: absolute; inset: 0; overflow: hidden; z-index: -1; pointer-events: none; background: radial-gradient(ellipse at 22% 58%,#edf2f9,transparent 58%); }
-html body.yx-v13 .login-ambient span { position: absolute; width: 78vw; height: 36vw; left: -18vw; top: 6%; border-radius: 50%; background: linear-gradient(145deg,#ffffff00,#ffffffd9 48%,#d6e4f026 66%,#ffffff00); filter: blur(28px); transform: rotate(-28deg); animation: login-daylight 24s ease-in-out infinite alternate; }
-html body.yx-v13 .login-ambient span + span { left: 34%; top: 49%; opacity: .55; animation-delay: -12s; transform: rotate(-28deg) translate3d(3%,0,0); }
-@keyframes login-daylight { to { transform: rotate(-22deg) translate3d(7%,5%,0); opacity: .6; } }
+html body.yx-v13 .login-ambient { position: absolute; inset: 0; overflow: hidden; z-index: -1; pointer-events: none; background: #f7f9fc url('/assets/login-background-v13r10.webp') center bottom / cover no-repeat; }
+html body.yx-v13 .login-ambient span { position: absolute; inset: -8%; background: linear-gradient(115deg,#ffffff00 30%,#ffffff70 48%,#ffffff00 66%); opacity: .15; transform: translate3d(-3%,0,0); animation: login-daylight 32s ease-in-out infinite alternate; }
+@keyframes login-daylight { to { transform: translate3d(3%,0,0); opacity: .4; } }
 @media (prefers-reduced-motion: reduce) { html body.yx-v13 .login-ambient span { animation: none; } }
-html body.yx-v13 .login-learning:is([data-motion-paused="true"],[data-motion-state="paused"],[data-motion-state="loading"],[data-motion-state="focused"],[data-motion-state="hidden"],[data-motion-state="reduced"]) .login-ambient span { animation-play-state: paused; }
+html body.yx-v13 .login-learning:is([data-motion-paused="true"],[data-motion-state="paused"],[data-motion-state="loading"],[data-motion-state="loading-visual"],[data-motion-state="unavailable"],[data-motion-state="focused"],[data-motion-state="hidden"],[data-motion-state="reduced"]) .login-ambient span { animation-play-state: paused; }
+html body.yx-v13 .login-learning:has(#login-form:focus-within) .login-ambient span,
+html body.yx-v13 .login-learning:has(#login-form[aria-busy="true"]) .login-ambient span { animation-play-state: paused; }
 html body.yx-v13 .login-topbar { position: relative; width: 100%; z-index: 2; display: flex; align-items: center; gap: clamp(16px,3vw,40px); min-height: 100px; max-width: 1600px; margin: 0 auto; padding: 24px clamp(24px,3.5vw,72px); }
 html body.yx-v13 .orbit-brand { display: flex; align-items: center; gap: 12px; color: #213149; font-size: 24px; font-weight: 600; letter-spacing: .12em; }
 html body.yx-v13 .orbit-brand .brand-symbol { display: block; width: 36px; height: 36px; }
@@ -244,12 +245,12 @@ html body.yx-v13 .login-materials .business-art { width: 20px; height: 20px; fle
 html body.yx-v13 .login-materials > svg { width: 13px; height: 13px; color: #91a0b5; }
 html body.yx-v13 .login-layout { position: relative; width: min(100%,1400px); display: grid; grid-template-columns: minmax(0,1.25fr) minmax(0,.9fr); align-items: center; gap: clamp(28px,4vw,72px); margin: 0 auto; padding: 24px clamp(24px,4vw,64px) 80px; min-height: calc(100svh - 100px); }
 html body.yx-v13 .login-visual { position: relative; display: grid; place-items: center; width: 100%; min-height: 0; min-width: 0; padding: 0; isolation: isolate; background: transparent; }
-html body.yx-v13 .login-visual::before { content: ''; position: absolute; inset: 27% 12% 21%; z-index: -1; background: radial-gradient(ellipse,#ccdbea3d,transparent 72%); pointer-events: none; }
+html body.yx-v13 .login-visual::before { display: none; }
 html body.yx-v13 .book-stage { position: relative; width: 100%; height: clamp(380px,55vh,610px); cursor: grab; touch-action: pan-y; outline: none; border-radius: 18px; }
 html body.yx-v13 .book-stage.is-dragging { cursor: grabbing; }
 html body.yx-v13 .book-stage:focus-visible { outline: 2px solid #8999b9; outline-offset: 4px; }
 html body.yx-v13 .book-stage[aria-disabled="true"] { cursor: default; }
-html body.yx-v13 .book-three-canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; pointer-events: none; }
+html body.yx-v13 .book-three-canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; pointer-events: none; filter: drop-shadow(0 12px 14px #344b7012); }
 html body.yx-v13 .book-fallback { position: absolute; left: 7%; top: 50%; transform: translateY(-50%) rotate(-4deg); width: 86%; aspect-ratio: 1.48; display: grid; grid-template-columns: 1fr 1fr; border-radius: 4px; background: #fdfdfb; border: 3px solid #8d9bb2; box-shadow: 0 20px 30px -20px #33446240; }
 html body.yx-v13 .book-fallback-left { display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 16px; padding-left: 0; border-right: 1px solid #e1e4e9; color: #26374e; font-size: clamp(16px,2vw,26px); line-height: 1.5; font-weight: 500; }
 html body.yx-v13 .book-fallback-left strong { color: #3955c7; font-size: 1.2em; font-weight: 600; white-space: nowrap; }
