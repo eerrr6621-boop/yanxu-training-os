@@ -2649,16 +2649,44 @@
   const resumeStatusTag = (resume) => tag(resumeStatusInfo(resume?.parse_status).label);
   const resumeHasFile = (resume) => Boolean(resume && (resume.file_name || !['empty'].includes(resumeStatusInfo(resume.parse_status).tone)));
 
+  function teacherEntryGuide() {
+    return `<div class="teacher-entry-guide"><b>首次添加讲师</b><ol aria-label="讲师资料准备流程"><li>1. 新建讲师档案</li><li>2. 关联并上传简历</li><li>3. 核对解析结果</li></ol><p>已有档案可直接上传简历，无需重复建档。</p></div>`;
+  }
+
+  function openTeacherCreate() {
+    if (!canWrite()) return;
+    const fields = teacherFormFields();
+    return openModal('新建讲师档案', `<p class="teacher-create-note">先保存讲师的基本信息与常驻地区，建档后再上传简历。已有档案请勿重复创建。</p>${renderForm(fields, { in_date: new Date().toISOString().slice(0, 10) })}`, {
+      okText: '保存讲师档案',
+      onOk: async () => {
+        const data = collectForm($('#modal-mask'), fields);
+        if (!data) return false;
+        data.status = '在库';
+        await api('/teachers', { body: data });
+        invalidateTeacherRecommendations();
+        toast('讲师档案已建立，下一步可关联并上传简历');
+        renderPage();
+      },
+    });
+  }
+
   function openTeacherResumeUpload(teachers, selectedTeacherId = '') {
     if (!canWrite()) return;
-    if (!teachers.length) { toast('请先通过手工入库建立讲师档案', true); return; }
+    if (!teachers.length) {
+      return openModal('先建立讲师档案', `<p class="teacher-create-note">目前还没有可关联的讲师档案。请先填写姓名、常驻地区等基本信息，保存后再上传这位讲师的简历。上传简历不会自动新建档案。</p>`, {
+        sm: true, kicker: '首次添加讲师', okText: '新建讲师档案', okIcon: 'user-plus',
+        onOk: () => { openTeacherCreate(); return false; },
+      });
+    }
     const selected = String(selectedTeacherId || '');
     const options = teachers.map((teacher) => `<option value="${esc(teacher.id)}" ${String(teacher.id) === selected ? 'selected' : ''}>${esc(teacher.name)}｜${esc(teacherResidenceText(teacher))}｜${esc(teacher.org || '单位待补充')}</option>`).join('');
-    const mask = openModal(selected ? '替换讲师简历' : '上传讲师简历', `
-      <div class="resume-upload-lead"><span>${icon('scan-text')}</span><div><b>上传 PDF 或 PPTX 后自动提取专业画像</b><p>解析结果会进入简历管理，建议核对后再用于智能推荐。</p></div></div>
-      <div class="form-item span2"><label for="teacher-resume-owner">关联讲师<span class="req">*</span></label><select id="teacher-resume-owner" ${selected ? '' : 'autofocus'}><option value="" disabled ${selected ? '' : 'selected'}>请选择讲师</option>${options}</select><span class="field-error" id="teacher-resume-owner-error" aria-live="polite"></span></div>
-      <div id="resume-residence-fields">${renderForm(residenceFields(), teachers.find((teacher) => String(teacher.id) === selected))}</div>
-      <p class="resume-refresh-note">上传前确认常驻地区；地区会单独保存，解析不会根据简历文字覆盖它。</p>
+    const mask = openModal('上传讲师简历', `
+      <div class="resume-upload-lead"><span>${icon('scan-text')}</span><div><b>先建讲师档案，再关联简历</b><p>已有档案：直接选择下方讲师并上传。系统会提取 PDF / PPTX 中的专业经历，请核对解析结果后用于推荐。</p></div></div>
+      <div class="resume-upload-fields">
+        <div class="form-item"><label for="teacher-resume-owner">关联已建档讲师<span class="req">*</span></label><select id="teacher-resume-owner" required aria-describedby="teacher-resume-owner-help teacher-resume-owner-error" ${selected ? '' : 'autofocus'}><option value="" disabled ${selected ? '' : 'selected'}>请选择已建立档案的讲师</option>${options}</select><small id="teacher-resume-owner-help">找不到讲师？请先取消上传，在「师资档案」点击「新建讲师档案」。上传简历不会自动新建档案。</small><span class="field-error" id="teacher-resume-owner-error" aria-live="polite"></span></div>
+        <div id="resume-residence-fields">${renderForm(residenceFields(), teachers.find((teacher) => String(teacher.id) === selected))}</div>
+        <p class="resume-residence-note">请确认该讲师的常驻地区，用于线下培训的同城优先参考。修改后会单独保存，不会被简历解析结果覆盖。</p>
+      </div>
       <label class="resume-drop-zone" id="teacher-resume-drop" for="teacher-resume-file">
         <input class="sr-only" id="teacher-resume-file" type="file" accept=".pdf,.pptx,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation">
         <span class="resume-drop-icon">${icon('file-up')}</span>
@@ -2672,12 +2700,13 @@
       wide: true,
       kicker: '师资智能档案',
       okIcon: 'sparkles',
-      okText: selected ? '替换并重新解析' : '上传并解析',
+      okText: '上传并解析',
       onOk: async () => {
         const teacherId = $('#teacher-resume-owner', mask).value;
         const ownerError = $('#teacher-resume-owner-error', mask);
         ownerError.textContent = '';
-        if (!teacherId) { ownerError.textContent = '请选择需要关联的讲师'; $('#teacher-resume-owner', mask).focus(); return false; }
+        $('#teacher-resume-owner', mask).removeAttribute('aria-invalid');
+        if (!teacherId) { ownerError.textContent = '请选择已建档讲师；尚未建档请按上方提示先建档'; $('#teacher-resume-owner', mask).setAttribute('aria-invalid', 'true'); $('#teacher-resume-owner', mask).focus(); return false; }
         const residence = collectForm($('#resume-residence-fields', mask), residenceFields());
         if (!residence) return false;
         if (!chosenFile) { toast('请选择 PDF 或 PPTX 讲师简历', true); $('#teacher-resume-file', mask).focus(); return false; }
@@ -2737,6 +2766,8 @@
     });
     const fileInput = $('#teacher-resume-file', mask);
     $('#teacher-resume-owner', mask).onchange = () => {
+      $('#teacher-resume-owner-error', mask).textContent = '';
+      $('#teacher-resume-owner', mask).removeAttribute('aria-invalid');
       const owner = teachers.find((teacher) => String(teacher.id) === $('#teacher-resume-owner', mask).value);
       $('#resume-residence-fields', mask).innerHTML = renderForm(residenceFields(), owner);
     };
@@ -2909,7 +2940,8 @@
     const savedFilter = state.filters.teachers || {};
     const fields = teacherFormFields();
     root.innerHTML = `<div class="card data-card teacher-library-card">
-      <div class="card-heading"><div><h2>师资档案</h2><p>当前显示 <span id="result-count">${rows.length}</span> 条记录 · 档案、简历状态与履约评价统一查看</p></div>${canWrite() ? `<div class="teacher-head-actions"><button type="button" class="btn gray" id="teacher-add-manual">${icon('user-plus')}手工入库</button><button type="button" class="btn" id="teacher-upload-resume">${icon('file-up')}上传讲师简历</button></div>` : ''}</div>
+      <div class="card-heading"><div><h2>师资档案</h2><p>当前显示 <span id="result-count">${rows.length}</span> 条记录 · 档案、简历状态与履约评价统一查看</p></div>${canWrite() ? `<div class="teacher-head-actions"><button type="button" class="btn gray" id="teacher-add-manual">${icon('user-plus')}新建讲师档案</button><button type="button" class="btn" id="teacher-upload-resume">${icon('file-up')}上传讲师简历</button></div>` : ''}</div>
+      ${canWrite() ? teacherEntryGuide() : ''}
       <div class="toolbar">
         <label class="search-box"><span class="sr-only">搜索师资姓名、单位或领域</span>${icon('search')}<input id="flt-kw" value="${esc(savedFilter.kw || '')}" placeholder="搜索：姓名/单位/领域" autocomplete="off"></label>
         <label class="select-filter"><span class="sr-only">按师资状态筛选</span><select id="flt-status"><option value="">全部状态</option><option ${savedFilter.status === '在库' ? 'selected' : ''}>在库</option><option ${savedFilter.status === '出库' ? 'selected' : ''}>出库</option></select></label>
@@ -2978,9 +3010,7 @@
     };
     if (savedFilter.kw || savedFilter.status) runFilter();
     if ($('#teacher-upload-resume', root)) $('#teacher-upload-resume', root).onclick = () => openTeacherResumeUpload(rows);
-    if ($('#teacher-add-manual', root)) $('#teacher-add-manual', root).onclick = () => openModal('师资入库', renderForm(fields, { in_date: new Date().toISOString().slice(0, 10) }), {
-      onOk: async () => { const data = collectForm($('#modal-mask'), fields); if (!data) return false; data.status = '在库'; await api('/teachers', { body: data }); invalidateTeacherRecommendations(); toast('师资已入库'); renderPage(); },
-    });
+    if ($('#teacher-add-manual', root)) $('#teacher-add-manual', root).onclick = openTeacherCreate;
   }
 
   function renderResumeManagement(root, context) {
@@ -3006,6 +3036,7 @@
     resumes.filter((resume) => !knownIds.has(String(resume.teacher_id))).forEach((resume) => records.push({ ...resume, id: resume.teacher_id }));
     root.innerHTML = `${resumeLoadError ? `<div class="resume-load-error" role="alert">${icon('cloud-alert')}<span><b>简历状态暂时无法同步</b><small>${esc(resumeLoadError)}</small></span></div>` : ''}<div class="card data-card resume-manage-card">
       <div class="card-heading"><div><h2>简历管理</h2><p>跟踪 PDF/PPTX 解析、人工画像与推荐可用状态</p></div><div class="teacher-head-actions"><button type="button" class="btn gray" id="resume-manage-refresh">${icon('refresh-cw')}刷新状态</button>${canWrite() ? `<button type="button" class="btn" id="resume-manage-upload">${icon('file-up')}上传讲师简历</button>` : ''}</div></div>
+      ${teacherEntryGuide()}
       ${canWrite() ? '' : `<div class="resume-viewer-note">${icon('shield')}当前账号无权访问此区域。</div>`}
       <div class="toolbar resume-toolbar"><label class="search-box"><span class="sr-only">搜索讲师</span>${icon('search')}<input id="resume-flt-keyword" value="${esc(savedFilter.keyword || '')}" placeholder="搜索讲师姓名" autocomplete="off"></label><label class="select-filter"><span class="sr-only">按解析状态筛选</span><select id="resume-flt-status"><option value="">全部解析状态</option>${['未上传', '等待解析', '解析中', '待确认', '需人工补充', '可推荐', '解析失败'].map((status) => `<option ${savedFilter.status === status ? 'selected' : ''}>${status}</option>`).join('')}</select></label></div>
       ${resumes.some((resume) => ['pending', 'processing'].includes(resumeStatusInfo(resume.parse_status).tone)) ? '<p class="resume-refresh-note" role="status">正在解析的简历会自动更新状态；也可以点击“刷新状态”。</p>' : ''}

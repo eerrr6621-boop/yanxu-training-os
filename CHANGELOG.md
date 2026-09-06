@@ -39,6 +39,12 @@ All notable changes to Yanxu Training OS. Dates follow the production release hi
 - Prepare and decode book artwork before the first visible frame, apply the final
   paper material once, and avoid reallocating an unchanged canvas on restoration.
   Missing artwork falls back safely without interrupting authentication.
+- Clarified teacher onboarding as creating a teacher record, associating a resume,
+  then reviewing parsed information. Existing teachers do not need duplicate records;
+  an empty library offers a direct create-record action without writing automatically.
+- Separated resume owner selection, residence fields and their guidance with scoped
+  responsive spacing. Selecting a teacher alone no longer mislabels an initial upload
+  as a replacement; the existing replacement warning and privacy limits remain visible.
 
 ### R11 preview iteration
 - Enlarged login public navigation to 17px on desktop / 16px on mobile. Added one

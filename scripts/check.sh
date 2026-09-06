@@ -8,6 +8,7 @@ node scripts/test_frontend.cjs
 node scripts/test_regions.cjs
 node scripts/test_login_book.cjs
 node scripts/test_login_return.cjs
+node scripts/test_teacher_upload.cjs
 node scripts/test_book_geometry.mjs
 node scripts/test_book_binding.cjs
 node scripts/test_book_headlines.cjs
