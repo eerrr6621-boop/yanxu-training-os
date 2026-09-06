@@ -2685,7 +2685,7 @@
       <div class="resume-upload-fields">
         <div class="form-item"><label for="teacher-resume-owner">关联已建档讲师<span class="req">*</span></label><select id="teacher-resume-owner" required aria-describedby="teacher-resume-owner-help teacher-resume-owner-error" ${selected ? '' : 'autofocus'}><option value="" disabled ${selected ? '' : 'selected'}>请选择已建立档案的讲师</option>${options}</select><small id="teacher-resume-owner-help">找不到讲师？请先取消上传，在「师资档案」点击「新建讲师档案」。上传简历不会自动新建档案。</small><span class="field-error" id="teacher-resume-owner-error" aria-live="polite"></span></div>
         <div id="resume-residence-fields">${renderForm(residenceFields(), teachers.find((teacher) => String(teacher.id) === selected))}</div>
-        <p class="resume-residence-note">请确认该讲师的常驻地区，用于就近匹配。修改后会单独保存，不会被简历解析结果覆盖。</p>
+        <p class="resume-residence-note">请确认该讲师的常驻地区，用于线下培训的同城优先参考。修改后会单独保存，不会被简历解析结果覆盖。</p>
       </div>
       <label class="resume-drop-zone" id="teacher-resume-drop" for="teacher-resume-file">
         <input class="sr-only" id="teacher-resume-file" type="file" accept=".pdf,.pptx,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation">

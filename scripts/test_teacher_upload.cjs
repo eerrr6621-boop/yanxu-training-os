@@ -74,6 +74,7 @@ function harness(writable = true) {
   check(modal.body.includes('aria-describedby="teacher-resume-owner-help teacher-resume-owner-error"'), 'help and validation are associated with select');
   check(modal.body.includes('甲&lt;老师&gt;') && modal.body.includes('研发 &amp; 培训中心'), 'teacher data stays escaped');
   check(modal.body.includes('再次上传会替换旧文件') && modal.body.includes('仅管理员和业务管理员'), 'replacement and privacy warnings preserved');
+  check(modal.body.includes('用于线下培训的同城优先参考'), 'residence guidance does not imply route-distance calculation');
   check(await modal.options.onOk() === false && owner.focused && owner.attributes['aria-invalid'] === 'true' && !h.calls.length, 'empty owner reports error and never writes');
   owner.value = '2'; owner.onchange();
   check(!owner.attributes['aria-invalid'] && !modal.nodes.get('#teacher-resume-owner-error').textContent, 'choosing owner clears old validation');
