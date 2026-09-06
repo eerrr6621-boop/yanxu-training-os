@@ -483,7 +483,7 @@ async function main() {
     const mounted = /<script\b[^>]*\bsrc=["'](\/login-motion\.js\?v=([^"']+))["']/i.exec(index);
     const dynamicVersion = /login-book-three\.js\?v=([A-Za-z0-9._-]+)/.exec(motion)?.[1] || '';
     check('index mounts login-motion once', (index.match(/src=["']\/login-motion\.js\?/g) || []).length === 1);
-    check('HTML refreshes the corrected autoplay controller', mounted?.[2] === '20260907-autoplay', mounted?.[2] || 'missing');
+    check('HTML refreshes the corrected autoplay controller', mounted?.[2] === '20260907-autoplay2', mounted?.[2] || 'missing');
     check('unchanged Three scene stays pinned', dynamicVersion === '20260906v13r10', dynamicVersion);
     const app = fs.readFileSync(path.join(webRoot, 'app.js'), 'utf8');
     check('book is an illustration, not a hidden pause button', /data-login-book role="img"/.test(app) && !/data-login-book role="button"|点击暂停文字轮播/.test(app));
@@ -654,6 +654,13 @@ async function main() {
       pointer(h.book,cancel,{pointerId:9});
       check(cancel+' releases ownership', !h.book.capturedPointers.has(9) && state(h)==='playing');
     }
+    for (const type of ['pointerup','pointercancel','blur']) {
+      pointer(h.book,'pointerdown',{pointerId:95});
+      pointer(h.book,'pointermove',{pointerId:95,clientX:40});
+      event(h.window,type,{pointerId:95});
+      h.scheduler.runFrames();
+      check('window '+type+' releases drag and resumes once', state(h)==='playing' && h.scheduler.pendingTimers()===1 && !h.book.capturedPointers.size);
+    }
     c.destroy();
     const miss=createHarness(motion,{scene:{pick:null}}), mc=await boot(miss);
     pointer(miss.book,'pointerdown');
@@ -741,6 +748,17 @@ async function main() {
     check('render failure cannot leave schedules', renderFailure.scheduler.pendingTimers() === 0 && renderFailure.scheduler.pendingFrames() === 0);
     renderController.destroy();
 
+    const dragFailure = createHarness(motion, { scene: { renderThrowsAt: 2 } });
+    const dragController = await boot(dragFailure);
+    let dragError = null;
+    try {
+      pointer(dragFailure.book,'pointerdown');
+      pointer(dragFailure.book,'pointermove',{clientX:40});
+    } catch (error) { dragError = error; }
+    check('drag-start render failure cannot dereference released pointer', dragError === null && state(dragFailure)==='unavailable', dragError?.message);
+    check('drag-start failure cannot leave animation work', !dragFailure.scheduler.pendingTimers() && !dragFailure.scheduler.pendingFrames());
+    dragController.destroy();
+
     const resizeFailure = createHarness(motion, { scene: { resizeThrows: true } });
     const resizeController = await boot(resizeFailure);
     resizeFailure.window.dispatchEvent({ type: 'resize' });
@@ -818,6 +836,13 @@ async function main() {
     let captureError = null;
     try {
       pointer(captureFailure.book, 'pointerdown', { pointerId: 61 });
+      pointer(captureFailure.book, 'pointermove', { pointerId: 61, clientX: 90 });
+      event(captureFailure.book, 'pointerleave');
+      pointer(captureFailure.window, 'pointerup', { pointerId: 61, clientX: 1900 });
+      captureFailure.scheduler.runFrames();
+      check('capture failure outside release never leaves a stalled drag', state(captureFailure)==='playing' && captureFailure.scheduler.pendingTimers()===1);
+      captureFailure.scheduler.advanceTimers(2600); captureFailure.scheduler.runFrames();
+      check('capture failure still advances to the next theme', topic(captureFailure)===1 && captureFailure.scheduler.pendingTimers()===1);
       pointer(captureFailure.book, 'pointercancel', { pointerId: 61 });
     } catch (error) { captureError = error; }
     check('pointer capture platform exceptions are contained', captureError == null, captureError?.message || '');

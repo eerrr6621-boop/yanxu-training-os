@@ -139,7 +139,10 @@
       if (!safePick(event.clientX, event.clientY)) return;
       pointer = { id: event.pointerId, x: event.clientX, y: event.clientY, pitch: target.pitch, yaw: target.yaw, moved: false };
       // A press is not a drag. Incidental taps must not interrupt the carousel.
-      try { book.setPointerCapture?.(event.pointerId); } catch (_) {}
+      try {
+        if (typeof book.setPointerCapture !== 'function') { releasePointer(); return; }
+        book.setPointerCapture(event.pointerId);
+      } catch (_) { releasePointer(); }
     });
     on(book, 'pointermove', (event) => {
       if (!scene || reduced.matches || locked() || focused) return;
@@ -147,6 +150,7 @@
         const dx = event.clientX - pointer.x, dy = event.clientY - pointer.y;
         if (!pointer.moved && Math.hypot(dx, dy) > 6) {
           pointer.moved = true; dragging = true; settleText(); sync();
+          if (destroyed || !pointer || !scene) return;
         }
         if (pointer.moved) {
           if (event.cancelable) event.preventDefault();
@@ -169,6 +173,10 @@
       if (pointer && pointer.id === event.pointerId) { releasePointer(); neutral(); sync(); }
     });
     on(book, 'pointerleave', () => { if (!pointer) { neutral(); frameLoop(); } });
+    for (const type of ['pointerup', 'pointercancel']) on(window, type, (event) => {
+      if (pointer && pointer.id === event.pointerId) { releasePointer(); neutral(); sync(); }
+    });
+    on(window, 'blur', () => { if (pointer) { releasePointer(); neutral(); sync(); } });
     on(form, 'focusin', () => { focused = true; releasePointer(); neutral(); settleText(); sync(); });
     on(form, 'focusout', (event) => { if (!form.contains(event.relatedTarget)) { focused = false; sync(); } });
     on(document, 'visibilitychange', () => { releasePointer(); neutral(); if (!document.hidden) resize(); sync(); });

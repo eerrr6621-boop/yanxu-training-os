@@ -100,7 +100,7 @@ for (const page of ['index', 'answer', 'materials', 'updates']) {
   check(html.includes('yanxu-v13-release-r1') && html.includes('v13.css?v=20260907v13r1-notes2'), 'current release and shared CSS cache: ' + page);
 }
 const updateHtml = fs.readFileSync('web/updates.html', 'utf8');
-check(updateHtml.includes('releases.js?v=20260907v13r1-notes3') && updateHtml.includes('updates.js?v=20260907v13r1-notes2'), 'current product notes and stable renderer cache');
+check(updateHtml.includes('releases.js?v=20260907v13r1-notes4') && updateHtml.includes('updates.js?v=20260907v13r1-notes2'), 'current product notes and stable renderer cache');
 check(!/本地预览|已发布|发布与历史|预览迭代|data-release-filter/.test(updateHtml + renderer), 'no internal deployment labels or filters on user-facing page');
 check(updateHtml.includes('<h1>更新记录</h1>'), 'plain-language page name');
 check(!/updates-toolbar|updates-note|updates-count|同一天的更新|记录来源/.test(updateHtml), 'no public maintenance counters or explanations');
