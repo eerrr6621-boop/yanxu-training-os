@@ -30,7 +30,7 @@ GeoAPI 原始数据、坐标、Location ID 不缓存、不建索引。
 
 ```text
 YANXU_WEATHER_ENABLED=true
-QWEATHER_API_HOST=<控制台给出的完整专属域名>.qweatherapi.com
+QWEATHER_API_HOST=<控制台给出的完整API Host，不含协议或路径，不追加后缀>
 QWEATHER_DEVELOPER_ID=<开发者 ID>
 QWEATHER_PROJECT_ID=<项目 ID>
 QWEATHER_KEY_ID=<凭据 ID>
@@ -41,7 +41,10 @@ YANXU_WEATHER_TRUST_LOOPBACK_PROXY=true
 私钥文件应只允许服务账户读取，例如权限 0600；放在代码、web 和公开备份目录
 之外。不要粘贴到聊天里。凭据范围限制为城市查询与实时天气，并在控制台配置
 固定服务器出口 IP。没有有效配置时不调用第三方，显示“天气服务待配置”。
-当前迭代没有创建供应商账号、购买服务或执行真实天气请求。
+本次维护已在操作员完成注册后，为研序创建独立项目与 JWT 凭据，并通过城市
+查询、实时天气各一次真实请求验证；只开启 GeoAPI 与天气预报权限，未购买套餐。
+私钥和连接配置单独受限保存，不包含在仓库中。该验证不代表生产网站已启用：
+服务器配置、代理信任核验与后端重启仍需操作员授权。本地预览不伪造公网 IP。
 
 可选 `YANXU_IP_DATABASE_DIR` 指向已核验 XDB 文件夹，默认 `lib/ip2region`。
 库的固定版本与摘要见同目录 `README.md`；不在启动时自动下载或更新数据库。
