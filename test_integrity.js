@@ -755,7 +755,7 @@ async function waitForResumeItem(teacherId, auth, timeoutMs = 8000) {
   check('简历管理目录仅返回安全元数据', resumeHttp.status === 200 && maleResume && !hasForbiddenResumeMetadata(resumeHttp.body.data));
   check('简历服务分别公开 PDF 与 PPTX 的受控大小边界',
     Number(resumeHttp.body.data.max_pdf_bytes) === 15 * 1024 * 1024 &&
-    Number(resumeHttp.body.data.max_pptx_bytes) === 80 * 1024 * 1024);
+    Number(resumeHttp.body.data.max_pptx_bytes) === 200 * 1024 * 1024);
   const exposedResumeName = String(maleResume && (maleResume.file_name || maleResume.resume_name || maleResume.original_name) || '');
   check('简历原始文件名会移除路径穿越片段', exposedResumeName && !exposedResumeName.includes('..') && !/[\\/]/.test(exposedResumeName));
 

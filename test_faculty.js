@@ -34,6 +34,7 @@ async function recommend(requirement, options = {}) {
   return api('/teacher-recommendations', { requirement, max_results: 20, ...options });
 }
 const found = (result, id) => result.recommendations.find((item) => Number(item.teacher_id) === Number(id));
+const pendingTravel = (result, id) => (result.analysis.dispatch_preferences.selection?.travel_pending || []).find((item) => Number(item.teacher_id) === Number(id));
 
 function crc32(bytes) {
   let crc = 0xffffffff;
@@ -119,6 +120,26 @@ async function reparse(id) {
   const unknownFeeId = await teacher('回归丙', 0);
   const pdfId = await teacher('回归丁', 2000);
   const negativeId = await teacher('回归戊', 1800);
+  const levelId = await teacher('【灰度测试】讲师等级', 1800, '', '高级讲师');
+  let levelRow = (await api('/teachers')).find(row => row.id === levelId);
+  check('职称不自动推定讲师等级', levelRow.teacher_level === null);
+  for (const level of ['讲师', '高级讲师', '特级讲师', '特聘讲师']) {
+    await api('/teachers', { ...levelRow, teacher_level: level });
+    levelRow = (await api('/teachers')).find(row => row.id === levelId);
+    check('讲师等级保存并读取：' + level, levelRow.teacher_level === level);
+  }
+  const legacyUpdate = { ...levelRow }; delete legacyUpdate.teacher_level;
+  await api('/teachers', legacyUpdate);
+  levelRow = (await api('/teachers')).find(row => row.id === levelId);
+  check('旧客户端缺省等级不覆盖', levelRow.teacher_level === '特聘讲师');
+  for (const invalid of ['金牌讲师', 4, { name: '讲师' }, ['讲师']]) {
+    check('非法等级拒绝写入：' + JSON.stringify(invalid), (await request('/teachers', { ...levelRow, teacher_level: invalid })).status === 400);
+  }
+  await api('/teachers', { ...levelRow, teacher_level: '' });
+  check('等级显式清空保存为NULL', (await api('/teachers')).find(row => row.id === levelId).teacher_level === null);
+  const railCatalog = await api('/teacher-resumes/dispatch-priorities?province=安徽&city=合肥&date=2099-01-01');
+  check('没有高铁参考不伪装已配置', railCatalog.status === 'rail_references_pending' && railCatalog.priorities.every(row => row.tier === 0));
+  check('参考目录不返回私有文件路径', !JSON.stringify(railCatalog).includes('/Users/') && !JSON.stringify(railCatalog).includes('source_thread'));
   const original = pptx([
     '个人简介：副教授，持续开展员工职业能力培养与实践教学。',
     '通过案例研讨及小组协作帮助员工改善工作方法并提升服务品质。',
@@ -150,11 +171,15 @@ async function reparse(id) {
   check('词典外的具体课程仍能依据简历事实检索', Boolean(found(result, bankId)));
   result = await recommend('给星海银行大连分行做过服务资格认证');
   const bank = found(result, bankId);
+  if (process.env.TRAINING_EXPECT_LOCAL_SEMANTIC === '1') {
+    check('真实本地量化模型参与API推荐且不改变入选规则', result.analysis.semantic_matching.status === 'ready' && result.analysis.semantic_matching.precision === 'int8' && result.analysis.semantic_matching.eligibility_changed === false);
+    check('API语义证据来自本次专业档案且明确不是资历认证', bank?.semantic?.status === 'ready' && Number.isFinite(bank.semantic.similarity) && bank.semantic.verified_qualification === false && bank.semantic.evidence.length > 0);
+  }
   check('具体服务案例参与匹配而非丢在摘要外', Boolean(bank));
   check('证据选中第四段的需求相关服务案例', bank && bank.evidence.some((item) => item.text.includes('星海银行大连分行')));
   check('返回证据最多三段且不泄露手机号邮箱全文', bank && bank.evidence.length <= 3 && bank.evidence.every((item) => item.text.length <= 180) && !JSON.stringify(bank).includes('13912345678') && !JSON.stringify(bank).includes('faculty@example.test') && !JSON.stringify(bank).includes('extracted_text'));
   check('系统实绩不采用700课时95%自述且无记录不生成履约分', bank && bank.system_metrics.completed_sessions === 0 && bank.system_metrics.completed_hours === 0 && bank.system_metrics.evaluation_count === 0 && !Object.hasOwn(bank.score_breakdown, 'performance'));
-  check('匹配结果明确给出证据等级和本地规则说明', bank && ['supported', 'limited'].includes(bank.evidence_strength) && result.notice.includes('本地规则'));
+  check('匹配结果明确给出证据等级和计分边界', bank && ['supported', 'limited'].includes(bank.evidence_strength) && bank.recommendation_score_rule.includes('不是授课能力认证') && ['local_quantized_model', 'unscored_evidence_fallback'].includes(bank.score_source));
   result = await recommend('深海热液地质同位素测年和行星岩芯取样');
   check('没有专业相关证据时返回空结果', result.recommendations.length === 0 && result.notice.includes('没有找到'));
 
@@ -178,6 +203,10 @@ async function reparse(id) {
 
   result = await recommend('银行客户服务', { max_fee_rate: 2000, hard_budget: true });
   check('硬性每课时预算排除超价和待确认课酬', found(result, bankId) && !found(result, expensiveId) && !found(result, unknownFeeId));
+  if (process.env.TRAINING_EXPECT_LOCAL_SEMANTIC === '1') {
+    const reviewedSemantic = found(result, bankId)?.semantic;
+    check('真实语义模型仅引用人工画像而非替换后的旧专业范围', reviewedSemantic?.status === 'ready' && reviewedSemantic.evidence.every(text => manual.normalize('NFKC').includes(text)));
+  }
   result = await recommend('银行客户服务', { max_fee_rate: 2000 });
   const unknown = found(result, unknownFeeId);
   check('软预算下未知课酬不冒充免费且不加达标分', unknown && unknown.score_breakdown.budget === 0 && unknown.gaps.some((gap) => gap.includes('课酬尚未')));
@@ -192,7 +221,7 @@ async function reparse(id) {
   result = await recommend('不需要人工智能，只需要銀行客户服务，地点北京，可以远程授课');
   check('否定主题不被当作客户必需主题且复杂约束有提示', !result.analysis.topics.includes('数字化与人工智能') && result.analysis.needs_manual_review.some((x) => x.includes('所在地')));
 
-  const demandId = await api('/demands', { title: '隔离师资回归项目', unit: '测试客户', hours: 8, content: '银行客户服务', expect_date: '2099-01-01', status: '待处理' });
+  const demandId = await api('/demands', { title: '【灰度测试】隔离师资回归项目', unit: '测试客户', hours: 8, content: '银行客户服务', expect_date: '2099-01-01', status: '待处理' });
   const bidId = await api('/bids', { demand_id: demandId, amount: 20000, proposal: '隔离测试', bid_date: '2026-09-01', status: '待评审' });
   const projectId = (await api('/bids/win', { id: bidId })).project_id;
   const conflictId = await api('/dispatches', { project_id: projectId, teacher_id: bankId, subject: '银行客户服务', teach_date: ' 2099-1-1 ', start_time: '09:00', end_time: '12:00', hours: 4, status: '待发送' });
@@ -200,6 +229,14 @@ async function reparse(id) {
   check('非法排课日期在写入时拒绝', (await request('/dispatches', { project_id: projectId, teacher_id: bankId, subject: '银行客户服务', teach_date: '2099-02-30', hours: 4, status: '待发送' })).status === 400);
   result = await recommend('银行客户服务，2099-01-01开课');
   check('确切日期已有排课时排除并给出原因', !found(result, bankId) && result.excluded.some((x) => Number(x.teacher_id) === Number(bankId) && x.reason.includes('2099-01-01')));
+  result = await recommend('银行客户服务，2099-01-01开课', {training_start_time:'14:00',training_end_time:'17:00',training_mode:'线下',training_period:'上午',training_province:'浙江',training_city:'杭州'});
+  check('具体时间不重叠保留在交通待核实池，不声称交通可达', !found(result,bankId) && pendingTravel(result,bankId)?.dispatch_fit.adjacent_schedule.length > 0 && !pendingTravel(result,bankId).dispatch_fit.transport_verified);
+  check('具体时段优先于笼统上午下午选择', result.analysis.dispatch_preferences.training_period === '下午');
+  check('铁路无接口时明确待核验且无虚构票价', pendingTravel(result,bankId).dispatch_fit.rail.status === 'provider_not_configured' && pendingTravel(result,bankId).dispatch_fit.rail.fare === null && pendingTravel(result,bankId).dispatch_fit.rail.services.length === 0);
+  result = await recommend('银行客户服务，2099-01-01开课', {training_start_time:'11:00',training_end_time:'14:00'});
+  check('实际时段重叠仍严格排除', !found(result,bankId));
+  check('仅填一个时间不能绕过排期筛选', (await request('/teacher-recommendations', {requirement:'银行客户服务，2099-01-01开课',training_start_time:'14:00'})).status === 400);
+  check('没有日期不能用时间推断有空', (await request('/teacher-recommendations', {requirement:'银行客户服务',training_start_time:'14:00',training_end_time:'17:00'})).status === 400);
   const before = await api('/dispatches');
   await recommend('银行客户服务');
   check('推荐始终不自动增加排课', (await api('/dispatches')).length === before.length);
@@ -226,17 +263,17 @@ async function reparse(id) {
   }
   const logistics = { training_province: '浙江省', training_city: '杭州市', training_mode: '线下', training_period: '上午', max_results: 3 };
   result = await recommend('量子传感测绘实操', logistics);
-  check('师资充足时至少推荐三人且不重复', result.recommendations.length === 3 && new Set(result.recommendations.map((item) => item.teacher_id)).size === 3 && result.shortfall === 0);
+  check('同城不足且异地路线未知时保留真实缺口', result.recommendations.length === 1 && result.shortfall === 2 && result.analysis.dispatch_preferences.selection.travel_pending.length === 2);
   check('相同专业档案同城优先且不改专业分', Number(result.recommendations[0].teacher_id) === nearIds[2] && new Set(result.recommendations.map((item) => item.score)).size === 1);
-  check('异地不按同省臆断远近', Number(result.recommendations[1].teacher_id) === nearIds[0] && found(result, nearIds[1]).dispatch_fit.label.includes('异地'));
+  check('异地不按同省臆断远近', Boolean(pendingTravel(result,nearIds[0])) && pendingTravel(result,nearIds[1]).dispatch_fit.label.includes('异地'));
   check('省市后缀规范化', result.analysis.dispatch_preferences.training_province === '浙江' && result.analysis.dispatch_preferences.training_city === '杭州' && found(result, nearIds[2]).base_city === '杭州');
-  check('异地上午课提前到达待核实', found(result, nearIds[0]).dispatch_fit.arrival_day_before && !found(result, nearIds[0]).dispatch_fit.transport_verified);
-  check('推荐算法独立升版不混同简历解析版本', result.algorithm_version === 'local-rules-v3-prebid-locality');
+  check('异地上午课提前到达待核实', pendingTravel(result, nearIds[0]).dispatch_fit.arrival_day_before && !pendingTravel(result, nearIds[0]).dispatch_fit.transport_verified);
+  check('推荐算法独立升版不混同简历解析版本', result.algorithm_version === 'local-v7-all-cities-rail-air');
   const arrivalDispatchId = await api('/dispatches', { project_id: projectId, teacher_id: nearIds[0], subject: '量子传感测绘实操', teach_date: '2099-1-1', hours: 3, status: '待发送' });
   result = await recommend('量子传感测绘实操，2099-01-02开课', logistics);
-  check('提前到达日已有课程保留候选并标记衔接待确认', Boolean(found(result, nearIds[0])?.dispatch_fit.arrival_day_conflict));
+  check('提前到达日已有课程保留待核实候选并标记衔接', Boolean(pendingTravel(result, nearIds[0])?.dispatch_fit.arrival_day_conflict));
   result = await recommend('量子传感测绘实操，2099-01-01开课', logistics);
-  check('目标三人不突破授课当天冲突', !found(result, nearIds[0]) && result.shortfall === 1);
+  check('目标三人不突破授课当天冲突或未知交通', !found(result, nearIds[0]) && !pendingTravel(result,nearIds[0]) && result.shortfall === 2);
   const neutral = await recommend('量子传感测绘实操', { ...logistics, training_mode: '线上' });
   check('线上专业同分恢复稳定顺序不做地区偏好', Number(neutral.recommendations[0].teacher_id) === nearIds[0] && !neutral.analysis.dispatch_preferences.local_preference_active && !found(neutral, nearIds[0]).dispatch_fit.arrival_day_before);
   const disabled = await recommend('量子传感测绘实操', { ...logistics, prefer_local: false });
@@ -246,7 +283,7 @@ async function reparse(id) {
   await api('/dispatches/delete', { id: arrivalDispatchId }); // Remove only this suite's disposable pending fixture before check-out.
   await api('/teachers/checkout', { id: nearIds[0] });
   result = await recommend('量子传感测绘实操', logistics);
-  check('只有两人时保留真实缺口不补回出库师资', result.recommendations.length === 2 && result.shortfall === 1 && !found(result, nearIds[0]));
+  check('出库不补回、未知交通不假装就近', result.recommendations.length === 1 && result.shortfall === 2 && !found(result, nearIds[0]) && !pendingTravel(result,nearIds[0]));
   result = await recommend('量子传感测绘实操', { ...logistics, max_fee_rate: 999, hard_budget: true });
   check('三人目标不突破硬性预算', result.recommendations.length === 0 && result.shortfall === 3);
   const localRow = (await api('/teachers')).find((row) => Number(row.id) === nearIds[2]);

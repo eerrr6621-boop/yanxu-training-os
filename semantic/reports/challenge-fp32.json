@@ -1,0 +1,1634 @@
+{
+  "notice": "Constructed adversarial diagnostic cases. Expectations fixed before inference. Not real-business accuracy; no tuning or production changes.",
+  "generated_at": "2026-09-06T21:13:02.609842+00:00",
+  "platform": "Darwin arm64",
+  "precision": "fp32",
+  "cases_sha256": "74380fdeb731dce7c79144c591d4cf27021fba2173c4ff1f55601cf0b11389d1",
+  "model_sha256": "eda0edd9b97f8b3edc19ff37b34c44e0c1f10a08fd25636577989e03be380414",
+  "source_sha256": {
+    "semantic/worker.py": "0624d82f06747ff83e0692c49a8f54258ec65e8383d1b2787f959dbe38cbbab2",
+    "semantic/evaluate_challenges.py": "7a50e61dce34c4bb5a285aa3b2ae99862da7b64e9c238f3e79e8fe59bb89aa11",
+    "src/com/training/LocalSemantic.java": "7bb9f75a848bbd13854d081e932d3bf95a689bb20603230bafed8b377633e698",
+    "src/com/training/TeacherIntelligence.java": "7a72d16016f67c6ba29a427688f686a6cd13e061f5e35f9cfe1f01c21daf4e98",
+    "scripts/SemanticChallengeProbe.java": "207e9deadb1e06955cba02ed0e22608a92e44d7f0144bd55f119968a4327641a"
+  },
+  "total": 16,
+  "baseline_top1_correct": 9,
+  "semantic_only_top1_correct": 14,
+  "hybrid_top1_correct": 10,
+  "hybrid_improvements": [
+    "c08"
+  ],
+  "hybrid_regressions": [],
+  "expected_excluded_by_rules": [
+    "c02",
+    "c05",
+    "c13",
+    "c14",
+    "c15"
+  ],
+  "preprocessing_passed": 6,
+  "preprocessing_total": 10,
+  "peak_rss_mib": 321.47,
+  "scale": [
+    {
+      "candidates": 50,
+      "chunks": 100,
+      "cold_ms": 638.93,
+      "warm_ms": 0.97,
+      "complete": true
+    },
+    {
+      "candidates": 200,
+      "chunks": 400,
+      "cold_ms": 2603.31,
+      "warm_ms": 3.76,
+      "complete": true
+    }
+  ],
+  "capacity": [
+    {
+      "id": "201_candidates",
+      "rejected_as_expected": true,
+      "error": "capacity_limit"
+    },
+    {
+      "id": "200_candidates_600_chunks",
+      "rejected_as_expected": true,
+      "error": "capacity_limit"
+    }
+  ],
+  "results": [
+    {
+      "id": "c01",
+      "category": "同义表达",
+      "query": "给网点一线员工培训：遇到客户情绪升级时，先稳住对话，再说明办理边界，并与客户约定下一步。",
+      "expected_best_ids": [
+        102
+      ],
+      "rationale": "目标是柜面激动客户对话，不是销售、采购或员工自身压力管理。",
+      "semantic_top1": 102,
+      "semantic_pass": true,
+      "semantic_results": [
+        {
+          "id": 101,
+          "similarity": 0.548819,
+          "evidence": [
+            "主讲银行客户经营课程,内容包括客户分层、交叉销售、活动邀约和潜在商机跟进"
+          ]
+        },
+        {
+          "id": 102,
+          "similarity": 0.661505,
+          "evidence": [
+            "主讲柜面冲突化解课程,通过倾听复述、情绪承接、规则解释和行动约定,训练员工处理激动客户的现场对话"
+          ]
+        },
+        {
+          "id": 103,
+          "similarity": 0.501359,
+          "evidence": [
+            "主讲商务谈判课程,围绕采购价格、合同条件和供应商让步设计开展案例讨论"
+          ]
+        },
+        {
+          "id": 104,
+          "similarity": 0.546176,
+          "evidence": [
+            "主讲个人压力管理课程,帮助员工识别疲劳信号、改善作息并建立日常放松习惯"
+          ]
+        }
+      ],
+      "elapsed_ms": 56.19,
+      "input_reversal_stable": true,
+      "rule_baseline_rank": [
+        102
+      ],
+      "hybrid_rank": [
+        {
+          "id": 102,
+          "score": 6.5,
+          "professional_score": 6.5,
+          "semantic": {
+            "status": "ready",
+            "similarity": 0.661505,
+            "evidence": [
+              "主讲柜面冲突化解课程,通过倾听复述、情绪承接、规则解释和行动约定,训练员工处理激动客户的现场对话"
+            ],
+            "source": "effective_profile",
+            "verified_qualification": false
+          }
+        }
+      ],
+      "excluded_by_rules": [
+        {
+          "professional_score": 51.6,
+          "id": 101
+        },
+        {
+          "professional_score": 0.0,
+          "id": 103
+        },
+        {
+          "professional_score": 1.6,
+          "id": 104
+        }
+      ],
+      "semantic_state": {
+        "status": "ready",
+        "message": "本地语义辅助已完成；相似度仅供比较，不代表胜任概率",
+        "external_ai": false,
+        "mode": "evidence_assist",
+        "model": "BAAI/bge-small-zh-v1.5",
+        "precision": "fp32",
+        "candidate_count": 1,
+        "eligibility_changed": false
+      },
+      "baseline_pass": true,
+      "hybrid_pass": true,
+      "expected_excluded_by_rules": false
+    },
+    {
+      "id": "c02",
+      "category": "同行业近邻",
+      "query": "培训银行柜员识别疑似被诈骗客户，通过询问发现异常转账背景，并开展劝阻沟通。",
+      "expected_best_ids": [
+        203
+      ],
+      "rationale": "仅203直接支持疑似受骗识别与柜面劝阻，同行业不是充分条件。",
+      "semantic_top1": 203,
+      "semantic_pass": true,
+      "semantic_results": [
+        {
+          "id": 201,
+          "similarity": 0.65035,
+          "evidence": [
+            "主讲银行营销合规,训练员工解释产品风险、履行销售告知并处理客户购买异议"
+          ]
+        },
+        {
+          "id": 202,
+          "similarity": 0.548257,
+          "evidence": [
+            "主讲银行数据分析,运用交易报表分析客户活跃度、产品持有和经营机会"
+          ]
+        },
+        {
+          "id": 203,
+          "similarity": 0.746983,
+          "evidence": [
+            "主讲网点反诈场景训练,以异常汇款背景识别、针对性询问和受骗客户劝阻对话为核心,安排柜员角色演练"
+          ]
+        },
+        {
+          "id": 204,
+          "similarity": 0.528793,
+          "evidence": [
+            "主讲客户关系维护,介绍客户回访、服务提醒和流失挽回的常用方法"
+          ]
+        }
+      ],
+      "elapsed_ms": 51.76,
+      "input_reversal_stable": true,
+      "rule_baseline_rank": [],
+      "hybrid_rank": [],
+      "excluded_by_rules": [
+        {
+          "professional_score": 19.4,
+          "id": 201
+        },
+        {
+          "professional_score": 19.4,
+          "id": 202
+        },
+        {
+          "professional_score": 36.4,
+          "id": 203
+        },
+        {
+          "professional_score": 0.0,
+          "id": 204
+        }
+      ],
+      "semantic_state": {
+        "status": "no_candidates",
+        "message": "暂无通过当前条件筛选的候选",
+        "external_ai": false,
+        "mode": "evidence_assist"
+      },
+      "baseline_pass": false,
+      "hybrid_pass": false,
+      "expected_excluded_by_rules": true
+    },
+    {
+      "id": "c03",
+      "category": "授课角色",
+      "query": "寻找能给银行新员工讲授客户投诉处理，并组织情景演练的讲师。",
+      "expected_best_ids": [
+        304
+      ],
+      "rationale": "304支持授课与演练，其余是岗位、参训或会务经历，不能自动视为授课能力。",
+      "semantic_top1": 304,
+      "semantic_pass": true,
+      "semantic_results": [
+        {
+          "id": 301,
+          "similarity": 0.662948,
+          "evidence": [
+            "现任银行客户投诉处理岗位,日常登记投诉、联系客户、跟踪处理结果,并形成内部工作台账"
+          ]
+        },
+        {
+          "id": 302,
+          "similarity": null,
+          "evidence": []
+        },
+        {
+          "id": 303,
+          "similarity": 0.685092,
+          "evidence": [
+            "负责银行客户投诉处理培训项目的报名、会场安排、签到和课后材料整理"
+          ]
+        },
+        {
+          "id": 304,
+          "similarity": 0.802367,
+          "evidence": [
+            "主讲银行新员工客户投诉处理课程,设计柜面争议脚本,组织学员分角色练习倾听、解释和服务补救"
+          ]
+        }
+      ],
+      "elapsed_ms": 43.15,
+      "input_reversal_stable": true,
+      "rule_baseline_rank": [
+        304,
+        302,
+        301,
+        303
+      ],
+      "hybrid_rank": [
+        {
+          "id": 304,
+          "score": 88.6,
+          "professional_score": 88.6,
+          "semantic": {
+            "status": "ready",
+            "similarity": 0.802367,
+            "evidence": [
+              "主讲银行新员工客户投诉处理课程,设计柜面争议脚本,组织学员分角色练习倾听、解释和服务补救"
+            ],
+            "source": "effective_profile",
+            "verified_qualification": false
+          }
+        },
+        {
+          "id": 302,
+          "score": 50.3,
+          "professional_score": 50.3,
+          "semantic": {
+            "status": "no_evidence",
+            "similarity": null,
+            "evidence": [],
+            "source": "effective_profile",
+            "verified_qualification": false
+          }
+        },
+        {
+          "id": 303,
+          "score": 47.8,
+          "professional_score": 47.8,
+          "semantic": {
+            "status": "ready",
+            "similarity": 0.685092,
+            "evidence": [
+              "负责银行客户投诉处理培训项目的报名、会场安排、签到和课后材料整理"
+            ],
+            "source": "effective_profile",
+            "verified_qualification": false
+          }
+        },
+        {
+          "id": 301,
+          "score": 47.8,
+          "professional_score": 47.8,
+          "semantic": {
+            "status": "ready",
+            "similarity": 0.662948,
+            "evidence": [
+              "现任银行客户投诉处理岗位,日常登记投诉、联系客户、跟踪处理结果,并形成内部工作台账"
+            ],
+            "source": "effective_profile",
+            "verified_qualification": false
+          }
+        }
+      ],
+      "excluded_by_rules": [],
+      "semantic_state": {
+        "status": "ready",
+        "message": "本地语义辅助已完成；相似度仅供比较，不代表胜任概率",
+        "external_ai": false,
+        "mode": "evidence_assist",
+        "model": "BAAI/bge-small-zh-v1.5",
+        "precision": "fp32",
+        "candidate_count": 4,
+        "eligibility_changed": false
+      },
+      "baseline_pass": true,
+      "hybrid_pass": true,
+      "expected_excluded_by_rules": false
+    },
+    {
+      "id": "c04",
+      "category": "长文末尾证据",
+      "query": "培训行政人员把零散业务记录整理成 Excel 透视表，并用图表形成月度汇报。",
+      "expected_best_ids": [
+        402
+      ],
+      "rationale": "把直接证据放在40段无关背景后，检查是否丢掉尾部。",
+      "semantic_top1": 402,
+      "semantic_pass": true,
+      "semantic_results": [
+        {
+          "id": 401,
+          "similarity": 0.653859,
+          "evidence": [
+            "主讲月度经营汇报表达,训练学员组织观点、编排讲述顺序和回答管理层提问,课程使用已完成的数据图表"
+          ]
+        },
+        {
+          "id": 402,
+          "similarity": 0.719451,
+          "evidence": [
+            "主讲行政办公数据实操:将零散台账清洗为规范明细,建立 Excel 数据透视表,并制作适用于月度汇报的统计图表",
+            "第34段:长期参与企业内部学习项目,围绕日常沟通协作设计课堂活动,并协助组织人员确认会场设备"
+          ]
+        },
+        {
+          "id": 403,
+          "similarity": 0.452617,
+          "evidence": [
+            "主讲企业数据仓库建设,介绍数据库建模、数据管道和自动化调度,主要面向数据工程师"
+          ]
+        },
+        {
+          "id": 404,
+          "similarity": 0.554429,
+          "evidence": [
+            "主讲办公文档排版,训练行政人员使用 Word 样式、页码和目录整理制度文件"
+          ]
+        }
+      ],
+      "elapsed_ms": 527.03,
+      "input_reversal_stable": true,
+      "rule_baseline_rank": [
+        402,
+        401
+      ],
+      "hybrid_rank": [
+        {
+          "id": 402,
+          "score": 83.2,
+          "professional_score": 83.2,
+          "semantic": {
+            "status": "ready",
+            "similarity": 0.719451,
+            "evidence": [
+              "主讲行政办公数据实操:将零散台账清洗为规范明细,建立 Excel 数据透视表,并制作适用于月度汇报的统计图表",
+              "第34段:长期参与企业内部学习项目,围绕日常沟通协作设计课堂活动,并协助组织人员确认会场设备"
+            ],
+            "source": "effective_profile",
+            "verified_qualification": false
+          }
+        },
+        {
+          "id": 401,
+          "score": 39.5,
+          "professional_score": 39.5,
+          "semantic": {
+            "status": "ready",
+            "similarity": 0.653859,
+            "evidence": [
+              "主讲月度经营汇报表达,训练学员组织观点、编排讲述顺序和回答管理层提问,课程使用已完成的数据图表"
+            ],
+            "source": "effective_profile",
+            "verified_qualification": false
+          }
+        }
+      ],
+      "excluded_by_rules": [
+        {
+          "professional_score": 0.0,
+          "id": 403
+        },
+        {
+          "professional_score": 5.2,
+          "id": 404
+        }
+      ],
+      "semantic_state": {
+        "status": "ready",
+        "message": "本地语义辅助已完成；相似度仅供比较，不代表胜任概率",
+        "external_ai": false,
+        "mode": "evidence_assist",
+        "model": "BAAI/bge-small-zh-v1.5",
+        "precision": "fp32",
+        "candidate_count": 2,
+        "eligibility_changed": false
+      },
+      "baseline_pass": true,
+      "hybrid_pass": true,
+      "expected_excluded_by_rules": false
+    },
+    {
+      "id": "c05",
+      "category": "多模块联合覆盖",
+      "query": "同一位讲师需要完成两个模块：银行客户投诉处置，以及投诉录音复盘带教。两个模块都需要实际练习。",
+      "expected_best_ids": [
+        503,
+        504
+      ],
+      "rationale": "503、504都支持两个模块，501、502各覆盖部分要求。",
+      "semantic_top1": 503,
+      "semantic_pass": true,
+      "semantic_results": [
+        {
+          "id": 501,
+          "similarity": 0.714863,
+          "evidence": [
+            "主讲银行客户投诉处置,安排情绪承接、业务解释和服务补救的情景练习"
+          ]
+        },
+        {
+          "id": 502,
+          "similarity": 0.701065,
+          "evidence": [
+            "主讲客户服务质量复盘,带领主管标注录音中的问题、组织案例讨论并向员工提供反馈"
+          ]
+        },
+        {
+          "id": 503,
+          "similarity": 0.749623,
+          "evidence": [
+            "主讲银行服务提升工作坊,上午进行投诉对话角色演练,下午使用投诉录音开展问题标注、反馈表达和带教练习"
+          ]
+        },
+        {
+          "id": 504,
+          "similarity": 0.746806,
+          "evidence": [
+            "主讲银行网点客诉实战与主管带教,课程包含投诉现场处置练习,以及基于录音的行为分析和辅导演练"
+          ]
+        }
+      ],
+      "elapsed_ms": 65.07,
+      "input_reversal_stable": true,
+      "rule_baseline_rank": [
+        501,
+        502
+      ],
+      "hybrid_rank": [
+        {
+          "id": 501,
+          "score": 83.6,
+          "professional_score": 83.6,
+          "semantic": {
+            "status": "ready",
+            "similarity": 0.714863,
+            "evidence": [
+              "主讲银行客户投诉处置,安排情绪承接、业务解释和服务补救的情景练习"
+            ],
+            "source": "effective_profile",
+            "verified_qualification": false
+          }
+        },
+        {
+          "id": 502,
+          "score": 59.3,
+          "professional_score": 59.3,
+          "semantic": {
+            "status": "ready",
+            "similarity": 0.701065,
+            "evidence": [
+              "主讲客户服务质量复盘,带领主管标注录音中的问题、组织案例讨论并向员工提供反馈"
+            ],
+            "source": "effective_profile",
+            "verified_qualification": false
+          }
+        }
+      ],
+      "excluded_by_rules": [
+        {
+          "professional_score": 25.7,
+          "id": 503
+        },
+        {
+          "professional_score": 26.4,
+          "id": 504
+        }
+      ],
+      "semantic_state": {
+        "status": "ready",
+        "message": "本地语义辅助已完成；相似度仅供比较，不代表胜任概率",
+        "external_ai": false,
+        "mode": "evidence_assist",
+        "model": "BAAI/bge-small-zh-v1.5",
+        "precision": "fp32",
+        "candidate_count": 2,
+        "eligibility_changed": false
+      },
+      "baseline_pass": false,
+      "hybrid_pass": false,
+      "expected_excluded_by_rules": true
+    },
+    {
+      "id": "c06",
+      "category": "对象适配",
+      "query": "为刚晋升的基层班组长培训，重点练习分派任务、检查进度和给员工反馈。",
+      "expected_best_ids": [
+        601
+      ],
+      "rationale": "601同时吻合新任基层管理者与具体管理动作。",
+      "semantic_top1": 601,
+      "semantic_pass": true,
+      "semantic_results": [
+        {
+          "id": 601,
+          "similarity": 0.743221,
+          "evidence": [
+            "主讲新任班组长基础管理,通过现场任务案例练习工作分配、过程跟进和员工反馈"
+          ]
+        },
+        {
+          "id": 602,
+          "similarity": 0.53594,
+          "evidence": [
+            "主讲企业高层战略领导力,围绕组织方向、业务组合和长期资源配置开展研讨"
+          ]
+        },
+        {
+          "id": 603,
+          "similarity": 0.598316,
+          "evidence": [
+            "主讲普通员工自我管理,训练个人目标设定、时间安排和独立完成岗位任务"
+          ]
+        },
+        {
+          "id": 604,
+          "similarity": 0.517835,
+          "evidence": [
+            "主讲人力资源绩效制度设计,面向人力资源部门讨论指标体系、考核流程和制度文本"
+          ]
+        }
+      ],
+      "elapsed_ms": 51.18,
+      "input_reversal_stable": true,
+      "rule_baseline_rank": [
+        601,
+        603
+      ],
+      "hybrid_rank": [
+        {
+          "id": 601,
+          "score": 58.5,
+          "professional_score": 58.5,
+          "semantic": {
+            "status": "ready",
+            "similarity": 0.743221,
+            "evidence": [
+              "主讲新任班组长基础管理,通过现场任务案例练习工作分配、过程跟进和员工反馈"
+            ],
+            "source": "effective_profile",
+            "verified_qualification": false
+          }
+        },
+        {
+          "id": 603,
+          "score": 4.6,
+          "professional_score": 4.6,
+          "semantic": {
+            "status": "ready",
+            "similarity": 0.598316,
+            "evidence": [
+              "主讲普通员工自我管理,训练个人目标设定、时间安排和独立完成岗位任务"
+            ],
+            "source": "effective_profile",
+            "verified_qualification": false
+          }
+        }
+      ],
+      "excluded_by_rules": [
+        {
+          "professional_score": 0.0,
+          "id": 602
+        },
+        {
+          "professional_score": 0.0,
+          "id": 604
+        }
+      ],
+      "semantic_state": {
+        "status": "ready",
+        "message": "本地语义辅助已完成；相似度仅供比较，不代表胜任概率",
+        "external_ai": false,
+        "mode": "evidence_assist",
+        "model": "BAAI/bge-small-zh-v1.5",
+        "precision": "fp32",
+        "candidate_count": 2,
+        "eligibility_changed": false
+      },
+      "baseline_pass": true,
+      "hybrid_pass": true,
+      "expected_excluded_by_rules": false
+    },
+    {
+      "id": "c07",
+      "category": "独立否定句",
+      "query": "寻找能够讲授生成式人工智能办公写作，并安排提示词实操的讲师。",
+      "expected_best_ids": [
+        703
+      ],
+      "rationale": "701、704中的高度相关文字是否定，不应作为正向证据。",
+      "semantic_top1": 703,
+      "semantic_pass": true,
+      "semantic_results": [
+        {
+          "id": 701,
+          "similarity": 0.554969,
+          "evidence": [
+            "主讲公文写作与材料校对"
+          ]
+        },
+        {
+          "id": 702,
+          "similarity": 0.480144,
+          "evidence": [
+            "主讲 Excel 数据整理和工作表函数"
+          ]
+        },
+        {
+          "id": 703,
+          "similarity": 0.764697,
+          "evidence": [
+            "主讲生成式人工智能办公应用,围绕通知、工作总结和方案初稿设计提示词,安排学员现场练习与人工校核"
+          ]
+        },
+        {
+          "id": 704,
+          "similarity": 0.574091,
+          "evidence": [
+            "主讲传统办公软件操作"
+          ]
+        }
+      ],
+      "elapsed_ms": 37.81,
+      "input_reversal_stable": true,
+      "rule_baseline_rank": [
+        703
+      ],
+      "hybrid_rank": [
+        {
+          "id": 703,
+          "score": 85.2,
+          "professional_score": 85.2,
+          "semantic": {
+            "status": "ready",
+            "similarity": 0.764697,
+            "evidence": [
+              "主讲生成式人工智能办公应用,围绕通知、工作总结和方案初稿设计提示词,安排学员现场练习与人工校核"
+            ],
+            "source": "effective_profile",
+            "verified_qualification": false
+          }
+        }
+      ],
+      "excluded_by_rules": [
+        {
+          "professional_score": 1.1,
+          "id": 701
+        },
+        {
+          "professional_score": 1.1,
+          "id": 702
+        },
+        {
+          "professional_score": 1.1,
+          "id": 704
+        }
+      ],
+      "semantic_state": {
+        "status": "ready",
+        "message": "本地语义辅助已完成；相似度仅供比较，不代表胜任概率",
+        "external_ai": false,
+        "mode": "evidence_assist",
+        "model": "BAAI/bge-small-zh-v1.5",
+        "precision": "fp32",
+        "candidate_count": 1,
+        "eligibility_changed": false
+      },
+      "baseline_pass": true,
+      "hybrid_pass": true,
+      "expected_excluded_by_rules": false
+    },
+    {
+      "id": "c08",
+      "category": "长否定与混合单元",
+      "query": "需要银行反洗钱与可疑交易识别课程。",
+      "expected_best_ids": [
+        802
+      ],
+      "rationale": "不能截断否定前缀，将长句尾部升级为肯定。",
+      "semantic_top1": 802,
+      "semantic_pass": true,
+      "semantic_results": [
+        {
+          "id": 801,
+          "similarity": null,
+          "evidence": []
+        },
+        {
+          "id": 802,
+          "similarity": 0.785512,
+          "evidence": [
+            "主讲银行反洗钱岗位培训,通过构造案例讲解可疑交易线索识别和内部报告流程"
+          ]
+        },
+        {
+          "id": 803,
+          "similarity": null,
+          "evidence": []
+        },
+        {
+          "id": 804,
+          "similarity": 0.548061,
+          "evidence": [
+            "主讲银行客户关系维护,内容包括回访计划、服务提醒和客户沟通记录"
+          ]
+        }
+      ],
+      "elapsed_ms": 28.01,
+      "input_reversal_stable": true,
+      "rule_baseline_rank": [
+        803,
+        802
+      ],
+      "hybrid_rank": [
+        {
+          "id": 802,
+          "score": 91.8,
+          "professional_score": 91.8,
+          "semantic": {
+            "status": "ready",
+            "similarity": 0.785512,
+            "evidence": [
+              "主讲银行反洗钱岗位培训,通过构造案例讲解可疑交易线索识别和内部报告流程"
+            ],
+            "source": "effective_profile",
+            "verified_qualification": false
+          }
+        },
+        {
+          "id": 803,
+          "score": 96.7,
+          "professional_score": 96.7,
+          "semantic": {
+            "status": "no_evidence",
+            "similarity": null,
+            "evidence": [],
+            "source": "effective_profile",
+            "verified_qualification": false
+          }
+        }
+      ],
+      "excluded_by_rules": [
+        {
+          "professional_score": 0.0,
+          "id": 801
+        },
+        {
+          "professional_score": 23.1,
+          "id": 804
+        }
+      ],
+      "semantic_state": {
+        "status": "ready",
+        "message": "本地语义辅助已完成；相似度仅供比较，不代表胜任概率",
+        "external_ai": false,
+        "mode": "evidence_assist",
+        "model": "BAAI/bge-small-zh-v1.5",
+        "precision": "fp32",
+        "candidate_count": 2,
+        "eligibility_changed": false
+      },
+      "baseline_pass": false,
+      "hybrid_pass": true,
+      "expected_excluded_by_rules": false
+    },
+    {
+      "id": "c09",
+      "category": "关键词堆砌",
+      "query": "给新员工开设时间管理实操课，训练任务排序、日程安排和突发事项处理。",
+      "expected_best_ids": [
+        904
+      ],
+      "rationale": "资料运营和会务没有直接授课证据；904支持目标对象与练习。",
+      "semantic_top1": 904,
+      "semantic_pass": true,
+      "semantic_results": [
+        {
+          "id": 901,
+          "similarity": 0.65117,
+          "evidence": [
+            "负责时间管理课程资料运营,整理时间管理书单、时间管理案例、时间管理练习和时间管理宣传文案,并发布任务排序与日程安排相关文章"
+          ]
+        },
+        {
+          "id": 902,
+          "similarity": 0.686996,
+          "evidence": [
+            "负责培训会务,安排时间管理课程的报名、签到、教室、日程和满意度问卷"
+          ]
+        },
+        {
+          "id": 903,
+          "similarity": 0.543934,
+          "evidence": [
+            "主讲项目进度软件操作,演示大型工程的任务依赖、关键路径和资源排程"
+          ]
+        },
+        {
+          "id": 904,
+          "similarity": 0.724081,
+          "evidence": [
+            "主讲新员工工作效率训练,通过一日工作模拟,让学员排列任务先后、编制可执行日程,并练习应对临时插入的工作"
+          ]
+        }
+      ],
+      "elapsed_ms": 60.67,
+      "input_reversal_stable": true,
+      "rule_baseline_rank": [
+        904,
+        901,
+        902
+      ],
+      "hybrid_rank": [
+        {
+          "id": 904,
+          "score": 81.2,
+          "professional_score": 81.2,
+          "semantic": {
+            "status": "ready",
+            "similarity": 0.724081,
+            "evidence": [
+              "主讲新员工工作效率训练,通过一日工作模拟,让学员排列任务先后、编制可执行日程,并练习应对临时插入的工作"
+            ],
+            "source": "effective_profile",
+            "verified_qualification": false
+          }
+        },
+        {
+          "id": 901,
+          "score": 70.9,
+          "professional_score": 70.9,
+          "semantic": {
+            "status": "ready",
+            "similarity": 0.65117,
+            "evidence": [
+              "负责时间管理课程资料运营,整理时间管理书单、时间管理案例、时间管理练习和时间管理宣传文案,并发布任务排序与日程安排相关文章"
+            ],
+            "source": "effective_profile",
+            "verified_qualification": false
+          }
+        },
+        {
+          "id": 902,
+          "score": 67.5,
+          "professional_score": 67.5,
+          "semantic": {
+            "status": "ready",
+            "similarity": 0.686996,
+            "evidence": [
+              "负责培训会务,安排时间管理课程的报名、签到、教室、日程和满意度问卷"
+            ],
+            "source": "effective_profile",
+            "verified_qualification": false
+          }
+        }
+      ],
+      "excluded_by_rules": [
+        {
+          "professional_score": 0.9,
+          "id": 903
+        }
+      ],
+      "semantic_state": {
+        "status": "ready",
+        "message": "本地语义辅助已完成；相似度仅供比较，不代表胜任概率",
+        "external_ai": false,
+        "mode": "evidence_assist",
+        "model": "BAAI/bge-small-zh-v1.5",
+        "precision": "fp32",
+        "candidate_count": 3,
+        "eligibility_changed": false
+      },
+      "baseline_pass": true,
+      "hybrid_pass": true,
+      "expected_excluded_by_rules": false
+    },
+    {
+      "id": "c10",
+      "category": "正向地名误判",
+      "query": "培训网点员工识别老年客户办理业务的困难，并练习清晰解释和耐心引导。",
+      "expected_best_ids": [
+        1001
+      ],
+      "rationale": "无锡是地名，不能与后文经验拼成否定。",
+      "semantic_top1": 1002,
+      "semantic_pass": false,
+      "semantic_results": [
+        {
+          "id": 1001,
+          "similarity": null,
+          "evidence": []
+        },
+        {
+          "id": 1002,
+          "similarity": 0.548328,
+          "evidence": [
+            "主讲银行青年客户经营,内容包括社群活动、移动渠道推广和消费场景营销"
+          ]
+        },
+        {
+          "id": 1003,
+          "similarity": 0.497078,
+          "evidence": [
+            "主讲员工退休生活规划,讨论兴趣发展、生活节奏和个人时间安排"
+          ]
+        },
+        {
+          "id": 1004,
+          "similarity": 0.509087,
+          "evidence": [
+            "主讲办公设备维护,演示打印机、扫描仪和会议设备的常见故障处理"
+          ]
+        }
+      ],
+      "elapsed_ms": 38.78,
+      "input_reversal_stable": true,
+      "rule_baseline_rank": [
+        1001
+      ],
+      "hybrid_rank": [
+        {
+          "id": 1001,
+          "score": 53.7,
+          "professional_score": 53.7,
+          "semantic": {
+            "status": "no_evidence",
+            "similarity": null,
+            "evidence": [],
+            "source": "effective_profile",
+            "verified_qualification": false
+          }
+        }
+      ],
+      "excluded_by_rules": [
+        {
+          "professional_score": 51.9,
+          "id": 1002
+        },
+        {
+          "professional_score": 1.9,
+          "id": 1003
+        },
+        {
+          "professional_score": 0.0,
+          "id": 1004
+        }
+      ],
+      "semantic_state": {
+        "status": "ready",
+        "message": "本地语义辅助已完成；相似度仅供比较，不代表胜任概率",
+        "external_ai": false,
+        "mode": "evidence_assist",
+        "model": "BAAI/bge-small-zh-v1.5",
+        "precision": "fp32",
+        "candidate_count": 1,
+        "eligibility_changed": false
+      },
+      "baseline_pass": true,
+      "hybrid_pass": true,
+      "expected_excluded_by_rules": false
+    },
+    {
+      "id": "c11",
+      "category": "个人属性不应改变专业证据",
+      "query": "需要银行客户投诉处理课程，包含倾听复述和服务补救演练。",
+      "expected_best_ids": [
+        1101,
+        1103
+      ],
+      "rationale": "专业文字相同的1101与1103等价，不从构造个人属性推断优劣。",
+      "semantic_top1": 1101,
+      "semantic_pass": true,
+      "semantic_results": [
+        {
+          "id": 1101,
+          "similarity": 0.865107,
+          "evidence": [
+            "主讲银行客户投诉处理,课程包括倾听复述、业务解释和服务补救情景演练"
+          ]
+        },
+        {
+          "id": 1102,
+          "similarity": 0.637115,
+          "evidence": [
+            "主讲银行客户营销,课程包括需求挖掘、产品说明和客户活动设计"
+          ]
+        },
+        {
+          "id": 1103,
+          "similarity": 0.865107,
+          "evidence": [
+            "主讲银行客户投诉处理,课程包括倾听复述、业务解释和服务补救情景演练"
+          ]
+        },
+        {
+          "id": 1104,
+          "similarity": 0.482384,
+          "evidence": [
+            "主讲员工情绪管理,课程包括个人压力识别与日常放松训练"
+          ]
+        }
+      ],
+      "elapsed_ms": 36.64,
+      "input_reversal_stable": true,
+      "rule_baseline_rank": [
+        1101,
+        1103
+      ],
+      "hybrid_rank": [
+        {
+          "id": 1101,
+          "score": 93.6,
+          "professional_score": 93.6,
+          "semantic": {
+            "status": "ready",
+            "similarity": 0.865107,
+            "evidence": [
+              "主讲银行客户投诉处理,课程包括倾听复述、业务解释和服务补救情景演练"
+            ],
+            "source": "effective_profile",
+            "verified_qualification": false
+          }
+        },
+        {
+          "id": 1103,
+          "score": 93.6,
+          "professional_score": 93.6,
+          "semantic": {
+            "status": "ready",
+            "similarity": 0.865107,
+            "evidence": [
+              "主讲银行客户投诉处理,课程包括倾听复述、业务解释和服务补救情景演练"
+            ],
+            "source": "effective_profile",
+            "verified_qualification": false
+          }
+        }
+      ],
+      "excluded_by_rules": [
+        {
+          "professional_score": 23.6,
+          "id": 1102
+        },
+        {
+          "professional_score": 0.0,
+          "id": 1104
+        }
+      ],
+      "semantic_state": {
+        "status": "ready",
+        "message": "本地语义辅助已完成；相似度仅供比较，不代表胜任概率",
+        "external_ai": false,
+        "mode": "evidence_assist",
+        "model": "BAAI/bge-small-zh-v1.5",
+        "precision": "fp32",
+        "candidate_count": 2,
+        "eligibility_changed": false
+      },
+      "baseline_pass": true,
+      "hybrid_pass": true,
+      "expected_excluded_by_rules": false
+    },
+    {
+      "id": "c12",
+      "category": "教学方式约束",
+      "query": "给内训师安排课程开发工作坊，必须让学员现场完成教学目标、课程结构和练习设计，并得到逐项点评。",
+      "expected_best_ids": [
+        1202
+      ],
+      "rationale": "1202有现场产出和逐项反馈；理念讲座不能自动补全工作坊交付方式。",
+      "semantic_top1": 1202,
+      "semantic_pass": true,
+      "semantic_results": [
+        {
+          "id": 1201,
+          "similarity": 0.68087,
+          "evidence": [
+            "主讲课程开发理念讲座,系统介绍教学目标、课程结构、练习设计和成人学习特点"
+          ]
+        },
+        {
+          "id": 1202,
+          "similarity": 0.825791,
+          "evidence": [
+            "主讲内训师课程开发工作坊,带领学员现场写出教学目标、搭建课程结构并制作练习任务,对每组提交的三项成果逐项反馈"
+          ]
+        },
+        {
+          "id": 1203,
+          "similarity": 0.682962,
+          "evidence": [
+            "主讲演讲表达训练,安排内训师练习开场、声音、站姿和现场互动"
+          ]
+        },
+        {
+          "id": 1204,
+          "similarity": 0.619571,
+          "evidence": [
+            "负责企业课程库管理,收集教学目标、课程结构和练习设计文档,维护课程分类及版本"
+          ]
+        }
+      ],
+      "elapsed_ms": 57.63,
+      "input_reversal_stable": true,
+      "rule_baseline_rank": [
+        1202,
+        1201,
+        1204,
+        1203
+      ],
+      "hybrid_rank": [
+        {
+          "id": 1202,
+          "score": 47.2,
+          "professional_score": 47.2,
+          "semantic": {
+            "status": "ready",
+            "similarity": 0.825791,
+            "evidence": [
+              "主讲内训师课程开发工作坊,带领学员现场写出教学目标、搭建课程结构并制作练习任务,对每组提交的三项成果逐项反馈"
+            ],
+            "source": "effective_profile",
+            "verified_qualification": false
+          }
+        },
+        {
+          "id": 1201,
+          "score": 27.8,
+          "professional_score": 27.8,
+          "semantic": {
+            "status": "ready",
+            "similarity": 0.68087,
+            "evidence": [
+              "主讲课程开发理念讲座,系统介绍教学目标、课程结构、练习设计和成人学习特点"
+            ],
+            "source": "effective_profile",
+            "verified_qualification": false
+          }
+        },
+        {
+          "id": 1204,
+          "score": 27.8,
+          "professional_score": 27.8,
+          "semantic": {
+            "status": "ready",
+            "similarity": 0.619571,
+            "evidence": [
+              "负责企业课程库管理,收集教学目标、课程结构和练习设计文档,维护课程分类及版本"
+            ],
+            "source": "effective_profile",
+            "verified_qualification": false
+          }
+        },
+        {
+          "id": 1203,
+          "score": 13.9,
+          "professional_score": 13.9,
+          "semantic": {
+            "status": "ready",
+            "similarity": 0.682962,
+            "evidence": [
+              "主讲演讲表达训练,安排内训师练习开场、声音、站姿和现场互动"
+            ],
+            "source": "effective_profile",
+            "verified_qualification": false
+          }
+        }
+      ],
+      "excluded_by_rules": [],
+      "semantic_state": {
+        "status": "ready",
+        "message": "本地语义辅助已完成；相似度仅供比较，不代表胜任概率",
+        "external_ai": false,
+        "mode": "evidence_assist",
+        "model": "BAAI/bge-small-zh-v1.5",
+        "precision": "fp32",
+        "candidate_count": 4,
+        "eligibility_changed": false
+      },
+      "baseline_pass": true,
+      "hybrid_pass": true,
+      "expected_excluded_by_rules": false
+    },
+    {
+      "id": "c13",
+      "category": "人工画像优先",
+      "query": "银行客户投诉处理与柜面情景演练",
+      "expected_best_ids": [
+        1302
+      ],
+      "rationale": "1301原文虽然高度相关，但人工已改为Excel，不得复活被删除的专业。",
+      "semantic_top1": 1302,
+      "semantic_pass": true,
+      "semantic_results": [
+        {
+          "id": 1301,
+          "similarity": 0.428517,
+          "evidence": [
+            "人工核对:主讲Excel工作表函数与数据透视分析课程"
+          ]
+        },
+        {
+          "id": 1302,
+          "similarity": 0.791315,
+          "evidence": [
+            "主讲银行服务实务,通过柜面投诉案例训练客户情绪安抚与服务补救"
+          ]
+        },
+        {
+          "id": 1303,
+          "similarity": 0.43532,
+          "evidence": [
+            "主讲采购谈判与供应商合同条款分析课程"
+          ]
+        }
+      ],
+      "elapsed_ms": 28.53,
+      "input_reversal_stable": true,
+      "rule_baseline_rank": [],
+      "hybrid_rank": [],
+      "excluded_by_rules": [
+        {
+          "professional_score": 0.0,
+          "id": 1301
+        },
+        {
+          "professional_score": 26.4,
+          "id": 1302
+        },
+        {
+          "professional_score": 0.0,
+          "id": 1303
+        }
+      ],
+      "semantic_state": {
+        "status": "no_candidates",
+        "message": "暂无通过当前条件筛选的候选",
+        "external_ai": false,
+        "mode": "evidence_assist"
+      },
+      "baseline_pass": false,
+      "hybrid_pass": false,
+      "expected_excluded_by_rules": true
+    },
+    {
+      "id": "c14",
+      "category": "否定用语覆盖",
+      "query": "银行客户投诉处理与柜面情景演练",
+      "expected_best_ids": [
+        1402
+      ],
+      "rationale": "从未主讲的字面否定不能成为高相关授课经历。",
+      "semantic_top1": 1402,
+      "semantic_pass": true,
+      "semantic_results": [
+        {
+          "id": 1401,
+          "similarity": 0.728406,
+          "evidence": [
+            "从未主讲银行客户投诉处理与柜面情景演练,只负责这门课程的会场服务"
+          ]
+        },
+        {
+          "id": 1402,
+          "similarity": 0.749904,
+          "evidence": [
+            "主讲服务补救实务,结合银行柜面案例指导学员练习倾听、解释和客户情绪安抚"
+          ]
+        },
+        {
+          "id": 1403,
+          "similarity": 0.36819,
+          "evidence": [
+            "主讲企业预算编制与费用控制课程"
+          ]
+        }
+      ],
+      "elapsed_ms": 22.03,
+      "input_reversal_stable": true,
+      "rule_baseline_rank": [
+        1401
+      ],
+      "hybrid_rank": [
+        {
+          "id": 1401,
+          "score": 100.0,
+          "professional_score": 100.0,
+          "semantic": {
+            "status": "ready",
+            "similarity": 0.728406,
+            "evidence": [
+              "从未主讲银行客户投诉处理与柜面情景演练,只负责这门课程的会场服务"
+            ],
+            "source": "effective_profile",
+            "verified_qualification": false
+          }
+        }
+      ],
+      "excluded_by_rules": [
+        {
+          "professional_score": 24.7,
+          "id": 1402
+        },
+        {
+          "professional_score": 0.0,
+          "id": 1403
+        }
+      ],
+      "semantic_state": {
+        "status": "ready",
+        "message": "本地语义辅助已完成；相似度仅供比较，不代表胜任概率",
+        "external_ai": false,
+        "mode": "evidence_assist",
+        "model": "BAAI/bge-small-zh-v1.5",
+        "precision": "fp32",
+        "candidate_count": 1,
+        "eligibility_changed": false
+      },
+      "baseline_pass": false,
+      "hybrid_pass": false,
+      "expected_excluded_by_rules": true
+    },
+    {
+      "id": "c15",
+      "category": "口语化需求召回",
+      "query": "让员工把一堆杂乱的数字做成老板一眼就能明白的图",
+      "expected_best_ids": [
+        1502
+      ],
+      "rationale": "数字到图的口语要求支持数据可视化；检查是否被词面规则提前排除。",
+      "semantic_top1": 1502,
+      "semantic_pass": true,
+      "semantic_results": [
+        {
+          "id": 1501,
+          "similarity": 0.409487,
+          "evidence": [
+            "主讲商务礼仪与形象管理,帮助学员改善职场仪态"
+          ]
+        },
+        {
+          "id": 1502,
+          "similarity": 0.504292,
+          "evidence": [
+            "主讲商业数据可视化课程,围绕指标梳理、图表选型和看板设计开展动手练习"
+          ]
+        },
+        {
+          "id": 1503,
+          "similarity": 0.406037,
+          "evidence": [
+            "主讲领导力与授权管理,帮助经理建立团队工作机制"
+          ]
+        }
+      ],
+      "elapsed_ms": 32.75,
+      "input_reversal_stable": true,
+      "rule_baseline_rank": [],
+      "hybrid_rank": [],
+      "excluded_by_rules": [
+        {
+          "professional_score": 0.0,
+          "id": 1501
+        },
+        {
+          "professional_score": 0.0,
+          "id": 1502
+        },
+        {
+          "professional_score": 0.0,
+          "id": 1503
+        }
+      ],
+      "semantic_state": {
+        "status": "no_candidates",
+        "message": "暂无通过当前条件筛选的候选",
+        "external_ai": false,
+        "mode": "evidence_assist"
+      },
+      "baseline_pass": false,
+      "hybrid_pass": false,
+      "expected_excluded_by_rules": true
+    },
+    {
+      "id": "c16",
+      "category": "多主题不应当作任选其一",
+      "query": "培训主题：银行客户投诉处理；培训目标：Excel报表自动化，两项都须有授课经验",
+      "expected_best_ids": [
+        1602
+      ],
+      "rationale": "1602覆盖两项，不能仅取某一需求片段的最大相似度证明联合满足。",
+      "semantic_top1": 1603,
+      "semantic_pass": false,
+      "semantic_results": [
+        {
+          "id": 1601,
+          "similarity": 0.72288,
+          "evidence": [
+            "主讲银行客户投诉处理,教授投诉沟通、客户情绪安抚与争议化解"
+          ]
+        },
+        {
+          "id": 1602,
+          "similarity": 0.631519,
+          "evidence": [
+            "主讲银行服务能力与办公效率提升,课程包含客诉场景角色演练和Excel报表自动化实操两个模块"
+          ]
+        },
+        {
+          "id": 1603,
+          "similarity": 0.734366,
+          "evidence": [
+            "主讲Excel报表自动化,教授函数运算与透视表整理"
+          ]
+        }
+      ],
+      "elapsed_ms": 43.43,
+      "input_reversal_stable": true,
+      "rule_baseline_rank": [
+        1601,
+        1602,
+        1603
+      ],
+      "hybrid_rank": [
+        {
+          "id": 1601,
+          "score": 55.8,
+          "professional_score": 55.8,
+          "semantic": {
+            "status": "ready",
+            "similarity": 0.72288,
+            "evidence": [
+              "主讲银行客户投诉处理,教授投诉沟通、客户情绪安抚与争议化解"
+            ],
+            "source": "effective_profile",
+            "verified_qualification": false
+          }
+        },
+        {
+          "id": 1602,
+          "score": 55.8,
+          "professional_score": 55.8,
+          "semantic": {
+            "status": "ready",
+            "similarity": 0.631519,
+            "evidence": [
+              "主讲银行服务能力与办公效率提升,课程包含客诉场景角色演练和Excel报表自动化实操两个模块"
+            ],
+            "source": "effective_profile",
+            "verified_qualification": false
+          }
+        },
+        {
+          "id": 1603,
+          "score": 33.4,
+          "professional_score": 33.4,
+          "semantic": {
+            "status": "ready",
+            "similarity": 0.734366,
+            "evidence": [
+              "主讲Excel报表自动化,教授函数运算与透视表整理"
+            ],
+            "source": "effective_profile",
+            "verified_qualification": false
+          }
+        }
+      ],
+      "excluded_by_rules": [],
+      "semantic_state": {
+        "status": "ready",
+        "message": "本地语义辅助已完成；相似度仅供比较，不代表胜任概率",
+        "external_ai": false,
+        "mode": "evidence_assist",
+        "model": "BAAI/bge-small-zh-v1.5",
+        "precision": "fp32",
+        "candidate_count": 3,
+        "eligibility_changed": false
+      },
+      "baseline_pass": false,
+      "hybrid_pass": false,
+      "expected_excluded_by_rules": false
+    }
+  ],
+  "preprocessing": [
+    {
+      "id": "p01",
+      "text": "在无锡主讲银行客户服务课程，积累了面向柜员的授课经验。",
+      "fragment": "在无锡主讲银行客户服务课程",
+      "should_keep": true,
+      "actual_chunks": [],
+      "passed": false
+    },
+    {
+      "id": "p02",
+      "text": "主讲网点无障碍服务课程，拥有辅助沟通与分步引导的教学经验。",
+      "fragment": "主讲网点无障碍服务课程",
+      "should_keep": true,
+      "actual_chunks": [],
+      "passed": false
+    },
+    {
+      "id": "p03",
+      "text": "主讲银行客户服务与投诉处理课程。不包含人工智能办公写作课程。",
+      "fragment": "主讲银行客户服务与投诉处理课程",
+      "should_keep": true,
+      "actual_chunks": [
+        "主讲银行客户服务与投诉处理课程"
+      ],
+      "passed": true
+    },
+    {
+      "id": "p04",
+      "text": "主讲商务礼仪，但不具备反洗钱培训课程的教学经验。",
+      "fragment": "不具备反洗钱培训课程的教学经验",
+      "should_keep": false,
+      "actual_chunks": [],
+      "passed": true
+    },
+    {
+      "id": "p05",
+      "text": "性别：女；年龄：45；主讲面向老年客户的网点适老化服务课程。",
+      "fragment": "主讲面向老年客户的网点适老化服务课程",
+      "should_keep": true,
+      "actual_chunks": [
+        "主讲面向老年客户的网点适老化服务课程"
+      ],
+      "passed": true
+    },
+    {
+      "id": "p06",
+      "text": "从未主讲银行客户投诉处理与柜面情景演练。",
+      "fragment": "从未主讲银行客户投诉处理",
+      "should_keep": false,
+      "actual_chunks": [
+        "从未主讲银行客户投诉处理与柜面情景演练"
+      ],
+      "passed": false
+    },
+    {
+      "id": "p07",
+      "text": "主讲银行营销课，但未担任客户投诉处理课程讲师。",
+      "fragment": "未担任客户投诉处理课程讲师",
+      "should_keep": false,
+      "actual_chunks": [
+        "主讲银行营销课,但未担任客户投诉处理课程讲师"
+      ],
+      "passed": false
+    },
+    {
+      "id": "p08",
+      "text": "曾为某银行开展客户投诉处理课程，资历待确认。",
+      "fragment": "客户投诉处理课程",
+      "should_keep": false,
+      "actual_chunks": [],
+      "passed": true
+    },
+    {
+      "id": "p09",
+      "text": "不是银行客户投诉课程的讲师，仅为该培训提供会务支持。",
+      "fragment": "银行客户投诉课程",
+      "should_keep": false,
+      "actual_chunks": [],
+      "passed": true
+    },
+    {
+      "id": "p10",
+      "text": "尚无银行客户投诉课程的授课经验。",
+      "fragment": "银行客户投诉课程",
+      "should_keep": false,
+      "actual_chunks": [],
+      "passed": true
+    }
+  ]
+}

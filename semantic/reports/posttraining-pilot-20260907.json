@@ -1,0 +1,72 @@
+{
+  "schema_version": "yanxu-posttraining-pilot-summary-v1",
+  "date": "2026-09-07",
+  "status": "trained_and_evaluated_not_approved_for_deployment",
+  "base_model": "BAAI/bge-small-zh-v1.5",
+  "base_revision": "7999e1d3359715c523056ef9478215996d62a620",
+  "experimental_model": "yanxu/bge-small-zh-synthetic-pilot",
+  "experimental_revision": "pilot-bf41f9b29232a5b9",
+  "production_deployed": false,
+  "production_sources_changed": false,
+  "production_allowlist_changed": false,
+  "production_encoder_rejected_experimental_fp32_and_int8": true,
+  "real_resumes_used_for_training": false,
+  "real_resumes_evaluated_after_training": false,
+  "business_accuracy_claim": false,
+  "transport_coverage_complete": false,
+  "data": {
+    "label_origin": "AI-authored synthetic, not business-human-validated",
+    "train_queries": 80,
+    "dev_queries": 16,
+    "holdout_queries": 32,
+    "positive_passages_per_query": 1,
+    "negative_passages_per_query": 3,
+    "holdout_used_for_training_or_checkpoint_selection": false,
+    "training_data_sha256": "41a6aeb6d66b3742d1ed6fffc5bea0771002652074f994d9deefd96d1cccefef",
+    "holdout_sha256": "ecff4e7fd2ac0acab980e07b8e6a6c6e2929e5e7b63bf78abced3c64586dffe7",
+    "train_positive_unique_longest": 80,
+    "dev_positive_unique_longest": 16,
+    "holdout_longest_heuristic_correct": 18
+  },
+  "training": {
+    "parameter_count": 23953920,
+    "added_parameters": 0,
+    "epochs": 2,
+    "optimizer_updates": 40,
+    "training_loop_seconds": 7.514,
+    "process_peak_rss_mib": 941.38,
+    "device": "cpu",
+    "threads": 1,
+    "checkpoint_sha256": "bf41f9b29232a5b94c1862cb87155cc5fd75c414604f904fdea57927428a33fe"
+  },
+  "runs": [
+    {"model": "base", "precision": "fp32", "bytes": 94836845, "process_peak_rss_mib": 322.844, "dev_raw_top1": 4, "dev_worker_top1": 2, "holdout_raw_top1": 15, "holdout_worker_top1": 9, "dev_worker_errors": 4, "holdout_worker_errors": 2},
+    {"model": "base", "precision": "int8", "bytes": 57239135, "process_peak_rss_mib": 201.188, "dev_raw_top1": 6, "dev_worker_top1": 2, "holdout_raw_top1": 11, "holdout_worker_top1": 9, "dev_worker_errors": 4, "holdout_worker_errors": 2},
+    {"model": "trained", "precision": "fp32", "bytes": 94836845, "process_peak_rss_mib": 321.859, "dev_raw_top1": 13, "dev_worker_top1": 6, "holdout_raw_top1": 24, "holdout_worker_top1": 13, "dev_worker_errors": 4, "holdout_worker_errors": 2},
+    {"model": "trained", "precision": "int8", "bytes": 57239135, "process_peak_rss_mib": 200.766, "dev_raw_top1": 13, "dev_worker_top1": 6, "holdout_raw_top1": 25, "holdout_worker_top1": 13, "dev_worker_errors": 4, "holdout_worker_errors": 2}
+  ],
+  "holdout_int8_paired_changes": {
+    "raw_improved": 14,
+    "raw_regressed": 0,
+    "worker_improved": 6,
+    "worker_regressed": 2,
+    "base_correct_when_longest_wrong": 3,
+    "trained_correct_when_longest_wrong": 10,
+    "longest_wrong_denominator": 14
+  },
+  "raw_report_sha256": {
+    "base-fp32.json": "3e9491b291a872591b10fb26c8cc88d62e3aca1a9f71a38a38af9272125eb7fe",
+    "base-int8.json": "ac5deaef3b1a27bccde6568ef5c68863b6e13dc13ebe900842b717339e0a0a3f",
+    "trained-fp32.json": "a1737df64772e012fca266f7232b5f52744e8efd84950cde3441015e4ff3a7ec",
+    "trained-int8.json": "5658a0726297d34a7b44bbd892cb17bcd47a4f54ae06a330965c7139592e85db",
+    "training-report.json": "cbad0c50a00aeb1cad2df83172b34377a188654d863a579790879e859393c0da",
+    "manifest.json": "f8ed2f2ad6e0f38d7adb39a74c9f7a9b6bb2b9f7e18305b3cd939187175a0477"
+  },
+  "limitations": [
+    "Synthetic-only small test; training/dev length and style shortcuts are not ruled out.",
+    "Worker metrics are preprocessing plus retrieval, not Java eligibility or end-to-end top-three recommendation.",
+    "Guard failures are included in denominators; one valid passage was erased by a keyword-only filter.",
+    "Peak RSS is a fresh local evaluation process metric, not production steady-state or a hard resource bound.",
+    "No production deployment, server concurrency benchmark, real-resume posttraining regression or complete national timetable verification."
+  ]
+}

@@ -64,7 +64,8 @@ final class DispatchPreference {
                 text(values.get("training_mode")), text(values.get("training_period")), !Boolean.FALSE.equals(body.get("prefer_local")));
     }
 
-    boolean localPreferenceActive() { return preferLocal && "线下".equals(mode) && RegionDirectory.known(province, city); }
+    boolean localPreferenceRequested() { return preferLocal && "线下".equals(mode); }
+    boolean localPreferenceActive() { return localPreferenceRequested() && RegionDirectory.known(province, city); }
 
     Map<String, Object> describe(Map<String, Object> teacher, String date) {
         String baseProvince = text(teacher.get("base_province")), baseCity = text(teacher.get("base_city"));
@@ -97,6 +98,8 @@ final class DispatchPreference {
         result.put("arrival_day_before", remoteMorning);
         result.put("label", "线上".equals(mode) ? "线上 · 不限地区" : !known ? "常驻地待补充" : !destinationKnown ? "授课地待定" : !resolved ? "地区名称待核对" : !"线下".equals(mode) ? "授课方式待确认" : sameCity ? "同城" : "异地 · 交通待核实");
         result.put("notes", notes); result.put("transport_verified", false);
+        if (!"线上".equals(mode)) result.put("rail", RailTravel.unavailable(baseCity, city,
+                remoteMorning && date != null && !date.isEmpty() ? java.time.LocalDate.parse(date).minusDays(1).toString() : date));
         return result;
     }
 
@@ -106,7 +109,7 @@ final class DispatchPreference {
         result.put("training_mode", mode); result.put("training_period", period); result.put("prefer_local", preferLocal);
         result.put("local_preference_active", localPreferenceActive());
         result.put("stage", "投标前师资推荐");
-        result.put("ranking_policy", localPreferenceActive() ? "专业匹配每10分一档，同档同城优先，再按综合匹配分排序；异地不推断远近" : "按综合匹配分排序；未启用地区偏好");
+        result.put("ranking_policy", localPreferenceActive() ? "检查全部城市，同城及所有铁路小于4小时候选统一比较；铁路优先、航空后备，各池比模型分、同分等级，第三名同分全留" : localPreferenceRequested() ? "授课地区待核实，暂不自动纳入就近推荐；不会按不限地区处理" : "按模型匹配分排序，同分再比等级；未启用地区偏好");
         return result;
     }
 }

@@ -14,3 +14,17 @@ nohup.out
 
 # Internal operations handoff docs (credentials & runbooks) — intentionally not public
 handoff/
+
+# Local semantic artifacts/cache/venvs are never web assets or source control.
+semantic/model/
+semantic/.venv*/
+__pycache__/
+*.pyc
+*.sqlite
+# Internal organization directories are deployed privately, never as open-source data.
+config/dispatch-organizations.local.json
+config/dispatch-route-references.local.json
+config/transport-matrix.local.json
+config/transport-matrices.local/
+# Unlicensed historical research is not a deployable/public timetable catalog.
+config/rail-timetable.json

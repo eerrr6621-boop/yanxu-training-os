@@ -96,6 +96,7 @@ public class Db {
             // 不从单位/简历推断常驻地；历史未知值保留，首次编辑时由管理员补录。
             st.execute("ALTER TABLE teachers ADD COLUMN IF NOT EXISTS base_province VARCHAR(64)");
             st.execute("ALTER TABLE teachers ADD COLUMN IF NOT EXISTS base_city VARCHAR(64)");
+            st.execute("ALTER TABLE teachers ADD COLUMN IF NOT EXISTS teacher_level VARCHAR(32)");
             st.execute("ALTER TABLE demands ADD COLUMN IF NOT EXISTS training_province VARCHAR(64)");
             st.execute("ALTER TABLE demands ADD COLUMN IF NOT EXISTS training_city VARCHAR(64)");
             st.execute("ALTER TABLE demands ADD COLUMN IF NOT EXISTS training_mode VARCHAR(16)");

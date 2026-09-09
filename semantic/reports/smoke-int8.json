@@ -1,0 +1,146 @@
+{
+  "notice": "Synthetic smoke cases, NOT production accuracy or target-server performance",
+  "generated_at": "2026-09-06T20:46:08.255961+00:00",
+  "platform": "Darwin arm64",
+  "cases_sha256": "5ba8c774a6fb5c92947f4d65fbbedd739db88401a4cdc59bedcb49dd10c8f11c",
+  "model_sha256": "447c5a4fffff213d64121c5775882bdc4ab26e208b4d8f7db4e981ff8e788157",
+  "precision": "int8",
+  "cases": 12,
+  "positive_top1": 12,
+  "startup_seconds": 0.085,
+  "peak_rss_mib": 196.23,
+  "results": [
+    {
+      "query": "银行网点投诉处理与客户情绪疏导",
+      "top1": 1,
+      "scores": [
+        0.700465,
+        0.489966,
+        0.305648
+      ],
+      "cold_ms": 12,
+      "warm_ms": 0.08
+    },
+    {
+      "query": "银行反洗钱与可疑交易识别",
+      "top1": 1,
+      "scores": [
+        0.622767,
+        0.377682,
+        0.279988
+      ],
+      "cold_ms": 10,
+      "warm_ms": 0.06
+    },
+    {
+      "query": "用Excel提高业务报表整理效率",
+      "top1": 1,
+      "scores": [
+        0.471141,
+        0.467997,
+        0.36221
+      ],
+      "cold_ms": 9,
+      "warm_ms": 0.06
+    },
+    {
+      "query": "提升基层主管带团队的能力",
+      "top1": 1,
+      "scores": [
+        0.504129,
+        0.422459,
+        0.280773
+      ],
+      "cold_ms": 9,
+      "warm_ms": 0.06
+    },
+    {
+      "query": "劳动用工合规和员工离职争议处理",
+      "top1": 1,
+      "scores": [
+        0.659358,
+        0.408022,
+        0.472636
+      ],
+      "cold_ms": 9,
+      "warm_ms": 0.04
+    },
+    {
+      "query": "跨部门沟通与协同解决问题",
+      "top1": 1,
+      "scores": [
+        0.615719,
+        0.32772,
+        0.353388
+      ],
+      "cold_ms": 8,
+      "warm_ms": 0.05
+    },
+    {
+      "query": "新员工商务礼仪和职业形象",
+      "top1": 1,
+      "scores": [
+        0.720612,
+        0.532688,
+        0.499519
+      ],
+      "cold_ms": 9,
+      "warm_ms": 0.05
+    },
+    {
+      "query": "企业全面预算与成本控制",
+      "top1": 1,
+      "scores": [
+        0.60556,
+        0.389475,
+        0.31016
+      ],
+      "cold_ms": 8,
+      "warm_ms": 0.05
+    },
+    {
+      "query": "人工智能辅助日常办公写作",
+      "top1": 1,
+      "scores": [
+        0.617893,
+        0.351799,
+        0.349853
+      ],
+      "cold_ms": 9,
+      "warm_ms": 0.05
+    },
+    {
+      "query": "党务干部基层党建实务",
+      "top1": 1,
+      "scores": [
+        0.63678,
+        0.434917,
+        0.265249
+      ],
+      "cold_ms": 9,
+      "warm_ms": 0.06
+    },
+    {
+      "query": "项目进度控制和交付风险管理",
+      "top1": 1,
+      "scores": [
+        0.636859,
+        0.471387,
+        0.362466
+      ],
+      "cold_ms": 9,
+      "warm_ms": 0.05
+    },
+    {
+      "query": "银行适老化服务与老年客户数字设备使用辅导",
+      "top1": 1,
+      "scores": [
+        0.793706,
+        0.508174,
+        0.498892
+      ],
+      "cold_ms": 10,
+      "warm_ms": 0.04
+    }
+  ]
+}

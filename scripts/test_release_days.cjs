@@ -97,7 +97,7 @@ check(submit.includes('justify-content: center') && submit.includes('position: r
 check(css.includes('.orbit-panel .login-submit > svg { position: absolute; right: 22px;'), 'arrow does not displace centered label');
 for (const page of ['index', 'answer', 'materials', 'updates']) {
   const html = fs.readFileSync('web/' + page + '.html', 'utf8');
-  check(html.includes('yanxu-v13-release-r1') && html.includes('v13.css?v=20260907v13r1-upload'), 'current release and shared CSS cache: ' + page);
+  check(html.includes('yanxu-v13-release-r1') && html.includes('v13.css?v=20260907v13r1-semantic'), 'current release and shared CSS cache: ' + page);
 }
 const updateHtml = fs.readFileSync('web/updates.html', 'utf8');
 check(updateHtml.includes('releases.js?v=20260907v13r1-upload') && updateHtml.includes('updates.js?v=20260907v13r1-notes2'), 'current product notes and stable renderer cache');

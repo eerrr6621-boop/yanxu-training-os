@@ -2,6 +2,22 @@
 
 All notable changes to Yanxu Training OS. Dates follow the production release history; the format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+- Add optional offline BGE-small ONNX INT8 evidence assistance after rule-based
+  eligibility checks, preserving professional bands, local preference and manual
+  profile authority. Invalid, partial, busy or timed-out results retain the rule
+  ranking. No external model calls or fabricated qualifications.
+- Show matching source excerpts separately from professional scores, with explicit
+  model availability and similarity limitations.
+- Accept paired optional course times, retain conservative unknown-time conflicts,
+  and show adjacent-day course records for human itinerary checks.
+- Add a railway provider boundary and fixed official 12306 verification link.
+  No authorized railway API is configured; live services, fares and durations
+  remain unavailable. No flight lookup or booking is implemented.
+- Add isolated contract, real-model, quantization smoke and UI checks, deployment
+  instructions and private-cache retention documentation. Not deployed yet.
+
 ## [1.9.0] — 2026-09-07 · Clarity & Native-feeling Workspace
 
 ### Production release

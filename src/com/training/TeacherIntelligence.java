@@ -23,9 +23,12 @@ import java.util.regex.Pattern;
  */
 public final class TeacherIntelligence {
     private static final long DEFAULT_MAX_PDF_BYTES = 15L * 1024 * 1024;
-    private static final long DEFAULT_MAX_PPTX_BYTES = 80L * 1024 * 1024;
-    private static final long MAX_PDF_BYTES = positiveConfiguredLong("teacher.resume.pdf.max.bytes", DEFAULT_MAX_PDF_BYTES);
-    private static final long MAX_PPTX_BYTES = positiveConfiguredLong("teacher.resume.pptx.max.bytes", DEFAULT_MAX_PPTX_BYTES);
+    private static final long DEFAULT_MAX_PPTX_BYTES = 200L * 1024 * 1024;
+    // Configuration may lower the parser's supported upload envelope, never enlarge it.
+    private static final long MAX_PDF_BYTES = Math.min(DEFAULT_MAX_PDF_BYTES,
+            positiveConfiguredLong("teacher.resume.pdf.max.bytes", DEFAULT_MAX_PDF_BYTES));
+    private static final long MAX_PPTX_BYTES = Math.min(DEFAULT_MAX_PPTX_BYTES,
+            positiveConfiguredLong("teacher.resume.pptx.max.bytes", DEFAULT_MAX_PPTX_BYTES));
     private static final int MAX_JSON_BYTES = 64 * 1024;
     private static final int MAX_META_HEADER_BYTES = 8 * 1024;
     private static final int MAX_PDF_PAGES = 50;
@@ -34,7 +37,7 @@ public final class TeacherIntelligence {
     private static final int MAX_REQUIREMENT_CHARS = 10_000;
     private static final long PARSE_TIMEOUT_SECONDS = 12;
     private static final String PROFILE_VERSION = "local-rules-v2";
-    private static final String RECOMMENDATION_VERSION = "local-rules-v3-prebid-locality";
+    private static final String RECOMMENDATION_VERSION = "local-v7-all-cities-rail-air";
 
     private static final Set<Long> SCHEDULED = ConcurrentHashMap.newKeySet();
     /** Upload validation and queued reparses share the same two extraction slots. */
@@ -159,12 +162,33 @@ public final class TeacherIntelligence {
             } else if ("/api/teacher-resumes/delete".equals(path)) {
                 requireMethod(ex, "POST");
                 deleteResume(ex);
+            } else if ("/api/teacher-resumes/dispatch-priorities".equals(path)) {
+                requireMethod(ex,"GET","HEAD");
+                Map<String,String> query=Api.query(ex);
+                sendOk(ex,DispatchPriority.catalog(query.getOrDefault("province",""),query.getOrDefault("city",""),query.getOrDefault("date","")));
             } else if ("/api/teacher-recommendations".equals(path)) {
                 requireMethod(ex, "POST");
                 recommend(ex);
+            } else if ("/api/teacher-recommendations/jobs".equals(path)) {
+                if ("POST".equals(method)) {
+                    requireJson(ex);
+                    Map<String,Object> request=readJsonBody(ex);
+                    sendOk(ex,RecommendationJobs.INSTANCE.submit(session.uid,progress->{
+                        try{return buildRecommendation(request,progress);}
+                        catch(TalentException e){throw new RecommendationJobs.Failure(e.code,e.getMessage());}
+                    }));
+                } else {
+                    requireMethod(ex,"GET","HEAD");
+                    sendOk(ex,RecommendationJobs.INSTANCE.get(session.uid,Api.query(ex).get("id")));
+                }
+            } else if ("/api/teacher-recommendations/jobs/cancel".equals(path)) {
+                requireMethod(ex,"POST");requireJson(ex);
+                sendOk(ex,RecommendationJobs.INSTANCE.cancel(session.uid,value(readJsonBody(ex),"job_id")));
             } else {
                 throw new TalentException(404, "师资智能接口不存在");
             }
+        } catch (RecommendationJobs.Failure e) {
+            sendError(ex,e.code,e.getMessage());
         } catch (TalentException e) {
             sendError(ex, e.code, e.getMessage());
         } catch (IllegalArgumentException e) {
@@ -213,9 +237,9 @@ public final class TeacherIntelligence {
         if (fileName.isEmpty()) throw new TalentException(400, "请选择讲师简历文件");
         if (fileName.length() > 180) throw new TalentException(400, "文件名不能超过180个字符");
         synchronized (Api.MUTATION_LOCK) {
-            Map<String, Object> residence = Db.one("SELECT id,base_province,base_city FROM teachers WHERE id=?", teacherId);
+            Map<String, Object> residence = Db.one("SELECT id,status,base_province,base_city FROM teachers WHERE id=?", teacherId);
             if (residence == null) throw new TalentException(404, "讲师不存在或已被删除");
-            DispatchPreference.validateRegion(residence, "base_province", "base_city", true);
+            Api.validateTeacherResidence(residence);
         }
 
         long uploadLimit = uploadLimit(extension);
@@ -297,9 +321,9 @@ public final class TeacherIntelligence {
                 id = Db.transaction(() -> {
                     Auth.Session active = Auth.get(Api.token(ex));
                     if (active == null || !Auth.canWrite(active)) throw new TalentException(403, "账号权限已变更，请重新登录后重试");
-                    Map<String, Object> currentTeacher = Db.one("SELECT id,name,org,title,field,intro,base_province,base_city FROM teachers WHERE id=?", teacherId);
+                    Map<String, Object> currentTeacher = Db.one("SELECT id,name,org,title,field,intro,status,base_province,base_city FROM teachers WHERE id=?", teacherId);
                     if (currentTeacher == null) throw new TalentException(404, "讲师已被删除，请刷新后重试");
-                    DispatchPreference.validateRegion(currentTeacher, "base_province", "base_city", true);
+                    Api.validateTeacherResidence(currentTeacher);
                     List<Map<String, Object>> old = Db.query("SELECT storage_name,manual_profile,profile_json,reviewed_by,reviewed_at FROM teacher_resumes WHERE teacher_id=? ORDER BY id DESC", teacherId);
                     for (Map<String, Object> item : old) oldStorageNames.add(value(item, "storage_name"));
                     Map<String, Object> previous = old.isEmpty() ? Collections.emptyMap() : old.get(0);
@@ -394,11 +418,11 @@ public final class TeacherIntelligence {
         synchronized (Api.MUTATION_LOCK) {
             Auth.Session active = Auth.get(Api.token(ex));
             if (active == null || !Auth.canWrite(active)) throw new TalentException(403, "账号权限已变更，请重新登录后重试");
-            Map<String, Object> current = Db.one("SELECT r.id,t.base_province,t.base_city FROM teacher_resumes r JOIN teachers t ON t.id=r.teacher_id WHERE r.id=? AND r.is_current=TRUE", id);
+            Map<String, Object> current = Db.one("SELECT r.id,t.status,t.base_province,t.base_city FROM teacher_resumes r JOIN teachers t ON t.id=r.teacher_id WHERE r.id=? AND r.is_current=TRUE", id);
             if (current == null) throw new TalentException(409, "简历已被替换或删除，请刷新后重新编辑");
             if (body.containsKey("base_province")) current.put("base_province", body.get("base_province"));
             if (body.containsKey("base_city")) current.put("base_city", body.get("base_city"));
-            DispatchPreference.validateRegion(current, "base_province", "base_city", true);
+            Api.validateTeacherResidence(current);
             final String profileText = manualProfile;
             Db.transaction(() -> {
                 Db.exec("UPDATE teachers SET base_province=?,base_city=? WHERE id=?", current.get("base_province"), current.get("base_city"), row.get("teacher_id"));
@@ -525,12 +549,19 @@ public final class TeacherIntelligence {
     private static void recommend(HttpExchange ex) throws Exception {
         requireJson(ex);
         Map<String, Object> body = readJsonBody(ex);
+        sendOk(ex,buildRecommendation(body,RecommendationJobs.SILENT));
+    }
+
+    private static Map<String,Object> buildRecommendation(Map<String,Object> body,RecommendationJobs.Progress progress) throws Exception {
         long demandId = body.containsKey("demand_id") ? integer(body.get("demand_id"), "需求编号", 0, Long.MAX_VALUE) : 0;
         String manual = cleanText(body.containsKey("requirement") ? value(body, "requirement") : value(body, "requirement_text"));
         if (manual.length() > MAX_REQUIREMENT_CHARS)
             throw new TalentException(413, "客户需求不能超过" + MAX_REQUIREMENT_CHARS + "个字符");
         Object rawTopK = body.containsKey("max_results") ? body.get("max_results") : body.get("top_k");
-        int topK = rawTopK != null ? (int) integer(rawTopK, "推荐数量（至少3位）", 3, 20) : 3;
+        // Legacy clients may still send their former count selector. Validate it,
+        // but the business rule is now fixed at three plus all third-place ties.
+        if (rawTopK != null) integer(rawTopK, "推荐数量（至少3位）", 3, 20);
+        int topK = 3;
         double explicitBudget = body.containsKey("max_fee_rate") ? finiteNumber(body.get("max_fee_rate"), "最高课酬") : 0;
         if (explicitBudget < 0) throw new TalentException(400, "最高课酬不能为负数");
         boolean hardBudget = truthy(body.get("hard_budget"));
@@ -542,7 +573,7 @@ public final class TeacherIntelligence {
                 demand = Db.one("SELECT id,title,unit,hours,content,teacher_req,expect_date,remark,training_province,training_city,training_mode,training_period FROM demands WHERE id=?", demandId);
                 if (demand == null) throw new TalentException(404, "培训需求不存在或已被删除");
             }
-            teachers = Db.query("SELECT t.id,t.name,t.org,t.title,t.field,t.fee_rate,t.intro,t.base_province,t.base_city," +
+            teachers = Db.query("SELECT t.id,t.name,t.org,t.title,t.teacher_level,t.field,t.fee_rate,t.intro,t.base_province,t.base_city," +
                     "r.id resume_id,r.profile_json,r.manual_profile,r.profile_source,r.parse_status,r.extracted_text," +
                     "(SELECT AVG(e.score) FROM teacher_evals e WHERE e.teacher_id=t.id) eval_avg," +
                     "(SELECT COUNT(*) FROM teacher_evals e WHERE e.teacher_id=t.id) eval_count," +
@@ -552,36 +583,51 @@ public final class TeacherIntelligence {
                     "WHERE t.status='在库' ORDER BY t.id");
         }
 
-        String source = requirementSource(demand, manual);
+        RequirementInput input = RequirementInput.from(body, requirementSource(demand, manual), demandId > 0 ? demandId : null);
+        String source = input.canonicalText;
         if (source.trim().isEmpty()) throw new TalentException(400, "请填写客户需求，或选择已有培训需求");
-        Requirement requirement = Requirement.from(source, demand, explicitBudget);
-        DispatchPreference logistics = DispatchPreference.from(body, demand);
-        Set<Long> conflicts = scheduleConflicts(requirement.date);
+        Requirement requirement = Requirement.from(source, input.guided ? null : demand, explicitBudget);
+        if (input.guided) requirement = new Requirement(requirement.topics, requirement.industries, requirement.audiences,
+                requirement.credentials, requirement.deliveryModes, requirement.keywords, input.date(), input.hours(), explicitBudget);
+        RequirementCoverage coverage = new RequirementCoverage(source);
+        DispatchWindow window = new DispatchWindow(requirement.date, body);
+        Map<String, Object> logisticsBody = new LinkedHashMap<>(body);
+        if (!window.start.isEmpty()) logisticsBody.put("training_period", window.start.compareTo("12:00") >= 0 ? "下午" : window.end.compareTo("12:00") <= 0 ? "上午" : "全天");
+        DispatchPreference logistics = DispatchPreference.from(logisticsBody, demand);
+        List<Map<String, Object>> schedule;
+        synchronized (Api.MUTATION_LOCK) {
+            schedule = Db.query("SELECT teacher_id,teach_date,start_time,end_time,venue,status FROM dispatches WHERE status IN ('待发送','已发送','已确认','已完成')");
+        }
+        Set<Long> conflicts = new LinkedHashSet<>();
+        for (Map<String, Object> row : schedule) if (window.conflicts(row)) conflicts.add(asLong(row.get("teacher_id")));
         String arrivalDate = requirement.date.isEmpty() ? "" : LocalDate.parse(requirement.date).minusDays(1).toString();
         Set<Long> arrivalConflicts = scheduleConflicts(arrivalDate);
 
+        // One immutable, freshly validated city-reference snapshot per request.
+        // These are pre-bid planning facts, never replacements for a verified itinerary.
+        LocalDate referenceDay = RailTimetable.today();
+        CityPlanningReference.Index planningIndex = logistics.localPreferenceActive()
+                ? CityPlanningReference.index(referenceDay,CityPlanningPresentation.configured()) : null;
+        ContextSharedPlanningAdapter.ConfiguredRequest contextRequest = logistics.localPreferenceActive()
+                ? ContextSharedPlanningAdapter.configured(referenceDay) : null;
+        boolean contextRequested = contextRequest != null && contextRequest.requested();
         List<Map<String, Object>> candidates = new ArrayList<>();
+        Map<Long, String> semanticTexts = new LinkedHashMap<>();
         List<Map<String, Object>> excluded = new ArrayList<>();
+        int scanned=0;
         for (Map<String, Object> teacher : teachers) {
+            progress.update("profiles",scanned++,teachers.size());
             long teacherId = asLong(teacher.get("id"));
             if (conflicts.contains(teacherId)) {
                 Map<String, Object> item = new LinkedHashMap<>();
                 item.put("teacher_id", teacherId);
                 item.put("name", teacher.get("name"));
-                item.put("reason", requirement.date + " 已有未拒绝的授课安排");
+                item.put("reason", requirement.date + (window.start.isEmpty() ? " 已有未拒绝的授课安排" : " 已有重叠或时段不明的授课安排"));
                 excluded.add(item);
                 continue;
             }
             Map<String, Object> profile = profileForMatching(teacher);
             Match match = scoreTeacher(requirement, teacher, profile);
-            if (!match.relevant) {
-                Map<String, Object> item = new LinkedHashMap<>();
-                item.put("teacher_id", teacherId);
-                item.put("name", teacher.get("name"));
-                item.put("reason", "现有专业档案中没有足够的需求相关证据");
-                excluded.add(item);
-                continue;
-            }
             if (hardBudget && requirement.maxFeeRate > 0 &&
                     (number(teacher, "fee_rate") <= 0 || number(teacher, "fee_rate") > requirement.maxFeeRate)) {
                 Map<String, Object> item = new LinkedHashMap<>();
@@ -592,7 +638,18 @@ public final class TeacherIntelligence {
                 continue;
             }
             Map<String, Object> candidate = match.toMap(teacher, profile);
+            candidate.put("_rule_relevant", match.relevant);
             Map<String, Object> dispatchFit = logistics.describe(teacher, requirement.date);
+            List<Map<String, Object>> adjacent = window.adjacent(teacherId, schedule);
+            dispatchFit.put("adjacent_schedule", adjacent);
+            if (!adjacent.isEmpty()) {
+                List<Object> notes = new ArrayList<>((List<?>) dispatchFit.get("notes"));
+                notes.add("授课前后有系统安排：实际出发地可能不同于常驻地，请核对上一场结束时间、场地及下一场衔接；时间不重叠不代表交通可达");
+                dispatchFit.put("notes", notes);
+                dispatchFit.put("departure_uncertain",true);
+                dispatchFit.put("local_priority",false);
+                dispatchFit.put("label","实际出发地与课程衔接待确认");
+            }
             if (Boolean.TRUE.equals(dispatchFit.get("arrival_day_before")) && arrivalConflicts.contains(teacherId)) {
                 // A prior-day course may still allow evening travel. Flag, never claim impossible.
                 List<Object> notes = new ArrayList<>((List<?>) dispatchFit.get("notes"));
@@ -601,20 +658,61 @@ public final class TeacherIntelligence {
                 dispatchFit.put("arrival_day_conflict", true);
             }
             candidate.put("dispatch_fit", dispatchFit);
+            dispatchFit.put("route_reference",contextRequested ? NearbySelection.route(teacher,logistics,requirement.date,referenceDay)
+                    : NearbySelection.route(teacher,logistics,requirement.date));
+            if (planningIndex != null) dispatchFit.put("planning_reference", planningIndex.lookup(
+                    Objects.toString(teacher.get("base_province"), ""), Objects.toString(teacher.get("base_city"), ""),
+                    logistics.province, logistics.city));
             candidate.put("base_province", teacher.get("base_province"));
             candidate.put("base_city", teacher.get("base_city"));
             candidates.add(candidate);
+            // The effective manual profile is authoritative. Never re-add raw or
+            // historical resume text here: that would resurrect removed expertise.
+            semanticTexts.put(teacherId, redact(cleanText(value(profile, "_matching_text"))));
         }
-        candidates.sort((left, right) -> compareCandidates(left, right, logistics.localPreferenceActive()));
-        for (int i = 0; i < candidates.size(); i++) candidates.get(i).put("rank", i + 1);
+        progress.update("profiles",teachers.size(),teachers.size());
+        progress.update("local_semantic",0,0);
+        Map<String, Object> semantic = LocalSemantic.augment(redact(source), candidates, semanticTexts);
+        List<Map<String,Object>> reviewCandidates = new ArrayList<>();
+        List<Map<String,Object>> supportedCandidates = new ArrayList<>();
+        int reviewed=0;
+        for (Map<String,Object> candidate : candidates) {
+            progress.update("evidence",reviewed++,candidates.size());
+            coverage.assess(candidate, semanticTexts.get(asLong(candidate.get("teacher_id"))), "ready".equals(semantic.get("status")));
+            input.annotate(candidate, semanticTexts.get(asLong(candidate.get("teacher_id"))));
+            if (Boolean.TRUE.equals(candidate.remove("_admitted"))) supportedCandidates.add(candidate);
+            else if (Boolean.TRUE.equals(candidate.get("_review_candidate"))) reviewCandidates.add(candidate);
+            else excluded.add(Map.of("teacher_id", candidate.get("teacher_id"), "name",candidate.get("name"),
+                    "reason","现有原文没有足够的对应课程证据"));
+            candidate.remove("_review_candidate"); candidate.remove("_rule_relevant");
+        }
+        progress.update("evidence",candidates.size(),candidates.size());
+        progress.update("ranking",0,0);
+        candidates = supportedCandidates;
+        reviewCandidates.sort((left,right) -> compareCandidates(left,right,false));
         int eligibleCount = candidates.size();
-        if (candidates.size() > topK) candidates = new ArrayList<>(candidates.subList(0, topK));
+        Map<String,Object> selection=contextRequested
+                ? NearbySelection.selectWithContextCatalogs(candidates,logistics,topK,contextRequest.catalog(),referenceDay)
+                : NearbySelection.select(candidates,logistics,topK);
+        if (contextRequested) selection.put("context_configuration",contextRequest.summary());
+        @SuppressWarnings("unchecked") List<Map<String,Object>> selected=(List<Map<String,Object>>)selection.remove("selected");
+        candidates=selected;
+        for (int i = 0; i < candidates.size(); i++) candidates.get(i).put("rank", i + 1);
 
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("demand_id", demandId > 0 ? demandId : null);
         Map<String, Object> analysis = requirement.toMap();
         analysis.put("summary", requirement.summary());
-        analysis.put("dispatch_preferences", logistics.toMap());
+        analysis.put("requirement_input", input.toMap());
+        if (input.guided && !input.field("audience").isEmpty()) analysis.put("audiences", List.of(input.field("audience")));
+        Map<String, Object> preferences = logistics.toMap();
+        preferences.put("training_start_time", window.start);
+        preferences.put("training_end_time", window.end);
+        preferences.put("ranking_policy",selection.get("policy"));
+        preferences.put("selection",selection);
+        preferences.put("rail_priority_policy",DispatchPriority.catalog(logistics.province,logistics.city,requirement.date).get("rule"));
+        analysis.put("dispatch_preferences", preferences);
+        analysis.put("semantic_matching", semantic);
         analysis.put("needs_manual_review", Arrays.asList("所在地、出差范围、授课形式及复杂或否定条件请人工核实", "仅明确填写的每课时上限参与预算匹配；需求正文中的总预算不换算为课酬"));
         data.put("analysis", analysis);
         data.put("recognized_requirement", analysis);
@@ -626,22 +724,53 @@ public final class TeacherIntelligence {
         data.put("residence_pending_count", candidates.stream().filter(item -> !Boolean.TRUE.equals(((Map<?, ?>) item.get("dispatch_fit")).get("residence_complete"))).count());
         data.put("stage", "投标前师资推荐");
         data.put("recommendations", candidates);
+        data.put("review_candidates", new ArrayList<>(reviewCandidates.subList(0, Math.min(topK,reviewCandidates.size()))));
+        data.put("review_candidate_count", reviewCandidates.size());
         data.put("results", candidates);
         data.put("excluded", excluded);
         data.put("algorithm_version", RECOMMENDATION_VERSION);
         data.put("notice", candidates.isEmpty()
-                ? "当前没有找到足够相关的讲师。可补充课程主题、具体案例或校准专业画像后再试；请勿把空结果理解为已核实无人具备能力。"
+                ? eligibleCount > 0
+                ? "已有内容相关的讲师，但当前出发地或交通参考不足，暂列调度待核实；这不代表没有合适讲师。"
+                : "当前没有找到证据足够的讲师。可补充课程主题、具体案例或校准专业画像后再试；请勿把空结果理解为已核实无人具备能力。"
+                : "ready".equals(semantic.get("status"))
+                ? "先按就近范围组织候选，再比较需求与原文证据；第三名同分全部保留。分数不是胜任概率，交通、档期及人选仍需确认。"
                 : "这是基于档案文字与专业标签的本地规则匹配，分数不是胜任概率。地点、授课形式及复杂条件需人工核实，最终人选由运营人员确认。");
-        sendOk(ex, data);
+        return data;
     }
 
     static int compareCandidates(Map<String, Object> left, Map<String, Object> right, boolean localPreferenceActive) {
+            if (left.containsKey("content_rank") && right.containsKey("content_rank")) {
+                int content = Double.compare(number(right,"content_rank"),number(left,"content_rank"));
+                if (content != 0) return content;
+                // With equal complete coverage, semantic relevance refines content
+                // bands before logistics. Missing semantics stays a stable bucket.
+                Double a=LocalSemantic.similarity(left), b=LocalSemantic.similarity(right);
+                int aBand=a==null?-1:(int)Math.floor(a*20), bBand=b==null?-1:(int)Math.floor(b*20);
+                if(aBand!=bBand) return Integer.compare(bBand,aBand);
+                if(a!=null && b!=null && !a.equals(b)) return Double.compare(b,a);
+                return Long.compare(asLong(left.get("teacher_id")),asLong(right.get("teacher_id")));
+            }
             if (localPreferenceActive) {
                 int byBand = Integer.compare(Math.min(9, (int) (number(right, "professional_score") / 10)), Math.min(9, (int) (number(left, "professional_score") / 10)));
                 if (byBand != 0) return byBand;
                 boolean leftLocal = Boolean.TRUE.equals(((Map<?, ?>) left.get("dispatch_fit")).get("local_priority"));
                 boolean rightLocal = Boolean.TRUE.equals(((Map<?, ?>) right.get("dispatch_fit")).get("local_priority"));
                 if (leftLocal != rightLocal) return leftLocal ? -1 : 1;
+            }
+            // Semantics cannot jump professional bands or override locality. Keep
+            // missing-evidence candidates in a deterministic bucket for transitivity.
+            Double leftSemantic = LocalSemantic.similarity(left), rightSemantic = LocalSemantic.similarity(right);
+            int leftBand = Math.min(9, (int) (number(left, "professional_score") / 10));
+            int rightBand = Math.min(9, (int) (number(right, "professional_score") / 10));
+            if (left.containsKey("semantic") && right.containsKey("semantic")) {
+                if (leftBand != rightBand) return Integer.compare(rightBand, leftBand);
+                if (leftSemantic == null && rightSemantic != null) return 1;
+                if (rightSemantic == null && leftSemantic != null) return -1;
+                if (leftSemantic != null) {
+                    int bySemantic = Double.compare(rightSemantic, leftSemantic);
+                    if (bySemantic != 0) return bySemantic;
+                }
             }
             int byScore = Double.compare(number(right, "score"), number(left, "score"));
             return byScore != 0 ? byScore : Long.compare(asLong(left.get("teacher_id")), asLong(right.get("teacher_id")));
@@ -703,6 +832,11 @@ public final class TeacherIntelligence {
             mergeDetected(profile, value(teacher, "field") + "\n" + value(teacher, "intro") + "\n" +
                     value(teacher, "title") + "\n" + value(teacher, "org"));
             profile.put("_matching_text", value(teacher, "extracted_text") + "\n" + value(teacher, "field") + "\n" + value(teacher, "intro"));
+            // Recompute auto tags from effective current text so historical tags
+            // cannot preserve a negated claim after the evidence policy changes.
+            Map<String,Object> refreshed=autoProfile(value(profile,"_matching_text"),teacher);
+            for (String key : Arrays.asList("tags","industries","audiences","credentials","courses","service_cases"))
+                profile.put(key,refreshed.get(key));
         }
         return profile;
     }
@@ -950,7 +1084,7 @@ public final class TeacherIntelligence {
     /** 展示与本次需求相交的原文片段；只返回三个脱敏短片段，私有全文不进入响应。 */
     private static List<Map<String, Object>> matchingEvidence(String source, Requirement requirement, String kind) {
         List<Map<String, Object>> ranked = new ArrayList<>();
-        for (String part : redact(cleanText(source)).split("[\\r\\n。；;]+")) {
+        for (String part : ProfessionalEvidence.units(redact(cleanText(source)))) {
             String sentence = cleanLine(part);
             // Large PPTX text runs may contain several paragraphs without punctuation.
             for (int offset = 0; offset < sentence.length(); offset += 160) {
@@ -1339,7 +1473,7 @@ public final class TeacherIntelligence {
     /** 仅忽略明确否定的短分句，不把不确定条件推断成排除讲师的硬约束。 */
     private static String positiveText(String source) {
         String normalized = Normalizer.normalize(source == null ? "" : source, Normalizer.Form.NFKC);
-        return normalized.replaceAll("(?:不擅长|不包含|不需要|无需|不涉及|不具备|不是)[^，,。；;\\r\\n]*", " ");
+        return ProfessionalEvidence.positive(normalized);
     }
 
     private static String normalizeForMatch(String value) {
@@ -1686,6 +1820,7 @@ public final class TeacherIntelligence {
             map.put("org", teacher.get("org"));
             map.put("organization", teacher.get("org"));
             map.put("title", teacher.get("title"));
+            map.put("teacher_level", teacher.get("teacher_level"));
             map.put("field", teacher.get("field"));
             map.put("fee_rate", teacher.get("fee_rate"));
             map.put("match_score", score);

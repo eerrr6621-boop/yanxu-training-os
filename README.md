@@ -40,11 +40,13 @@ It is deliberately built with **no framework and no build step**: a single Java 
 - **Evaluation surveys** — draft → publish → anonymous public answer link → live statistics (score distribution, single-choice charts, text feedback) → close.
 - **Money that adds up** — instructor fees auto-computed from confirmed hours × rate with duplicate-generation protection; collections support partial payments and settlement; costs roll into an estimated balance.
 - **Responsive & accessible** — desktop / tablet / phone layouts, keyboard navigation, focus management, `prefers-reduced-motion` respected everywhere.
-- **Regression suite** — 52 end-to-end API checks, 137 business-integrity/security checks and 68 faculty-matching checks; three fresh isolated loopback instances, 257 API checks in total, plus separate frontend, locality/migration and offline weather suites.
+- **Regression suite** — 52 end-to-end API checks, 137 business-integrity/security checks and 87 faculty-matching checks in the current source; three fresh isolated loopback instances, 276 API checks in total, plus separate frontend, locality/migration, semantic, sourced-railway and offline weather suites.
 
 ## Quick start
 
-Requirements: Java 17+ (Node.js 18+ only if you want to run the regression suite).
+Requirements: Java 17+ (the complete regression suite also needs Node.js 18+ and
+Python 3). Optional offline semantic assistance requires its own Python runtime;
+see the [setup and limits](semantic/README.md).
 
 ```bash
 ./run.sh --demo        # Mac / Linux
@@ -84,7 +86,14 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for endpoint groups, workflow r
 
 Faculty operators can follow the [faculty guide (Chinese)](docs/FACULTY_GUIDE.md)
 for resume maintenance, matching limits and verified delivery metrics. Matching
-is local and rule-based; it does not use an external language model or OCR.
+uses local rules, with optional offline small-model evidence assistance. It does
+not use an external language model or OCR. Railway live data is not connected;
+the official 12306 link is a manual verification entry, not a ticket API.
+
+The unreleased local v7 source enumerates the entire product city directory for
+[rail-first / air-backup coverage](docs/TRANSPORT_COVERAGE_V7.md). Railway witnesses
+remain a partial, expiring reference set; a complete city list is not a complete
+transport dataset. No full nationwide timetable feed or airline API is enabled.
 
 ## Running the regression suite
 

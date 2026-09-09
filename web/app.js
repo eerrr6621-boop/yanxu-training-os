@@ -615,6 +615,7 @@
       };
       if (f.required && !v) { invalid(`请填写${f.label || '必填信息'}`); return null; }
       if (f.type === 'number') {
+        if (v === '' && f.nullable) { data[f.k] = null; continue; }
         v = v === '' ? 0 : Number(v);
         if (!Number.isFinite(v)) { invalid(`${f.label || '数值'}格式不正确`); return null; }
         if (f.min !== undefined && v < f.min) { invalid(`${f.label}不能小于 ${f.min}`); return null; }
@@ -1289,10 +1290,10 @@
   const roleAction = (action, page) => canWrite() ? action : readonlyAction(page);
 
   const REGION_PROVINCES = ['北京', '天津', '河北', '山西', '内蒙古', '辽宁', '吉林', '黑龙江', '上海', '江苏', '浙江', '安徽', '福建', '江西', '山东', '河南', '湖北', '湖南', '广东', '广西', '海南', '重庆', '四川', '贵州', '云南', '西藏', '陕西', '甘肃', '青海', '宁夏', '新疆', '香港', '澳门', '台湾', '境外'];
-  const teacherResidenceText = (teacher) => teacher?.base_province && teacher?.base_city ? (teacher.base_province === teacher.base_city ? teacher.base_city : `${teacher.base_province} · ${teacher.base_city}`) : '待补充';
-  const residenceFields = () => [
-    { k: 'base_province', label: '常驻省份 / 地区', type: 'select', options: REGION_PROVINCES, required: true },
-    { k: 'base_city', label: '常驻城市 / 地区', required: true, regionProvinceKey: 'base_province', placeholder: '选择省份后输入或选择城市', hint: '讲师确认的常驻地，无需家庭地址。城市字典未覆盖的名称可手填，核对前不参与同城优先。' },
+  const teacherResidenceText = (teacher) => teacher?.base_province && teacher?.base_city ? (teacher.base_province === teacher.base_city ? teacher.base_city : `${teacher.base_province} · ${teacher.base_city}`) : teacher?.base_province ? `${teacher.base_province} · 城市待完善` : '常驻城市待完善';
+  const residenceFields = (required = true) => [
+    { k: 'base_province', label: '常驻省份 / 地区', type: 'select', options: REGION_PROVINCES, required },
+    { k: 'base_city', label: '常驻城市 / 地区', required, regionProvinceKey: 'base_province', placeholder: '选择省份后输入或选择城市', hint: required ? '讲师确认的常驻地，无需家庭地址。城市字典未覆盖的名称可手填，核对前不参与同城优先。' : '填写讲师确认的真实城市；暂不清楚可留空、先上传简历，补齐后再确认入库。请勿填写猜测城市。' },
   ];
   function refreshRegionSuggestions(provinceInput, preserveCity = false) {
     const grid = provinceInput.closest('.form-grid');
@@ -2549,16 +2550,17 @@
 
   // ============ 师资资源：档案、简历与智能推荐 ============
   const teacherFeeRateText = (value) => Number.isFinite(Number(value)) && Number(value) > 0 ? `¥ ${money(value)}/课时` : '待确认';
-  const teacherFormFields = () => [
+  const teacherFormFields = (allowIncompleteResidence = false) => [
     { k: 'name', label: '姓名', required: true },
     { k: 'gender', label: '性别', type: 'select', options: ['男', '女'] },
     { k: 'org', label: '所在单位' },
     { k: 'title', label: '职称/职务' },
-    ...residenceFields(),
+    { k: 'teacher_level', label: '讲师等级', type: 'select', options: [{ v: '', l: '待补充' }, '讲师', '高级讲师', '特级讲师', '特聘讲师'], hint: '由录入人确认。先就近、再比匹配度，仅同分时优先较高等级；不确定可暂留空。' },
+    ...residenceFields(!allowIncompleteResidence),
     { k: 'field', label: '专业领域', span2: true },
     { k: 'phone', label: '联系电话' },
     { k: 'email', label: '电子邮箱', type: 'email' },
-    { k: 'fee_rate', label: '课酬标准（元/课时）', type: 'number', required: true, min: 0, step: 100, hint: '尚未确认时可填写 0，系统会显示为“待确认”。' },
+    { k: 'fee_rate', label: '课酬标准（元/课时）', type: 'number', nullable: true, min: 0, step: 100, placeholder: '待确认时留空', hint: '仅填写已确认的课酬；未知请留空，不用 0 代替未知价格。' },
     { k: 'in_date', label: '入库日期', type: 'date' },
     { k: 'intro', label: '师资简介', type: 'textarea' },
   ];
@@ -2576,7 +2578,7 @@
 
   function resumeLimitBytes(extension) {
     const ext = String(extension || '').toLowerCase();
-    const fallback = ext === 'pptx' ? 80 * 1024 * 1024 : 15 * 1024 * 1024;
+    const fallback = ext === 'pptx' ? 200 * 1024 * 1024 : 15 * 1024 * 1024;
     const config = teacherResumeUploadConfig || {};
     const nested = config.limits?.[ext] || config.upload_limits?.[ext] || {};
     const byteValues = [config[`max_${ext}_bytes`], config[`${ext}_max_bytes`], nested.max_bytes, nested.bytes];
@@ -2650,21 +2652,21 @@
   const resumeHasFile = (resume) => Boolean(resume && (resume.file_name || !['empty'].includes(resumeStatusInfo(resume.parse_status).tone)));
 
   function teacherEntryGuide() {
-    return `<div class="teacher-entry-guide"><b>首次添加讲师</b><ol aria-label="讲师资料准备流程"><li>1. 新建讲师档案</li><li>2. 关联并上传简历</li><li>3. 核对解析结果</li></ol><p>已有档案可直接上传简历，无需重复建档。</p></div>`;
+    return `<div class="teacher-entry-guide"><b>首次添加讲师</b><ol aria-label="讲师资料准备流程"><li>1. 新建讲师档案</li><li>2. 关联并上传简历</li><li>3. 核对解析结果</li></ol><p>已有档案可直接上传简历，无需重复建档。暂不清楚常驻城市？先填姓名保存为「待完善」，上传后可继续补充资料；补齐真实省市并确认入库前不进入推荐。</p></div>`;
   }
 
   function openTeacherCreate() {
     if (!canWrite()) return;
-    const fields = teacherFormFields();
-    return openModal('新建讲师档案', `<p class="teacher-create-note">先保存讲师的基本信息与常驻地区，建档后再上传简历。已有档案请勿重复创建。</p>${renderForm(fields, { in_date: new Date().toISOString().slice(0, 10) })}`, {
+    const fields = teacherFormFields(true);
+    return openModal('新建讲师档案', `<p class="teacher-create-note">保存讲师的基本信息与常驻地区（已知时填写），建档后再上传简历。常驻城市可后补；缺失时先保存为「待完善」，不会进入推荐。课酬、等级不确定请留空。已有档案请勿重复创建。</p>${renderForm(fields, { in_date: new Date().toISOString().slice(0, 10) })}`, {
       okText: '保存讲师档案',
       onOk: async () => {
         const data = collectForm($('#modal-mask'), fields);
         if (!data) return false;
-        data.status = '在库';
+        data.status = data.base_province && data.base_city ? '在库' : '待完善';
         await api('/teachers', { body: data });
         invalidateTeacherRecommendations();
-        toast('讲师档案已建立，下一步可关联并上传简历');
+        toast(`${data.status === '待完善' ? '待完善档案已保存' : '讲师档案已建立'}，下一步可关联并上传简历`);
         renderPage();
       },
     });
@@ -2673,19 +2675,20 @@
   function openTeacherResumeUpload(teachers, selectedTeacherId = '') {
     if (!canWrite()) return;
     if (!teachers.length) {
-      return openModal('先建立讲师档案', `<p class="teacher-create-note">目前还没有可关联的讲师档案。请先填写姓名、常驻地区等基本信息，保存后再上传这位讲师的简历。上传简历不会自动新建档案。</p>`, {
+      return openModal('先建立讲师档案', `<p class="teacher-create-note">目前还没有可关联的讲师档案。先填写姓名即可保存待完善档案并上传简历；真实常驻城市可后补。上传简历不会自动新建档案。</p>`, {
         sm: true, kicker: '首次添加讲师', okText: '新建讲师档案', okIcon: 'user-plus',
         onOk: () => { openTeacherCreate(); return false; },
       });
     }
     const selected = String(selectedTeacherId || '');
+    const ownerResidenceFields = (id) => residenceFields(teachers.find((teacher) => String(teacher.id) === String(id))?.status !== '待完善');
     const options = teachers.map((teacher) => `<option value="${esc(teacher.id)}" ${String(teacher.id) === selected ? 'selected' : ''}>${esc(teacher.name)}｜${esc(teacherResidenceText(teacher))}｜${esc(teacher.org || '单位待补充')}</option>`).join('');
     const mask = openModal('上传讲师简历', `
       <div class="resume-upload-lead"><span>${icon('scan-text')}</span><div><b>先建讲师档案，再关联简历</b><p>已有档案：直接选择下方讲师并上传。系统会提取 PDF / PPTX 中的专业经历，请核对解析结果后用于推荐。</p></div></div>
       <div class="resume-upload-fields">
         <div class="form-item"><label for="teacher-resume-owner">关联已建档讲师<span class="req">*</span></label><select id="teacher-resume-owner" required aria-describedby="teacher-resume-owner-help teacher-resume-owner-error" ${selected ? '' : 'autofocus'}><option value="" disabled ${selected ? '' : 'selected'}>请选择已建立档案的讲师</option>${options}</select><small id="teacher-resume-owner-help">找不到讲师？请先取消上传，在「师资档案」点击「新建讲师档案」。上传简历不会自动新建档案。</small><span class="field-error" id="teacher-resume-owner-error" aria-live="polite"></span></div>
-        <div id="resume-residence-fields">${renderForm(residenceFields(), teachers.find((teacher) => String(teacher.id) === selected))}</div>
-        <p class="resume-residence-note">请确认该讲师的常驻地区，用于线下培训的同城优先参考。修改后会单独保存，不会被简历解析结果覆盖。</p>
+        <div id="resume-residence-fields">${renderForm(ownerResidenceFields(selected), teachers.find((teacher) => String(teacher.id) === selected))}</div>
+        <p class="resume-residence-note">真实常驻地区用于线下培训的同城优先参考。「待完善」档案可留空或只填已确认省份、先上传简历；请在「师资档案 → 完善并入库」补齐后确认。修改会单独保存，不会被简历解析结果覆盖。</p>
       </div>
       <label class="resume-drop-zone" id="teacher-resume-drop" for="teacher-resume-file">
         <input class="sr-only" id="teacher-resume-file" type="file" accept=".pdf,.pptx,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation">
@@ -2707,7 +2710,7 @@
         ownerError.textContent = '';
         $('#teacher-resume-owner', mask).removeAttribute('aria-invalid');
         if (!teacherId) { ownerError.textContent = '请选择已建档讲师；尚未建档请按上方提示先建档'; $('#teacher-resume-owner', mask).setAttribute('aria-invalid', 'true'); $('#teacher-resume-owner', mask).focus(); return false; }
-        const residence = collectForm($('#resume-residence-fields', mask), residenceFields());
+        const residence = collectForm($('#resume-residence-fields', mask), ownerResidenceFields(teacherId));
         if (!residence) return false;
         if (!chosenFile) { toast('请选择 PDF 或 PPTX 讲师简历', true); $('#teacher-resume-file', mask).focus(); return false; }
         const extension = /\.pptx$/i.test(chosenFile.name || '') ? 'pptx' : 'pdf';
@@ -2769,7 +2772,7 @@
       $('#teacher-resume-owner-error', mask).textContent = '';
       $('#teacher-resume-owner', mask).removeAttribute('aria-invalid');
       const owner = teachers.find((teacher) => String(teacher.id) === $('#teacher-resume-owner', mask).value);
-      $('#resume-residence-fields', mask).innerHTML = renderForm(residenceFields(), owner);
+      $('#resume-residence-fields', mask).innerHTML = renderForm(ownerResidenceFields(owner?.id), owner);
     };
     const drop = $('#teacher-resume-drop', mask);
     const selectedBox = $('#teacher-resume-selected', mask);
@@ -2845,7 +2848,7 @@
       catch (error) { return; }
     }
     if (!isRouteCurrent(epoch, null, 'teachers') || ticket !== teacherProfileRequestSequence) return;
-    const fields = [...residenceFields(), {
+    const fields = [...residenceFields(teacher?.status !== '待完善'), {
       k: 'manual_profile', label: '管理员校准画像', type: 'textarea', required: true,
       placeholder: '请完整填写讲师擅长主题、行业经验、授课对象、课程和资历，并注明需要进一步确认的条件。',
       hint: '已带入现有专业事实供您核对。请保留仍然有效的内容并修正遗漏；保存后，这份完整画像将优先用于推荐。最多 10000 字。',
@@ -2944,7 +2947,7 @@
       ${canWrite() ? teacherEntryGuide() : ''}
       <div class="toolbar">
         <label class="search-box"><span class="sr-only">搜索师资姓名、单位或领域</span>${icon('search')}<input id="flt-kw" value="${esc(savedFilter.kw || '')}" placeholder="搜索：姓名/单位/领域" autocomplete="off"></label>
-        <label class="select-filter"><span class="sr-only">按师资状态筛选</span><select id="flt-status"><option value="">全部状态</option><option ${savedFilter.status === '在库' ? 'selected' : ''}>在库</option><option ${savedFilter.status === '出库' ? 'selected' : ''}>出库</option></select></label>
+        <label class="select-filter"><span class="sr-only">按师资状态筛选</span><select id="flt-status"><option value="">全部状态</option><option ${savedFilter.status === '待完善' ? 'selected' : ''}>待完善</option><option ${savedFilter.status === '在库' ? 'selected' : ''}>在库</option><option ${savedFilter.status === '出库' ? 'selected' : ''}>出库</option></select></label>
         <button type="button" class="btn gray" id="flt-btn">${icon('list-filter')}筛选</button>
       </div>
       <div id="tbl"></div>
@@ -2952,7 +2955,7 @@
 
     const cols = [
       { k: 'id', l: '编号', mobileHide: true, render: (row) => `<span class="project-id">#T-${String(row.id).padStart(4, '0')}</span>` },
-      { k: 'name', l: '师资', render: (row) => `<div class="person-cell"><span class="person-avatar">${esc(row.name.slice(-2))}</span><span><b>${esc(row.name)}</b><small>${esc(row.title || '讲师')}</small></span></div>` },
+      { k: 'name', l: '师资', render: (row) => `<div class="person-cell"><span class="person-avatar">${esc(row.name.slice(-2))}</span><span><b>${esc(row.name)}</b><small>${esc(row.teacher_level || '等级待补充')} · ${esc(row.title || '职务待补充')}</small></span></div>` },
       { k: 'org', l: '单位' },
       { k: 'base_city', l: '常驻地区', render: (row) => esc(teacherResidenceText(row)) },
       { k: 'field', l: '专业领域' },
@@ -2966,7 +2969,8 @@
       actions.push({ l: '上传简历', cls: 'gray', icon: 'file-up', onClick: (row) => openTeacherResumeUpload(rows, row.id) });
       actions.push({ l: '出库', cls: 'orange', show: (row) => row.status === '在库', onClick: (row) => confirmBox(`确定将师资【${row.name}】移出师资库？出库后不可参与新调度。`, async () => { await api('/teachers/checkout', { body: { id: row.id } }); invalidateTeacherRecommendations(); toast('已出库'); renderPage(); }) });
       actions.push({ l: '入库', cls: 'green', show: (row) => row.status === '出库', onClick: (row) => confirmBox(`确定将师资【${row.name}】重新入库？`, async () => { await api('/teachers/checkin', { body: { id: row.id } }); invalidateTeacherRecommendations(); toast('已重新入库'); renderPage(); }) });
-      actions.push({ l: '编辑', cls: 'gray', onClick: (row) => openModal('编辑师资', renderForm(fields, row), { onOk: async () => { const data = collectForm($('#modal-mask'), fields); if (!data) return false; await api('/teachers', { body: { ...row, ...data } }); invalidateTeacherRecommendations(); toast('已保存'); renderPage(); } }) });
+      actions.push({ l: '完善并入库', cls: 'green', show: (row) => row.status === '待完善', onClick: (row) => openModal('完善讲师档案并入库', `<p class="teacher-create-note">请确认真实常驻省市。其他已知资料可在此补充，未知课酬和等级继续留空；保存后该讲师才会进入推荐候选范围。</p>${renderForm(fields, row)}`, { okText: '保存并确认入库', onOk: async () => { const data = collectForm($('#modal-mask'), fields); if (!data) return false; await api('/teachers', { body: { ...row, ...data } }); await api('/teachers/checkin', { body: { id: row.id } }); invalidateTeacherRecommendations(); toast('档案已完善并入库'); renderPage(); } }) });
+      actions.push({ l: '编辑', cls: 'gray', onClick: (row) => { const editFields = teacherFormFields(row.status === '待完善'); return openModal('编辑师资', renderForm(editFields, row), { onOk: async () => { const data = collectForm($('#modal-mask'), editFields); if (!data) return false; await api('/teachers', { body: { ...row, ...data } }); invalidateTeacherRecommendations(); toast(row.status === '待完善' ? '待完善资料已保存；补齐常驻省市后可点击「完善并入库」' : '已保存'); renderPage(); } }); } });
       actions.push({ l: '删除', cls: 'red', onClick: (row) => confirmBox(`仅未产生排课、课酬或评价的师资可以删除。确定检查并删除【${row.name}】？`, async () => { await api('/teachers/delete', { body: { id: row.id } }); invalidateTeacherRecommendations(); toast('已删除'); renderPage(); }) });
     }
     const draw = (list) => {
@@ -3128,6 +3132,11 @@
     }).filter(Boolean).join('\n');
   }
 
+  function guidedRequirementContract(draft) {
+    const fields = Object.fromEntries(['unit', 'topic', 'audience', 'goals', 'date', 'hours', 'preference', 'extra'].map((key) => [key, String(draft?.[key] ?? '')]));
+    return { schema_version: 'guided_requirement_v1', fields };
+  }
+
   function demandGuidedFields(demand) {
     return { unit: String(demand?.unit || ''), topic: String(demand?.title || ''), audience: '', goals: String(demand?.content || ''), date: String(demand?.expect_date || ''), hours: Number(demand?.hours) > 0 ? String(demand.hours) : '', preference: String(demand?.teacher_req || ''), extra: String(demand?.remark || '') };
   }
@@ -3171,25 +3180,286 @@
     return ({ topic: '主题契合', topics: '主题契合', industry: '行业经验', industries: '行业经验', audiences: '授课对象', credentials: '专业资历', performance: '历史履约', budget: '课酬预算', keyword: '关键能力', keywords: '关键能力', profile: '专业画像', experience: '项目经验', evaluation: '履约评价', delivery: '授课适配', resume: '简历证据' })[String(key).toLowerCase()] || '其他匹配条件';
   }
 
+  function semanticEvidenceMarkup(semantic) {
+    const score = semantic?.similarity;
+    if (semantic?.status !== 'ready' || typeof score !== 'number' || !Number.isFinite(score) || score < -1 || score > 1) return '';
+    const evidence = Array.isArray(semantic.evidence) ? semantic.evidence.filter((value) => typeof value === 'string').slice(0, 2) : [];
+    if (!evidence.length) return '';
+    return `<details class="teacher-evidence teacher-semantic-evidence"><summary>${icon('scan-search')}语义相关原文 <span>相似度 ${score.toFixed(3)}</span></summary><div class="resume-claim-note">取自当前有效专业档案；仅表示文字相关，不代表资历已核实或胜任概率。</div><ul>${evidence.map((quote) => `<li>${esc(quote)}</li>`).join('')}</ul></details>`;
+  }
+
+  function railVerificationMarkup(dispatchFit) {
+    // Context references carry one city-level observation, never two timed legs.
+    const context = dispatchFit?.context_planning_reference;
+    const contextKinds = {
+      context_roundtrip_shared_v2: ['context_shared_prebid_opt_in_v1', 'context-shared-planning-display-v1'],
+      context_current_baseline_shared_v2: ['context_shared_prebid_opt_in_v2', 'context-baseline-planning-display-v2']
+    };
+    if (dispatchFit?.planning_included === true && (context || Object.hasOwn(contextKinds, dispatchFit.planning_reference_kind || ''))) {
+      const pending = '<div class="teacher-rail-query"><div><b>城市交通参考待复核</b><small>当前资料尚不完整，实际出行需另行确认。</small></div></div>';
+      const kind = dispatchFit.planning_reference_kind, contract = contextKinds[kind];
+      const shown = dispatchFit.context_planning_display, observation = context?.shared_observation;
+      if (!Object.hasOwn(contextKinds, kind || '') || !contract || dispatchFit.planning_policy !== contract[0] ||
+          context?.reference_kind !== kind || shown?.version !== contract[1] || context.reference_status !== 'active' ||
+          context.endpoint_scope !== 'city_summary' || !Array.isArray(context.stations) || context.stations.length !== 2 || context.stations.some(value => value !== null) ||
+          context.independent_direction_observations !== 0 ||
+          ['transport_verified', 'strict_eligibility', 'value_is_proven_travel_upper_bound', 'rail_exclusion_complete', 'air_fallback_trigger', 'time_score_applicable', 'semantic_annotations_are_language_proof'].some(key => context[key] !== false) ||
+          !Number.isSafeInteger(observation?.reference_minutes) || observation.reference_minutes <= 0 || observation.reference_minutes >= 240 ||
+          ['label', 'endpoint_label', 'notice', 'basis_note'].some(key => typeof shown[key] !== 'string' || !shown[key].trim()) ||
+          ['source_published_on', 'reviewed_on', 'review_due_on'].some(key => typeof context[key] !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(context[key]))) return pending;
+      const minutes = observation.reference_minutes;
+      const band = minutes <= 60 ? 'planning_0_1h' : minutes <= 120 ? 'planning_1_2h' : minutes <= 180 ? 'planning_2_3h' : 'planning_3_4h';
+      if (dispatchFit.context_planning_band_id !== band) return pending;
+      const source = /^https:\/\/[^\s<>"']+$/.test(context.source_url || '') ? `<a href="${esc(context.source_url)}" target="_blank" rel="noopener noreferrer">查看参考来源 ↗</a>` : '';
+      return `<div class="teacher-rail-query"><div><b>${esc(shown.label)}</b><span>${esc(shown.endpoint_label)}</span><small>${esc(shown.notice)}</small><details><summary>查看依据</summary><small>${esc(shown.basis_note)}不是门到门耗时，不代表授课日行程已确认。</small><small>原发布 ${esc(context.source_published_on)} · 资料核对 ${esc(context.reviewed_on)} · 复核到期 ${esc(context.review_due_on)} ${source}</small></details></div></div>`;
+    }
+    const planning = dispatchFit?.planning_reference;
+    if (dispatchFit?.planning_included === true && (planning?.status === 'shared_city_planning_reference' || dispatchFit?.planning_reference_kind === 'explicit_roundtrip_shared_v1')) {
+      const pending = '<div class="teacher-rail-query"><div><b>共享城市交通参考待核</b><small>尚未取得完整的单值规划说明。</small></div></div>';
+      const shared = planning?.shared_reference, duration = shared?.duration;
+      const forbidden = ['outbound', 'inbound', 'return', 'selection_reference', 'planning_band_id', 'reference_minutes', 'duration_bounds'];
+      if (dispatchFit.planning_policy !== 'explicit_roundtrip_shared_planning_v1' || dispatchFit.planning_reference_kind !== 'explicit_roundtrip_shared_v1' ||
+          planning?.status !== 'shared_city_planning_reference' || planning.reference_kind !== 'explicit_roundtrip_shared_v1' ||
+          planning.purpose !== 'prebid_city_planning_only' || planning.protected_envelope_validated !== true ||
+          ['strict_eligibility', 'transport_verified', 'time_score_applicable', 'air_fallback_trigger', 'rail_exclusion_complete', 'semantic_annotations_are_language_proof'].some(key => planning[key] !== false) ||
+          !shared || forbidden.some(key => Object.hasOwn(planning, key) || Object.hasOwn(shared, key)) ||
+          shared.verification_method !== 'dual_review_explicit_roundtrip_shared_v1' || shared.direction_semantics !== 'explicit_roundtrip_context' ||
+          shared.duration_scope !== 'single_journey_shared_summary' || shared.independent_direction_observations !== 0 ||
+          shared.value_is_proven_travel_upper_bound !== false || shared.transfer_time_estimated !== false || shared.semantic_annotations_are_language_proof !== false ||
+          !duration || Object.keys(duration).sort().join(',') !== 'kind,unit,value' || shared.precision !== duration.kind ||
+          !Number.isSafeInteger(duration.value) || duration.value <= 0 || duration.value > 2880) return pending;
+      let label = '', minutes = 0;
+      if (duration.kind === 'approximate' && duration.unit === 'minute') { label = `约${duration.value}分钟`; minutes = duration.value; }
+      else if (duration.kind === 'reported_minutes' && duration.unit === 'minute') { label = `${duration.value}分钟（报道参考）`; minutes = duration.value; }
+      else if (duration.kind === 'nominal_hour' && duration.unit === 'hour') { label = `${duration.value}小时（名义值）`; minutes = duration.value * 60; }
+      else if (duration.kind === 'nominal_half_hour' && duration.unit === 'half_hour') { label = `${duration.value / 2}小时（名义半小时参考）`; minutes = duration.value * 30; }
+      if (!label || minutes >= 240) return pending;
+      const bandId = minutes <= 60 ? 'planning_0_1h' : minutes <= 120 ? 'planning_1_2h' : minutes <= 180 ? 'planning_2_3h' : 'planning_3_4h';
+      const bands = { planning_0_1h: '不超过1小时参考范围', planning_1_2h: '1–2小时参考范围', planning_2_3h: '2–3小时参考范围', planning_3_4h: '3–4小时参考范围' };
+      if (dispatchFit.shared_planning_band_id !== bandId || !shared.endpoint_a || !shared.endpoint_b || !shared.source_published_on || !shared.reviewed_on || !shared.review_due_on) return pending;
+      const scopes = { city_summary: '城市概述，未指定站点', main_urban_station: '城区站点', urban_subcentre_station: '城市副中心站点，非市中心耗时' };
+      if (!Object.hasOwn(scopes, shared.endpoint_scope?.a) || !Object.hasOwn(scopes, shared.endpoint_scope?.b)) return pending;
+      const source = /^https:\/\/[^\s<>"']+$/.test(shared.source_url || '') ? `<a href="${esc(shared.source_url)}" target="_blank" rel="noopener noreferrer">查看参考来源 ↗</a>` : '';
+      const description = duration.kind === 'approximate' ? '资料给出往返单程约值，未分别记录去返程。' : '资料给出往返列车的单程时间参考，未分别记录去返程。';
+      return `<div class="teacher-rail-query"><div><b>铁路出行参考 · ${esc(label)} · ${esc(bands[bandId])}</b><span>${esc(shared.endpoint_a)}（${esc(scopes[shared.endpoint_scope.a])}） ↔ ${esc(shared.endpoint_b)}（${esc(scopes[shared.endpoint_scope.b])}）</span><small>用于投标前初筛，实际出行待核，市内接驳另行确认。</small><details><summary>查看依据</summary><small>${esc(description)}不是门到门耗时，授课日班次、余票及到场安排仍需确认。</small><small>原发布 ${esc(shared.source_published_on)} · 资料核对 ${esc(shared.reviewed_on)} · 复核到期 ${esc(shared.review_due_on)} ${source}</small></details></div></div>`;
+    }
+    if (dispatchFit?.planning_included === true && planning?.status === 'planning_reference') {
+      const bands = { planning_0_1h: '不超过1小时档', planning_1_2h: '1–2小时档', planning_2_3h: '2–3小时档', planning_3_4h: '3–4小时档' };
+      const band = bands[planning.planning_band_id];
+      if (!band) return '<div class="teacher-rail-query"><div><b>城市交通参考待核</b><small>尚未取得完整的就近范围说明。</small></div></div>';
+      const uiMethods = { dual_review_curated_public_ui_sample_v1: 'official_public_rail_ui_sample', dual_review_curated_public_stop_ui_sample_v1: 'official_public_rail_stop_ui_sample', dual_review_curated_public_popup_ui_sample_v1: 'official_public_rail_popup_ui_sample' };
+      const uiMethod = planning.verification_method;
+      const uiSample = Object.hasOwn(uiMethods, uiMethod) || ['outbound', 'inbound'].some(side =>
+        Object.values(uiMethods).includes(planning[side]?.source_type) || Object.hasOwn(planning[side] || {}, 'source_date_basis') || Object.hasOwn(planning.presentation?.[side] || {}, 'date_basis'));
+      if (uiSample) {
+        const pending = '<div class="teacher-rail-query"><div><b>铁路出行参考</b><small>时长说明待核。用于投标前初筛，实际出行及市内接驳另行确认。</small></div></div>';
+        const exact = (value, keys) => value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).sort().join(',') === [...keys].sort().join(',');
+        const date = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value + 'T00:00:00Z')) && new Date(value + 'T00:00:00Z').toISOString().slice(0, 10) === value;
+        const stopTable = uiMethod === 'dual_review_curated_public_stop_ui_sample_v1';
+        const popupTable = uiMethod === 'dual_review_curated_public_popup_ui_sample_v1';
+        const sourcePage = value => typeof value === 'string' && (stopTable ? /^https:\/\/hzfw\.12306\.cn\/zgzfw\/resources\/web\/skcx\.html(?:\?[^#\s<>"']*)?$/ : /^https:\/\/kyfw\.12306\.cn\/otn\/leftTicket\/init(?:\?[^#\s<>"']*)?$/).test(value);
+        const validDateBasis = leg => {
+          if (!date(leg.source_query_date) || !date(leg.source_service_date) || !date(leg.reviewed_on) || !date(leg.review_due_on)) return false;
+          if (leg.source_date_basis === 'query_service_day_v1') return leg.source_query_date === leg.source_service_date && leg.reviewed_on >= leg.source_service_date;
+          if (leg.source_date_basis !== 'query_and_service_day_v2') return false;
+          const query = Date.parse(leg.source_query_date + 'T00:00:00Z'), service = Date.parse(leg.source_service_date + 'T00:00:00Z');
+          return service >= query && service - query <= 14 * 86400000 && leg.reviewed_on >= leg.source_query_date && Date.parse(leg.review_due_on + 'T00:00:00Z') <= query + 90 * 86400000;
+        };
+        const selection = planning.selection_reference, hasView = Object.hasOwn(planning, 'presentation'), view = planning.presentation;
+        if (!Object.hasOwn(uiMethods, uiMethod) || planning.protected_envelope_validated !== true || planning.purpose !== 'prebid_city_planning_only' ||
+            ['transport_verified', 'time_score_applicable', 'air_fallback_trigger', 'rail_exclusion_complete', 'semantic_annotations_are_language_proof'].some(key => planning[key] !== false) ||
+            !exact(selection, ['basis', 'buffer_applied', 'confirmed_itinerary', 'outbound', 'inbound']) || selection.basis !== 'unbuffered_city_reference_v1' || selection.buffer_applied !== false || selection.confirmed_itinerary !== false) return pending;
+        if (hasView && (!exact(view, ['version', 'purpose', 'affects_selection', 'status', 'revision', 'outbound', 'inbound']) || view.version !== 'city-planning-presentation-v2' ||
+            view.purpose !== 'presentation_only' || view.affects_selection !== false || view.status !== 'ready' || !Number.isSafeInteger(view.revision) || view.revision <= 0)) return pending;
+        const rows = [], values = [];
+        for (const [side, label] of [['outbound', '去程'], ['inbound', '返程']]) {
+          const leg = planning[side], picked = selection[side], shown = hasView ? view[side] : null;
+          if (!leg || leg.verification_method !== uiMethod || leg.source_type !== uiMethods[uiMethod] || leg.scope !== 'station_service_pair' || leg.service_state !== 'observed_public_ui_service_sample' ||
+              leg.sample_scope !== 'selected_service_sample_not_fastest_typical_or_upper_bound' || leg.station_to_teaching_location_minutes !== null || leg.policy_value_is_proven_travel_upper_bound !== false ||
+              !Object.hasOwn(leg, 'source_published_on') || leg.source_published_on !== null || !validDateBasis(leg) ||
+              leg.review_due_on < leg.reviewed_on || !sourcePage(leg.source_url) ||
+              ((stopTable || popupTable) && (!/^[GDC][0-9]{1,5}$/.test(leg.query_service_id || '') || !/^[GDC][0-9]{1,5}$/.test(leg.displayed_service_id || '') || leg.query_display_equivalence_claimed !== false)) ||
+              (popupTable && leg.query_service_id !== leg.displayed_service_id) ||
+              !exact(leg.endpoint_scope, ['from', 'to']) || leg.endpoint_scope.from !== 'named_city_station' || leg.endpoint_scope.to !== 'named_city_station' ||
+              !leg.from_endpoint || !leg.to_endpoint || !leg.from?.id || !leg.to?.id || leg.from.id === leg.to.id || !leg.source_document ||
+              leg.precision !== 'same_service_clocks' || !exact(picked, ['reference_minutes', 'unit', 'precision', 'upper_exclusive']) || picked.unit !== 'minute' || picked.precision !== leg.precision || picked.upper_exclusive !== false ||
+              !Number.isSafeInteger(picked.reference_minutes) || picked.reference_minutes <= 0 || picked.reference_minutes >= 240 ||
+              !exact(leg.source_duration, ['kind', 'arrival_day_offset', 'calculated_minutes']) || leg.source_duration.kind !== leg.precision || leg.source_duration.arrival_day_offset !== 0 || leg.source_duration.calculated_minutes !== picked.reference_minutes) return pending;
+          if (hasView && (!exact(shown, ['source_qualifier', 'precision', 'duration', 'from_registry_id', 'to_registry_id', 'source_document', 'annotation_id', 'date_basis']) ||
+              shown.source_qualifier !== 'general_reported' || shown.precision !== leg.precision || shown.from_registry_id !== leg.from.id || shown.to_registry_id !== leg.to.id || shown.source_document !== leg.source_document ||
+              !shown.annotation_id || !exact(shown.duration, ['kind', 'unit', 'value']) || shown.duration.kind !== leg.precision || shown.duration.unit !== 'minute' || shown.duration.value !== picked.reference_minutes ||
+              !exact(shown.date_basis, ['kind', 'query_date', 'service_date']) || shown.date_basis.kind !== leg.source_date_basis || shown.date_basis.query_date !== leg.source_query_date || shown.date_basis.service_date !== leg.source_service_date)) return pending;
+          values.push(picked.reference_minutes);
+          rows.push({line: `<span>${label}：高铁参考时长 ${esc(picked.reference_minutes)} 分钟</span><small>${esc(leg.from_endpoint)} → ${esc(leg.to_endpoint)}（城市站点，市内接驳另核）</small>`,
+            evidence: `<small>${label}资料更新于 ${esc(leg.reviewed_on)} <a href="${esc(leg.source_url)}" target="_blank" rel="noopener noreferrer">查看参考来源 ↗</a></small>`});
+        }
+        if (planning.outbound.from.id !== planning.inbound.to.id || planning.outbound.to.id !== planning.inbound.from.id) return pending;
+        const maximum = Math.max(...values), expectedBand = maximum <= 60 ? 'planning_0_1h' : maximum <= 120 ? 'planning_1_2h' : maximum <= 180 ? 'planning_2_3h' : 'planning_3_4h';
+        if (planning.planning_band_id !== expectedBand) return pending;
+        return `<div class="teacher-rail-query"><div><b>铁路出行参考 · ${esc(band.replace('档', '参考范围'))}</b>${rows.map(row => row.line).join('')}<small>用于投标前初筛，实际出行待核，市内接驳另行确认。</small><details><summary>查看依据</summary>${rows.map(row => row.evidence).join('')}<small>时长来自已采集的列车样本，不代表最快、典型用时或未来行程保证；市内接驳未计入。</small></details></div></div>`;
+      }
+      if (Object.hasOwn(planning, 'presentation')) {
+        const view = planning.presentation;
+        const pending = `<div class="teacher-rail-query"><div><b>铁路出行参考 · ${esc(band)}</b><small>时长说明待核。用于投标前初筛，实际出行及市内接驳另行确认。</small></div></div>`;
+        const exactKeys = (value, keys) => value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).sort().join(',') === [...keys].sort().join(',');
+        if (!exactKeys(view, ['version', 'purpose', 'affects_selection', 'status', 'revision', 'outbound', 'inbound']) ||
+            !['city-planning-presentation-v1', 'city-planning-presentation-v2'].includes(view.version) || view.purpose !== 'presentation_only' || view.affects_selection !== false || view.status !== 'ready' ||
+            !Number.isSafeInteger(view.revision) || view.revision <= 0 || planning.purpose !== 'prebid_city_planning_only' ||
+            ['transport_verified', 'time_score_applicable', 'air_fallback_trigger', 'rail_exclusion_complete'].some(key => planning[key] !== false) ||
+            planning.selection_reference?.basis !== 'unbuffered_city_reference_v1' || planning.selection_reference.buffer_applied !== false || planning.selection_reference.confirmed_itinerary !== false) return pending;
+        const scopes = { city_summary: '城市概述，未指定站点', main_urban_station: '城区站点', urban_subcentre_station: '城市副中心站点，非市中心耗时' };
+        const rows = [];
+        for (const [side, direction] of [['outbound', '去程'], ['inbound', '返程']]) {
+          const shown = view[side], leg = planning[side], selected = planning.selection_reference[side], d = shown?.duration;
+          const shownKeys = ['source_qualifier', 'precision', 'duration', 'from_registry_id', 'to_registry_id', 'source_document', 'annotation_id'];
+          const institutional = view.version === 'city-planning-presentation-v2' && Object.hasOwn(shown || {}, 'source_context');
+          if (institutional) shownKeys.push('source_context');
+          if ((institutional && (shown.source_context !== 'institution_location' || shown.source_qualifier !== 'general_reported')) ||
+              !exactKeys(shown, shownKeys) ||
+              !['reported_fastest', 'general_reported', 'unspecified'].includes(shown.source_qualifier) || !leg || !selected ||
+              shown.from_registry_id !== leg.from?.id || shown.to_registry_id !== leg.to?.id || shown.source_document !== leg.source_document ||
+              shown.precision !== leg.precision || shown.precision !== selected.precision || shown.precision !== d?.kind ||
+              !Number.isSafeInteger(selected.reference_minutes) || selected.reference_minutes <= 0 || selected.unit !== 'minute' ||
+              !leg.from_endpoint || !leg.to_endpoint || !leg.source_published_on || !leg.reviewed_on || !leg.review_due_on) return pending;
+          if (leg.endpoint_scope && (!Object.hasOwn(scopes, leg.endpoint_scope.from) || !Object.hasOwn(scopes, leg.endpoint_scope.to))) return pending;
+          let label = '', minutes = 0;
+          const integer = value => Number.isSafeInteger(value) && value > 0 && value < 100000;
+          if (['upper_bound', 'bounded_range'].includes(d.kind)) {
+            const range = d.kind === 'bounded_range';
+            if (!exactKeys(d, range ? ['kind', 'unit', 'lower', 'upper', 'lower_inclusive', 'upper_inclusive'] : ['kind', 'unit', 'upper', 'upper_inclusive']) ||
+                d.unit !== 'minute' || !integer(d.upper) || typeof d.upper_inclusive !== 'boolean' || selected.upper_exclusive !== !d.upper_inclusive ||
+                (range && (!integer(d.lower) || d.lower >= d.upper || typeof d.lower_inclusive !== 'boolean'))) return pending;
+            minutes = d.upper;
+            label = range ? `${d.lower_inclusive ? '' : '超过'}${d.lower}至${d.upper_inclusive ? '' : '不到'}${d.upper}分钟` : `${d.upper_inclusive ? '不超过' : '不到'}${d.upper}分钟`;
+          } else {
+            if (!exactKeys(d, ['kind', 'unit', 'value']) || !integer(d.value) || selected.upper_exclusive !== false) return pending;
+            if (['reported_minute', 'reported_minutes', 'computed_same_service', 'same_service_clocks'].includes(d.kind) && d.unit === 'minute') { minutes = d.value; label = `${d.value}分钟`; }
+            else if (d.kind === 'approximate' && d.unit === 'minute') { minutes = d.value; label = `约${d.value}分钟`; }
+            else if (d.kind === 'nominal_hour' && d.unit === 'hour') { minutes = d.value * 60; label = `${d.value}小时（小时级参考）`; }
+            else if (d.kind === 'nominal_half_hour' && d.unit === 'half_hour') { minutes = d.value * 30; label = `${d.value / 2}小时（半小时级参考）`; }
+          }
+          if (!label || minutes !== selected.reference_minutes || minutes > 240 || (minutes === 240 && selected.upper_exclusive !== true)) return pending;
+          const nature = institutional ? '机构区位参考' : shown.source_qualifier === 'reported_fastest' ? '报道最快' : ['computed_same_service', 'same_service_clocks'].includes(d.kind) ? '公告时刻差参考' : '报道用时';
+          const endpoint = side => `${leg[side + '_endpoint']}${Object.hasOwn(scopes, leg.endpoint_scope?.[side]) ? `（${scopes[leg.endpoint_scope[side]]}）` : leg.scope === 'city_summary' ? '（城市概述，未指定站点）' : ''}`;
+          const source = /^https:\/\/[^\s<>"']+$/.test(leg.source_url || '') ? `<a href="${esc(leg.source_url)}" target="_blank" rel="noopener noreferrer">查看参考来源 ↗</a>` : '';
+          rows.push({line: `<span>${direction}：${esc(nature)}${esc(label)}</span><small>${esc(endpoint('from'))} → ${esc(endpoint('to'))}</small>`,
+            evidence: `<small>${direction}：原发布 ${esc(leg.source_published_on)} · 资料核对 ${esc(leg.reviewed_on)} · 复核到期 ${esc(leg.review_due_on)} ${source}${shown.source_qualifier === 'unspecified' ? '；资料未单独标注是否最快。' : ''}</small>`});
+        }
+        return `<div class="teacher-rail-query"><div><b>铁路出行参考 · ${esc(band.replace('档', '参考范围'))}</b>${rows.map(row => row.line).join('')}<small>用于投标前初筛，实际出行待核，市内接驳另行确认。</small><details><summary>查看依据</summary>${rows.map(row => row.evidence).join('')}<small>用时口径以各方向标注为准，不是所有班次或到场保证；不是门到门耗时。</small></details></div></div>`;
+      }
+      const legs = [['去程', planning.outbound], ['返程', planning.inbound]].map(([direction, leg]) => {
+        if (!leg) return '';
+        const source = /^https:\/\/[^\s<>"']+$/.test(leg.source_url || '') ? `<a href="${esc(leg.source_url)}" target="_blank" rel="noopener noreferrer">查看参考来源 ↗</a>` : '';
+        const endpoints = leg.from_endpoint && leg.to_endpoint ? `<small>参考端点：${esc(leg.from_endpoint)} → ${esc(leg.to_endpoint)}</small>` : '';
+        return `<span>${direction}：${esc(leg.from?.city || '')} → ${esc(leg.to?.city || '')}</span>${endpoints}<small>原发布 ${esc(leg.source_published_on || '')} · 复核日期 ${esc(leg.review_due_on || '')} ${source}</small>`;
+      }).join('');
+      return `<div class="teacher-rail-query"><div><b>铁路初筛 · ${esc(band)}</b>${legs}<small>依据公开旅时参考，出行待核。时间档按城际原参考值，不额外叠加缓冲；不是门到门耗时，也不参与专业能力赋分。</small><small>仅用于投标前选人；授课日班次、余票、接驳及到场安排仍需确认。</small></div></div>`;
+    }
+    const reference = dispatchFit?.route_reference;
+    if (reference?.status === 'not_required') return '';
+    if (reference?.status === 'same_city') return '<div class="teacher-rail-query"><div><b>同城 · 通勤待确认</b><small>' + esc(reference.message) + '</small></div></div>';
+    if (reference?.status === 'city_transport_reference' && ['rail', 'air'].includes(reference.eligibility)) {
+      const publicFacts = reference.reference_basis === 'public_city_reference';
+      const label = (reference.eligibility === 'rail' ? '高铁优先' : '航空备选') + (publicFacts ? ' · 公开通达参考' : ' · 城市交通参考');
+      const legs = [['去程', reference.outbound], ['返程', reference.return]].map(([direction, leg]) => {
+        if (!leg) return '';
+        const bounds = leg.duration_bounds;
+        const typed = bounds && ['exact', 'upper_bound', 'open_interval'].includes(bounds.kind) && typeof bounds.original_text === 'string' && bounds.original_text.trim();
+        const duration = typed ? bounds.original_text : Number.isFinite(leg.reference_minutes) && leg.reference_minutes > 0 ? `${leg.reference_minutes} 分钟` : '';
+        if (!duration) return '';
+        const source = /^https:\/\/[^\s<>"']+$/.test(leg.source_url || '') ? `<a href="${esc(leg.source_url)}" target="_blank" rel="noopener noreferrer">查看参考来源 ↗</a>` : '';
+        const endpoints = publicFacts ? `<small>${typed ? '城市范围' : '站点范围'}：${esc(leg.from_endpoint || leg.from_city)} → ${esc(leg.to_endpoint || leg.to_city)} · 原发布 ${esc(leg.source_published_on)}</small>` : '';
+        const baseline = publicFacts && leg.service_state === 'published_schedule_baseline' ? `<small>已生效运行图公告参考 · 公告实施日期 ${esc(leg.effective_from)}；未核验出行当天运行情况。</small>` : '';
+        const precision = typed && bounds.kind !== 'exact' ? `<small>时间范围：${esc(bounds.display || bounds.original_text)}${bounds.inference_notice ? ` · ${esc(bounds.inference_notice)}` : '；不是精确耗时。'}</small>` : '';
+        return `<span>${direction}：${esc(leg.from_city)} → ${esc(leg.to_city)} · ${esc(duration)}</span>${endpoints}${baseline}${precision}<small>资料核对 ${esc(leg.research_on)} ${source}</small>`;
+      }).join('');
+      return `<div class="teacher-rail-query"><div><b>${label}</b>${legs}<small>复核日期 ${esc(reference.review_due_on)} · 参考版本 ${esc(reference.version)}</small>${reference.near_threshold ? '<small>接近范围边界，确定人选前重点复核交通时间。</small>' : ''}<small>用于授课城市初选，不代表授课日班次、余票或到场保证；实际行程仍需确认。</small></div></div>`;
+    }
+    if (reference?.status === 'city_reference_pending') {
+      return `<div class="teacher-rail-query"><div><b>城市交通参考待复核</b><small>当前资料尚不满足自动就近推荐要求，暂不据此判断可达或不可达。</small></div></div>`;
+    }
+    if (reference?.status === 'air_time_reference') {
+      return '<div class="teacher-rail-query"><div><b>航空备选 · 双向直飞小于3小时</b>' + [['去程',reference.outbound],['返程',reference.return]].map(([label,leg]) => {
+        if (!leg) return '';
+        const source = /^https:\/\/[^\s<>"']+$/.test(leg.source_url || '') ? `<a href="${esc(leg.source_url)}" target="_blank" rel="noopener noreferrer">查看航班来源 ↗</a>` : '';
+        return `<span>${label}：${esc(leg.from_airport_code)} → ${esc(leg.to_airport_code)} · ${esc(leg.flight_no)} · ${esc(leg.flight_minutes)} 分钟</span><small>${esc(leg.departure_time)}—${esc(leg.arrival_time)} · 来源日期 ${esc(leg.source_service_date)} · 核对 ${esc(leg.observed_on)} ${source}</small>`;
+      }).join('') + `<small>${esc(reference.message)}</small></div></div>`;
+    }
+    if (reference?.status === 'rail_time_reference') {
+      const legs = [['去程', reference.outbound], ['返程', reference.return]];
+      return '<div class="teacher-rail-query"><div><b>高铁优先 · 站到站参考</b>' + legs.map(([label, leg]) => {
+        if (!leg) return '';
+        const link = /^https:\/\/[^\s<>"']+$/.test(leg.source_url || '') ? `<a href="${esc(leg.source_url)}" target="_blank" rel="noopener noreferrer">查看时刻来源 ↗</a>` : '';
+        return `<span>${label}：${esc(leg.from_station)} → ${esc(leg.to_station)} · 高铁参考时长 ${esc(leg.rail_minutes)} 分钟</span><small>资料更新于 ${esc(leg.observed_on)} ${link}</small>`;
+      }).join('') + `<small>${esc(reference.message || '仅作城市初选参考；授课日班次、接驳和到场仍需确认。')}</small></div></div>`;
+    }
+    if (reference) {
+      const duration = Number(reference.upper_minutes);
+      const summary = reference.status === 'reference_available' && Number.isFinite(duration) && duration > 0
+        ? '去程门到门参考不超过 ' + Math.round(duration) + ' 分钟' + (Number.isFinite(Number(reference.return_upper_minutes)) && Number(reference.return_upper_minutes) > 0 ? '；返程不超过 ' + Math.round(Number(reference.return_upper_minutes)) + ' 分钟' : '')
+        : '跨城交通耗时待核实';
+      return '<div class="teacher-rail-query"><div><b>就近调度参考</b><span>' + esc(summary) + '</span><small>' +
+        esc(reference.message || '常驻地不代表当前出发地，仍需确认行程衔接。') +
+        (reference.checked_on ? ' · 核对日期 ' + esc(reference.checked_on) : '') +
+        '</small></div></div>';
+    }
+    if (!dispatchFit?.rail) return '';
+    const rail = dispatchFit.rail;
+    const route = [rail.departure_city || '出发地待确认', rail.destination_city || '目的地待确认'].map(esc).join(' → ');
+    // Never take a navigation URL from untrusted profile/model/provider output.
+    return `<div class="teacher-rail-query"><div><b>铁路行程待核验</b><span>${route}${rail.travel_date ? ` · ${esc(rail.travel_date)}` : ''}</span><small>出发城市暂参考常驻地。尚未连接班次数据，不代表有票或可达。</small></div><a href="https://www.12306.cn/index/" target="_blank" rel="noopener noreferrer">前往 12306 核验${icon('arrow-up-right')}</a></div>`;
+  }
+
+  function adjacentScheduleMarkup(rows) {
+    if (!Array.isArray(rows) || !rows.length) return '';
+    return `<div class="teacher-adjacent-schedule"><b>前后一天已有安排</b><ul>${rows.map((row) => `<li>${esc(row.date || '')} ${esc([row.start_time, row.end_time].filter(Boolean).join('—') || '时段待确认')} · ${esc(row.venue || '场地待确认')} · ${esc(row.status || '')}</li>`).join('')}</ul><small>这些是排课记录，不是实时位置；请核对实际出发地及行程衔接。</small></div>`;
+  }
+
+  function requirementInputMarkup(input) {
+    if (input?.schema_version !== 'guided_requirement_v1' || !Array.isArray(input.field_ledger)) return '';
+    const pending = input.field_ledger.filter((field) => field?.status === 'requires_review');
+    return `<p class="recommend-condition-note">已按填写字段保留培训主题与参训对象；培训目标不会被当作讲师已有授课经历。</p>${pending.length ? `<details class="recommend-excluded" open><summary>${icon('info')}补充要求待核对 · ${pending.length} 项</summary><ul>${pending.map((field) => `<li><b>${esc(field.label || '补充要求')}</b><span>${esc(field.raw_value || '')}</span></li>`).join('')}</ul><p>这些内容已保留，尚未完整结构化，核对前不会视为全部满足。</p></details>` : ''}`;
+  }
+
   function renderRecommendationResults(target, payload, context) {
     const analysis = payload?.analysis || payload?.requirement_analysis || {};
     const dispatchPreferences = analysis.dispatch_preferences || {};
+    const semanticStatus = analysis.semantic_matching;
     const recommendations = payload?.recommendations || payload?.results || payload?.candidates || [];
+    const selection = dispatchPreferences.selection || {};
+    const pendingGroups = [
+      ['内容待补证', payload?.review_candidates],
+      ['交通待核实', selection.travel_pending],
+      ['模型待评分', selection.scoring_pending],
+    ];
+    const pendingHtml = pendingGroups.map(([title, items]) => !Array.isArray(items) || !items.length ? '' :
+      '<details class="recommend-excluded"><summary>' + icon('info') + esc(title) + ' · ' + items.length +
+      ' 位（不计入推荐人数）</summary><ul>' + items.map(item => '<li><b>' + esc(item.name || item.teacher_name || '讲师') +
+      '</b><span>' + esc(title === '模型待评分' ? '模型尚未返回此讲师的分数，未用规则分混入模型排名；补齐评分后重新比较。' : title === '交通待核实' ? item.dispatch_fit?.nearby_pending_reason || '需确认实际出发地与交通参考后再进入就近范围' :
+      (item.gaps || []).filter(gap => String(gap).includes('需求包含') || String(gap).includes('硬性') || String(gap).includes('并列要求')).join('；') || '有相关表述，尚需核对完整课程内容与授课经历') +
+      '</span></li>').join('') + '</ul></details>').join('');
+    const poolHtml = '<p class="teacher-semantic-status">' + esc(
+      selection.pool_size != null ? '本轮比较范围共 ' + selection.pool_size + ' 位' +
+      (selection.expanded_upper_minutes ? '，已扩展至门到门参考 ' + selection.expanded_upper_minutes + ' 分钟的城市' : '') +
+      (selection.expanded_rail_reference_minutes ? '，已扩展至站到站铁路参考 ' + selection.expanded_rail_reference_minutes + ' 分钟的城市层' : '') +
+      (selection.candidate_routes_complete === false ? '；仍有讲师交通范围待核对，当前不是完整范围的最终排名' : '') +
+      (selection.model_scoring_complete === false ? selection.scoring_mode === 'model_only' ? '；部分候选待评分，未混入模型排名' : '；模型评分暂不可用，当前仅为文字依据参考顺序' : '') +
+      (selection.ties_included ? '；末位同分，额外保留 ' + selection.ties_included + ' 位' : '') : '') + '</p>';
     const groups = [
       ['培训主题', listText(analysis.topics)],
       ['客户行业', listText(analysis.industries)],
       ['授课对象', listText(analysis.audiences)],
       ['专业资历', listText(analysis.credentials)],
     ].filter((group) => group[1].length);
-    const conditionFacts = [analysis.expected_date ? `授课日期：${analysis.expected_date}` : '', Number(analysis.hours) > 0 ? `课时：${num(analysis.hours)}` : '', Number(analysis.max_fee_rate) > 0 ? `课酬上限：¥ ${money(analysis.max_fee_rate)}/课时` : '', dispatchPreferences.training_city ? `授课地区：${dispatchPreferences.training_province} · ${dispatchPreferences.training_city}` : '', dispatchPreferences.training_mode ? `方式：${dispatchPreferences.training_mode}` : '', dispatchPreferences.training_period ? `时段：${dispatchPreferences.training_period}` : ''].filter(Boolean);
+    const conditionFacts = [analysis.expected_date ? `授课日期：${analysis.expected_date}` : '', Number(analysis.hours) > 0 ? `课时：${num(analysis.hours)}` : '', Number(analysis.max_fee_rate) > 0 ? `课酬上限：¥ ${money(analysis.max_fee_rate)}/课时` : '', dispatchPreferences.training_city ? `授课地区：${dispatchPreferences.training_province} · ${dispatchPreferences.training_city}` : '', dispatchPreferences.training_mode ? `方式：${dispatchPreferences.training_mode}` : '', dispatchPreferences.training_start_time ? `时段：${dispatchPreferences.training_start_time}—${dispatchPreferences.training_end_time}` : dispatchPreferences.training_period ? `时段：${dispatchPreferences.training_period}` : ''].filter(Boolean);
     const shortfall = Number(payload?.shortfall ?? Math.max(0, 3 - recommendations.length));
     const pendingResidence = Number(payload?.residence_pending_count || 0);
-    const shortageHtml = shortfall > 0 || pendingResidence > 0 ? `<div class="recommend-shortage" role="status">${icon('users-round')}<div><b>${shortfall > 0 ? `找到 ${recommendations.length} 位相关候选，距 3 位目标还缺 ${shortfall} 位` : `已找到 ${recommendations.length} 位相关候选`}</b><p>${shortfall > 0 ? '请补充相应专业师资或人工调整需求条件。不会用无关、冲突或超出硬预算的老师凑数。' : ''}${pendingResidence > 0 ? ` 其中 ${pendingResidence} 位常驻地区未补齐，仍是待补资料候选，不能视为调度已核实。` : ''}</p></div></div>` : '';
+    const shortageHtml = shortfall > 0 || pendingResidence > 0 ? `<div class="recommend-shortage" role="status">${icon('users-round')}<div><b>${shortfall > 0 ? `找到 ${recommendations.length} 位相关候选，距 3 位目标还缺 ${shortfall} 位` : `已找到 ${recommendations.length} 位相关候选`}</b><p>${shortfall > 0 ? '请检查下方内容待补证、交通待核实及排除原因；不会用无关、冲突或超出硬预算的老师凑数。' : ''}${pendingResidence > 0 ? ` 其中 ${pendingResidence} 位常驻地区未补齐，仍是待补资料候选，不能视为调度已核实。` : ''}</p></div></div>` : '';
     const excluded = Array.isArray(payload?.excluded) ? payload.excluded : [];
     const excludedHtml = excluded.length ? `<details class="recommend-excluded" ${recommendations.length ? '' : 'open'}><summary>${icon('calendar-x')}已排除 ${excluded.length} 位候选，查看原因</summary><ul>${excluded.map((item) => `<li><b>${esc(item.teacher_name || item.name || '讲师')}</b><span>${esc(item.reason || '当前条件不适合，请进一步确认')}</span></li>`).join('')}</ul></details>` : '';
-    const analysisHtml = `<section class="recommend-analysis"><header class="recommend-profile-head"><h2>${icon('scan-search')}需求画像</h2><span>请核对识别结果</span></header>${groups.length ? `<dl class="recommend-profile-grid">${groups.map(([label, values]) => `<div><dt>${esc(label)}</dt><dd>${values.map((value) => esc(value)).join(' · ')}</dd></div>`).join('')}</dl>` : `<p class="recommend-profile-empty">${esc(analysis.summary || '暂未识别到明确专业条件，请补充培训主题与参训对象。')}</p>`}${conditionFacts.length ? `<p class="recommend-condition-facts">${conditionFacts.map((fact) => `<span>${esc(fact)}</span>`).join('')}</p>` : ''}<p class="recommend-condition-note">地点、差旅及特殊安排仍需人工确认。</p></section>`;
+    const analysisHtml = `<section class="recommend-analysis"><header class="recommend-profile-head"><h2>${icon('scan-search')}需求画像</h2><span>请核对识别结果</span></header>${groups.length ? `<dl class="recommend-profile-grid">${groups.map(([label, values]) => `<div><dt>${esc(label)}</dt><dd>${values.map((value) => esc(value)).join(' · ')}</dd></div>`).join('')}</dl>` : `<p class="recommend-profile-empty">${esc(analysis.summary || '暂未识别到明确专业条件，请补充培训主题与参训对象。')}</p>`}${conditionFacts.length ? `<p class="recommend-condition-facts">${conditionFacts.map((fact) => `<span>${esc(fact)}</span>`).join('')}</p>` : ''}${requirementInputMarkup(analysis.requirement_input)}<p class="recommend-condition-note">地点、差旅及特殊安排仍需人工确认。</p></section>`;
     if (!recommendations.length) {
-      target.innerHTML = `${analysisHtml}${shortageHtml}${excludedHtml}<div class="recommend-empty">${icon('user-round-search')}<b>暂未找到合适候选</b><p>${excluded.length ? '请查看上方排除原因，再调整日期、课酬条件或补充更多讲师。' : '可补充培训主题、参训对象与行业后重试，也请检查在库讲师的专业资料是否完善。'}</p></div>`;
+      target.innerHTML = `${analysisHtml}${shortageHtml}${poolHtml}${pendingHtml}${excludedHtml}<div class="recommend-empty">${icon('user-round-search')}<b>本轮推荐名单暂为空</b><p>${esc(payload?.notice || '请核对待补证或交通待核实名单；当前不会用资料不全的候选凑满三位。')}</p></div>`;
       refreshIcons(target);
       return;
     }
@@ -3198,7 +3468,8 @@
       const teacher = item.teacher || teacherById.get(String(item.teacher_id)) || {};
       const dispatchFit = item.dispatch_fit || {};
       const name = item.teacher_name || teacher.name || '候选讲师';
-      const score = recommendationPercent(item.match_score ?? item.score);
+      const rawScore = item.model_score ?? item.match_score ?? item.score;
+      const score = typeof rawScore === 'number' && Number.isFinite(rawScore) ? recommendationPercent(rawScore) : null;
       const reasons = listText(item.reasons || item.match_reasons);
       const gaps = listText(item.gaps || item.risks);
       const evidence = recommendationEvidence(item.evidence || item.resume_evidence);
@@ -3210,24 +3481,27 @@
         : Object.entries(item.score_breakdown || {});
       return `<article class="teacher-match-card ${index === 0 ? 'is-top' : ''}">
         <div class="teacher-match-main">
-          <header><span class="person-avatar large">${esc(name.slice(-2))}</span><div><h3>${esc(name)} ${resumeLabel}</h3><p>${esc(item.org || teacher.org || '单位待补充')} · ${esc(item.title || teacher.title || '讲师')}</p><small>${esc(item.field || teacher.field || '专业领域待补充')}</small></div><div class="teacher-match-score" aria-label="匹配参考分 ${score}，满分 100"><b>${score}<em>/ 100</em></b><small>匹配参考分</small></div></header>
-          <div class="teacher-match-facts"><span>常驻 <b>${esc(teacherResidenceText(item))}</b></span><span>课酬 <b>${teacherFeeRateText(item.fee_rate ?? teacher.fee_rate)}</b></span><span>系统已完成 <b>${num(verified.completedSessions)} 场</b></span><span>授课评价 <b>${verified.evaluationCount ? `${verified.evaluationAverage.toFixed(2)} / 5` : '暂无记录'}</b></span></div>
-          <details class="teacher-dispatch-fit"><summary>${icon('map-pin')}<b>${esc(dispatchFit.label || '调度待核实')}</b><span>${dispatchFit.arrival_day_conflict ? '提前到达日有授课记录，需核对衔接' : dispatchFit.arrival_day_before ? '异地上午课 · 提前一天到达待核实' : '查看调度核对事项'}</span>${icon('chevron-down')}</summary><ul>${listText(dispatchFit.notes).map((note) => `<li>${esc(note)}</li>`).join('')}</ul></details>
+          <header><span class="person-avatar large">${esc(name.slice(-2))}</span><div><h3>${esc(name)} ${resumeLabel}</h3><p>${esc(item.org || teacher.org || '单位待补充')} · ${esc(item.title || teacher.title || '讲师')}</p><small>${esc(item.field || teacher.field || '专业领域待补充')}</small></div><div class="teacher-match-score" aria-label="${score === null ? '模型未评分' : `模型匹配分 ${score}，满分 100`}"><b>${score === null ? '—' : score}${score === null ? '' : '<em>/ 100</em>'}</b><small>${score === null ? '模型未评分' : '模型匹配分'}</small></div></header>
+          <div class="teacher-match-facts"><span>常驻 <b>${esc(teacherResidenceText(item))}</b></span><span>就近优先 <b>${typeof dispatchFit.priority_score === 'number' ? `${dispatchFit.priority_score} 分 · ${esc(dispatchFit.priority_label)}` : dispatchFit.time_score_applicable === false ? esc(dispatchFit.priority_label || '铁路近程范围') : '未启用 / 待核实'}</b></span><span>讲师等级 <b>${esc(item.teacher_level || teacher.teacher_level || '待补充')}</b></span><span>课酬 <b>${teacherFeeRateText(item.fee_rate ?? teacher.fee_rate)}</b></span><span>系统已完成 <b>${num(verified.completedSessions)} 场</b></span><span>授课评价 <b>${verified.evaluationCount ? `${verified.evaluationAverage.toFixed(2)} / 5` : '暂无记录'}</b></span></div>
+          <details class="teacher-dispatch-fit"><summary>${icon('map-pin')}<b>${esc(dispatchFit.label || '调度待核实')}</b><span>${dispatchFit.arrival_day_conflict ? '提前到达日有授课记录，需核对衔接' : dispatchFit.arrival_day_before ? '异地上午课 · 提前一天到达待核实' : '查看调度核对事项'}</span>${icon('chevron-down')}</summary><ul>${listText(dispatchFit.notes).map((note) => `<li>${esc(note)}</li>`).join('')}</ul>${adjacentScheduleMarkup(dispatchFit.adjacent_schedule)}${railVerificationMarkup(dispatchFit)}</details>
           <div class="teacher-match-detail">
             <section class="match-reasons"><b>${icon('badge-check')}推荐理由</b>${reasons.length ? `<ul>${reasons.map((reason) => `<li>${esc(reason)}</li>`).join('')}</ul>` : '<p>暂无细分理由</p>'}</section>
             <section class="match-gaps"><b>${icon('triangle-alert')}缺口与待确认</b>${gaps.length ? `<ul>${gaps.map((gap) => `<li>${esc(gap)}</li>`).join('')}</ul>` : '<p>未发现明显缺口</p>'}</section>
           </div>
           <details class="teacher-match-audit"><summary>${icon('chart-no-axes-column')}匹配评分与授课记录${icon('chevron-down')}</summary>
-            ${breakdown.length ? `<div class="teacher-score-breakdown">${breakdown.map(([label, value]) => { const pct = recommendationPercent(value); const displayLabel = item.score_breakdown_details?.[label]?.label || breakdownLabel(label); return `<div><span><small>${esc(displayLabel)}</small><b>${pct}%</b></span><i><em style="width:${pct}%"></em></i></div>`; }).join('')}</div>` : ''}
+            ${!item.score_source && breakdown.length ? `<div class="teacher-score-breakdown">${breakdown.map(([label, value]) => { const pct = recommendationPercent(value); const displayLabel = item.score_breakdown_details?.[label]?.label || breakdownLabel(label); return `<div><span><small>${esc(displayLabel)}</small><b>${pct}%</b></span><i><em style="width:${pct}%"></em></i></div>`; }).join('')}</div>` : ''}
             <section class="teacher-verified-proof"><div><span>${icon('shield-check')}系统履约记录</span><small>仅统计本系统已完成课程与已提交评价</small></div><dl><div><dt>已完成场次</dt><dd>${num(verified.completedSessions)}</dd></div><div><dt>已完成课时</dt><dd>${num(verified.completedHours)}</dd></div><div><dt>评价均分</dt><dd>${verified.evaluationCount ? `${verified.evaluationAverage.toFixed(2)} <small>/ 5 分 · ${num(verified.evaluationCount)} 份</small>` : '暂无评价'}</dd></div></dl></section>
           </details>
+          ${Array.isArray(item.requirement_coverage) && item.requirement_coverage.length ? `<details class="teacher-evidence"><summary>${icon('list-checks')}逐项内容依据</summary><ul>${item.requirement_coverage.map(part => `<li><b>${esc(part.criterion)}</b> · ${part.status === 'source_supported' ? '原文有依据' : '待补证'}<p>${esc(part.evidence || '尚未找到明确依据')}</p></li>`).join('')}</ul></details>` : ''}
+          ${item.recommendation_score_rule ? `<details class="teacher-evidence"><summary>${icon('chart-no-axes-column')}匹配分计算规则</summary><p>${esc(item.recommendation_score_rule)}</p><ul>${Object.entries(item.recommendation_score_parts || {}).map(([label, value]) => `<li>${esc(label)}：${Number(value).toFixed(1)}</li>`).join('')}</ul></details>` : ''}
+          ${semanticEvidenceMarkup(item.semantic)}
           ${resumeClaimFacts(item.resume_claims).length ? `<details class="teacher-evidence"><summary>${icon('badge-info')}查看简历自述数据</summary><div class="recommend-resume-claims">${resumeClaimMarkup(item.resume_claims)}</div></details>` : ''}
           ${evidence.length ? `<details class="teacher-evidence"><summary>${icon('file-search')}查看简历自述依据 <span>${evidence.length}</span></summary><div class="resume-claim-note">简历中的课时、满意度和客户案例属于讲师资料自述，不计入上方系统履约记录。</div><ul>${evidence.map((item) => `<li>${esc(item)}</li>`).join('')}</ul></details>` : ''}
           <footer>${!dispatchFit.residence_complete ? `<button type="button" class="btn gray" data-recommend-residence="${esc(item.teacher_id || teacher.id || '')}">${icon('map-pin')}补充常驻地区</button>` : ''}${hasResume ? `<button type="button" class="btn gray" data-view-recommend-resume="${esc(item.teacher_id || teacher.id || '')}">${icon('file-search')}简历与画像</button>` : ''}<button type="button" class="btn gray" data-view-recommend-teacher="${esc(item.teacher_id || teacher.id || '')}">${icon('contact-round')}档案与授课记录</button></footer>
         </div>
       </article>`;
     }).join('');
-    target.innerHTML = `${analysisHtml}${shortageHtml}<div class="recommend-results-head"><h2>推荐候选 <em>${recommendations.length}</em></h2><small>${esc(dispatchPreferences.ranking_policy || '按资料匹配程度排序')}</small></div><div class="teacher-match-list">${cards}</div>${excludedHtml}<div class="recommend-notice">${icon('info')}<span>本名单用于投标前选师资，不表示老师已确认授课。专业分不是胜任概率；无交通记录不能判断可达，系统不会自动建项目、排课或产生课酬。</span></div>`;
+    target.innerHTML = `${analysisHtml}${shortageHtml}${poolHtml}${semanticStatus?.message ? `<p class="teacher-semantic-status" role="status">${icon('scan-search')}${esc(semanticStatus.message)}</p>` : ''}<div class="recommend-results-head"><h2>推荐候选 <em>${recommendations.length}</em></h2><small>${esc(dispatchPreferences.ranking_policy || '按资料匹配程度排序')}</small></div><div class="teacher-match-list">${cards}</div>${pendingHtml}${excludedHtml}<div class="recommend-notice">${icon('info')}<span>本名单用于投标前选师资，不表示老师已确认授课。匹配分不是胜任概率；无交通记录不能判断可达，系统不会自动建项目、排课或产生课酬。</span></div>`;
     $$('[data-recommend-residence]', target).forEach((button) => { button.onclick = () => {
       const teacher = teacherById.get(String(button.dataset.recommendResidence));
       if (!teacher) return;
@@ -3272,6 +3546,8 @@
       { k: 'training_city', label: '授课城市 / 地区', regionProvinceKey: 'training_province', placeholder: '选择省份后输入或选择城市' },
       { k: 'training_mode', label: '授课方式', type: 'select', options: ['待定', '线下', '线上'], value: '待定' },
       { k: 'training_period', label: '授课时段', type: 'select', options: ['待定', '上午', '下午', '全天'], value: '待定' },
+      { k: 'training_start_time', label: '开始时间（选填）', type: 'time', hint: '填写日期和起止时间后，可按实际时段检查冲突。' },
+      { k: 'training_end_time', label: '结束时间（选填）', type: 'time', hint: '未填写具体时间时，仍按整日检查；时间不冲突不等于交通可达。' },
     ];
     const guidedField = (key, label, placeholder, limit = 200, type = 'text') => `<div class="form-item"><label for="recommend-guide-${key}">${esc(label)}${key === 'topic' ? '<span class="req">*</span>' : ''}</label><input id="recommend-guide-${key}" data-recommend-guide="${key}" type="${type}" maxlength="${limit}" value="${esc(guided[key] || '')}" placeholder="${esc(placeholder)}" ${key === 'topic' ? 'aria-required="true" aria-describedby="recommend-topic-error"' : ''}>${key === 'topic' ? '<span class="field-error" id="recommend-topic-error" aria-live="polite"></span>' : ''}</div>`;
     root.innerHTML = `<div class="teacher-recommend-workbench">
@@ -3296,13 +3572,13 @@
           <details class="recommend-brief-preview"><summary>查看整理后的需求${icon('chevron-down')}</summary><p id="recommend-brief-text"></p></details>
         </div>
         <div class="form-item recommend-requirement-field" id="recommend-raw" ${inputMode === 'raw' ? '' : 'hidden'}><label for="recommend-requirement">客户原话<span class="req">*</span></label><textarea id="recommend-requirement" maxlength="10000" aria-describedby="recommend-requirement-help recommend-requirement-error" placeholder="直接粘贴客户的消息，也可以补充或修改。">${esc(form.rawDraft ?? state.teacherRequirementDraft ?? '')}</textarea><small id="recommend-requirement-help">将按这段文字匹配，不叠加另一种方式的草稿。</small><span class="field-error" id="recommend-requirement-error" aria-live="polite"></span></div>
-        <section class="recommend-logistics" aria-labelledby="recommend-logistics-title"><div class="recommend-logistics-heading"><h3 id="recommend-logistics-title">授课地点与调度</h3><label><input type="checkbox" id="recommend-prefer-local" ${form.logistics?.prefer_local !== false ? 'checked' : ''}>同档匹配优先同城</label></div><div id="recommend-logistics-fields">${renderForm(logisticsFields, form.logistics)}</div><small>这些条件在两种填写方式中共用。异地耗时、票价和差旅待核实；线上课程不参与地区排序。</small></section>
+        <section class="recommend-logistics" aria-labelledby="recommend-logistics-title"><div class="recommend-logistics-heading"><h3 id="recommend-logistics-title">授课地点与调度</h3><label><input type="checkbox" id="recommend-prefer-local" ${form.logistics?.prefer_local !== false ? 'checked' : ''}>先就近，再选匹配前三</label></div><div id="recommend-logistics-fields">${renderForm(logisticsFields, form.logistics)}</div><details class="recommend-city-presets"><summary>查看机构与高铁时间优先级${icon('chevron-down')}</summary><div class="form-item"><label for="recommend-organization">机构城市参考（选填）</label><select id="recommend-organization"><option value="">正在读取机构名单…</option></select><small id="recommend-organization-note">以本次实际授课城市为准；机构选择不会覆盖已填写地点。</small><button type="button" class="btn gray" id="recommend-apply-organization" disabled>带入参考城市</button></div><div id="recommend-priority-table" aria-live="polite">读取高铁时间参考…</div></details><small>同城及所有铁路小于4小时的合格老师统一比较；铁路不足时再看经完整核对的直飞小于3小时备选。同分看等级，末位同分全留。接驳和值机另行确认，不按公里数估算。</small></section>
         <details class="recommend-settings" id="recommend-settings" ${form.maxFeeRate || form.hardBudget ? 'open' : ''}><summary>${icon('sliders-horizontal')}筛选条件<small id="recommend-settings-summary"></small>${icon('chevron-down')}</summary><div class="recommend-settings-grid">
           <div class="form-item recommend-budget"><label for="recommend-max-fee">最高课酬（元/课时）</label><input id="recommend-max-fee" type="number" min="0" step="0.01" inputmode="decimal" value="${esc(form.maxFeeRate)}" placeholder="留空表示不限" aria-describedby="recommend-budget-help recommend-budget-error"><small id="recommend-budget-help">按每课时金额筛选，不是总项目预算。</small><label class="recommend-budget-toggle"><input id="recommend-hard-budget" type="checkbox" ${form.hardBudget ? 'checked' : ''}><span>严格排除超出课酬上限的讲师</span></label><span class="field-error" id="recommend-budget-error" aria-live="polite"></span></div>
-          <div class="form-item recommend-input-options"><label for="recommend-count">推荐目标人数</label><select id="recommend-count">${[3, 5, 10].map((count) => `<option value="${count}" ${String(form.maxResults) === String(count) ? 'selected' : ''}>${count} 位</option>`).join('')}</select><small>至少 3 位供比较；相关师资不足时提示缺口，不用无关讲师补位。</small></div>
+          <div class="form-item recommend-input-options"><label for="recommend-count">推荐规则</label><select id="recommend-count" disabled><option value="3">匹配前三 · 第三名同分全部保留</option></select><small>从就近范围内所有合格讲师中比较；不足三位会提示原因，不用无关讲师补位。</small></div>
         </div></details>
         <div class="recommend-submit-row"><p id="recommend-status" role="status">${cached ? '已保留上次推荐结果，可调整需求后重新匹配。' : '提交后将在下方展示需求分析与推荐结果。'}</p><button type="button" class="btn recommend-run" id="recommend-run">${icon('arrow-right')}开始匹配讲师</button></div>
-        <p class="recommend-input-foot">${icon('shield-check')}本地规则匹配，不是大模型或实时交通查询。客户意向不等于讲师确认；推荐不会自动立项或安排授课。</p>
+        <p class="recommend-input-foot">${icon('shield-check')}专业档案在本地匹配，语义辅助不替代资历核验。铁路行程仍需官方核验；推荐不会自动立项或安排授课。</p>
       </section>
       <section class="recommend-output" id="recommend-output" aria-label="讲师推荐结果" aria-live="polite" tabindex="-1" ${cached ? '' : 'hidden'}></section>
     </div>`;
@@ -3350,6 +3626,54 @@
       output.innerHTML = '';
       updateSettingsSummary();
     };
+    const organizationSelect = $('#recommend-organization', root);
+    const organizationNote = $('#recommend-organization-note', root);
+    const organizationApply = $('#recommend-apply-organization', root);
+    const priorityTable = $('#recommend-priority-table', root);
+    const provinceInput = logisticsInputs.find(input => input.dataset.k === 'training_province');
+    const cityInput = logisticsInputs.find(input => input.dataset.k === 'training_city');
+    let organizationRows = [], priorityRequest = 0;
+    const updateOrganizationState = () => {
+      const organization = organizationSelect.value === '' ? null : organizationRows[Number(organizationSelect.value)];
+      organizationApply.disabled = !organization || !organization.province || !organization.city || /conflict|uncertain|withdrawn|inactive/.test(organization.status || '') || Boolean(provinceInput.value || cityInput.value);
+      organizationNote.textContent = organization ? `${organization.city ? `${organization.province} · ${organization.city}。` : '城市待确认。'}${organization.note || ''}以本次实际授课城市为准；已有地点不会被覆盖。` : '以本次实际授课城市为准；机构选择不会覆盖已填写地点。';
+    };
+    organizationSelect.onchange = updateOrganizationState;
+    const loadPriorities = async () => {
+      const ticket = ++priorityRequest;
+      updateOrganizationState();
+      try {
+        const catalog = await api('/teacher-resumes/dispatch-priorities?' + new URLSearchParams({ province: provinceInput.value, city: cityInput.value, date: $('#recommend-guide-date', root).value }));
+        if (ticket !== priorityRequest || !isRouteCurrent(context.epoch, context.c, 'teachers') || !priorityTable.isConnected) return;
+        if (!organizationRows.length) {
+          organizationRows = Array.isArray(catalog.organizations) ? catalog.organizations : [];
+          organizationSelect.innerHTML = '<option value="">选择机构，仅作城市参考</option>' + organizationRows.map((row, i) => `<option value="${i}">${esc(row.name)}${!row.city ? ' · 城市待确认' : ''}</option>`).join('');
+          updateOrganizationState();
+        }
+        const priorities = Array.isArray(catalog.priorities) ? catalog.priorities : [];
+        priorityTable.innerHTML = `<p>${esc(catalog.rule || '交通优先表暂不可用')}</p><p>城市清单 ${esc(catalog.enumerated_count || 0)} / ${esc(catalog.universe_count || 0)} · 已有结论 ${esc(catalog.resolved_count || 0)} · 待核对 ${esc(catalog.unknown_count || 0)}。${catalog.transport_scope_complete ? '当前目录范围已核对。' : '清单已列全不等于交通已查全，不能把未知城市当作不符合。'}</p>` + (priorities.length ? `<dl class="recommend-priority-bands">${[0, 1, 2, 3, 4, null].map(tier => {
+          const rows = priorities.filter(row => row.tier === tier);
+          const band = tier === null ? '铁路近程范围 · 双向小于4小时，按专业匹配比较' : `${[100, 85, 70, 55, 40][tier]} 分 · ${['同城', '铁路参考 ≤ 2 小时', '铁路参考 ≤ 3 小时', '铁路参考 < 4 小时', '航空备选 · 直飞 < 3 小时'][tier]}`;
+          return rows.length ? `<div><dt>${band}</dt><dd>${rows.map(row => `<div><b>${esc(row.province)}·${esc(row.city)}</b>${row.outbound ? `<details><summary>${row.duration_representation === 'typed_city_bounds' ? '双向铁路时间范围' : `去程 ${esc(row.outbound_reference_minutes)} 分钟 / 返程 ${esc(row.return_reference_minutes)} 分钟`} · 查看依据</summary>${railVerificationMarkup({route_reference: row})}</details>` : ''}</div>`).join('')}</dd></div>` : '';
+        }).join('')}</dl>` : '<p>请先选择实际授课省份和城市；未覆盖的地区需人工核对。</p>') +
+          (catalog.pending_routes?.length ? `<details><summary>路线待补查 · ${catalog.pending_routes.length} 个城市</summary><p>${catalog.pending_routes.map(row => esc(row.city)).join('、')}</p><small>未查到、只有慢车样本、过期或缺返程均不算查完；也不直接转为航空备选。</small></details>` : '') +
+          (catalog.outside_nearby_routes?.length ? `<details><summary>已核对不满足交通范围 · ${catalog.outside_nearby_routes.length} 个城市</summary>${catalog.outside_nearby_routes.map(row => `<p><b>${esc(row.city)}</b> ${esc(row.message)}</p>`).join('')}</details>` : '') +
+          `<small>${esc(catalog.notice || '')} ${esc(catalog.attribution || '')}</small>`;
+      } catch (error) {
+        if (ticket !== priorityRequest || !priorityTable.isConnected) return;
+        organizationSelect.innerHTML = '<option value="">机构名单暂不可用</option>';
+        priorityTable.textContent = '高铁时间优先表暂不可用，请稍后重试；不会据此假定交通可达。';
+      }
+    };
+    organizationApply.onclick = () => {
+      const organization = organizationSelect.value === '' ? null : organizationRows[Number(organizationSelect.value)];
+      if (organizationApply.disabled || !organization || provinceInput.value || cityInput.value) return;
+      provinceInput.value = organization.province;
+      refreshRegionSuggestions(provinceInput, true);
+      cityInput.value = organization.city;
+      markRecommendationDirty(); loadPriorities();
+    };
+    loadPriorities();
     guideInputs.forEach((input) => { input.oninput = () => {
       if (input.dataset.recommendGuide === 'topic') {
         $('#recommend-topic-error', root).textContent = '';
@@ -3357,8 +3681,9 @@
       }
       if (input.dataset.recommendGuide === 'hours') { $('#recommend-hours-error', root).textContent = ''; hoursInput.removeAttribute('aria-invalid'); }
       updateBrief(); markRecommendationDirty();
+      if (input.dataset.recommendGuide === 'date') loadPriorities();
     }; });
-    logisticsInputs.forEach((input) => { input.oninput = markRecommendationDirty; input.onchange = markRecommendationDirty; });
+    logisticsInputs.forEach((input) => { input.oninput = () => { markRecommendationDirty(); updateOrganizationState(); }; input.onchange = () => { markRecommendationDirty(); loadPriorities(); }; });
     preferLocal.onchange = markRecommendationDirty;
     modeButtons.forEach((button) => { button.onclick = () => {
       if (button.dataset.recommendMode === inputMode) return;
@@ -3384,7 +3709,7 @@
         updateBrief();
         (inputMode === 'guided' ? $('#recommend-guide-topic', root) : requirement).focus();
       }
-      markRecommendationDirty();
+      markRecommendationDirty(); loadPriorities();
     };
     requirement.oninput = () => { rawInitialized = true; $('#recommend-requirement-error', root).textContent = ''; requirement.removeAttribute('aria-invalid'); markRecommendationDirty(); };
     count.onchange = markRecommendationDirty;
@@ -3445,6 +3770,10 @@
       refreshIcons(button);
       try {
         const body = { requirement: text, max_results: Number(count.value), hard_budget: hardBudget.checked };
+        if (inputMode === 'guided') {
+          body.requirement_contract = guidedRequirementContract(readGuided());
+          if (demandSelect.value) body.demand_id = Number(demandSelect.value);
+        }
         Object.assign(body, logistics, { prefer_local: preferLocal.checked });
         if (feeValue) body.max_fee_rate = fee;
         const result = await api('/teacher-recommendations', { body, signal: controller.signal });
@@ -3494,7 +3823,7 @@
     const confirmedRates = rows.map((row) => Number(row.fee_rate)).filter((rate) => Number.isFinite(rate) && rate > 0);
     const avgRate = confirmedRates.length ? confirmedRates.reduce((total, rate) => total + rate, 0) / confirmedRates.length : 0;
     const summary = canWrite()
-      ? `<div class="module-summary four teacher-summary"><div><span>${icon('users-round')}</span><small>当前师资</small><b>${rows.length}<em>人</em></b></div><div><span>${icon('user-check')}</span><small>当前在库</small><b>${inLib}<em>人</em></b></div><div><span>${icon('file-check-2')}</span><small>简历可推荐</small><b>${ready}<em>份</em></b></div><div><span>${icon('scan-line')}</span><small>解析待处理</small><b>${attention}<em>份</em></b></div></div>`
+      ? `<div class="module-summary four teacher-summary"><div><span>${icon('users-round')}</span><small>当前师资</small><b>${rows.length}<em>人</em></b></div><div><span>${icon('user-check')}</span><small>当前在库</small><b>${inLib}<em>人</em></b></div><div><span>${icon('file-check-2')}</span><small>已解析简历</small><b>${ready}<em>份</em></b></div><div><span>${icon('scan-line')}</span><small>解析待处理</small><b>${attention}<em>份</em></b></div></div>`
       : `<div class="module-summary three teacher-summary"><div><span>${icon('users-round')}</span><small>当前师资</small><b>${rows.length}<em>人</em></b></div><div><span>${icon('user-check')}</span><small>当前在库</small><b>${inLib}<em>人</em></b></div><div><span>${icon('badge-japanese-yen')}</span><small>已确认平均课酬</small><b>${confirmedRates.length ? `¥ ${money(avgRate)}` : '待确认'}</b></div></div>`;
     const tabBar = canWrite() ? `<div class="teacher-mode-tabs" role="tablist" aria-label="师资资源功能">${tabs.map((tabItem) => `<button type="button" role="tab" id="teacher-tab-${tabItem.key}" aria-controls="teacher-tab-panel" aria-selected="${state.teacherTab === tabItem.key}" tabindex="${state.teacherTab === tabItem.key ? '0' : '-1'}" data-teacher-tab="${tabItem.key}" class="${state.teacherTab === tabItem.key ? 'active' : ''}">${businessArt(tabItem.art)}<span>${tabItem.label}</span>${tabItem.count ? `<em>${tabItem.count}</em>` : ''}</button>`).join('')}</div>` : '';
     c.innerHTML = `<div class="teacher-console">

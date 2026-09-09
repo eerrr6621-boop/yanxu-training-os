@@ -40,7 +40,7 @@ public class Api {
         FIELDS.put("demands", new String[]{"title","unit","contact","phone","hours","content","teacher_req","expect_date","status","remark","training_province","training_city","training_mode","training_period"});
         FIELDS.put("bids", new String[]{"demand_id","amount","proposal","bid_date","status","review"});
         FIELDS.put("projects", new String[]{"demand_id","bid_id","title","unit","hours","amount","start_date","end_date","owner","participant_count","delivery_mode","venue","contract_no","status","remark"});
-        FIELDS.put("teachers", new String[]{"name","gender","org","title","field","phone","email","fee_rate","intro","status","in_date","out_date","base_province","base_city"});
+        FIELDS.put("teachers", new String[]{"name","gender","org","title","field","phone","email","fee_rate","intro","status","in_date","out_date","base_province","base_city","teacher_level"});
         FIELDS.put("teacher_evals", new String[]{"teacher_id","project_id","score","comment","evaluator","eval_date"});
         FIELDS.put("dispatches", new String[]{"project_id","teacher_id","subject","teach_date","start_time","end_time","venue","confirm_deadline","material_status","hours","status","sent_at","confirmed_at","msg_log","remark"});
         FIELDS.put("questionnaires", new String[]{"title","target","project_id","questions","status"});
@@ -351,14 +351,52 @@ public class Api {
         for (String field : fields) if (!body.containsKey(field)) body.put(field, existing.get(field));
     }
 
+    /** Only the stored/explicit creation draft status permits an unfinished city.
+     * No invented city, province, price or grade is supplied as a default. */
+    static void validateTeacherResidence(Map<String,Object> teacher) {
+        if(DispatchPreference.text(teacher.get("base_city")).matches("(?:待完善|城市待完善|后补|稍后填写)"))
+            throw new IllegalArgumentException("未知城市请留空保存待完善档案，不要把占位文字作为城市");
+        if(!"待完善".equals(str(teacher,"status"))) {
+            DispatchPreference.validateRegion(teacher,"base_province","base_city",true);return;
+        }
+        for(String key:List.of("base_province","base_city"))
+            if(teacher.get(key)!=null && !(teacher.get(key) instanceof String)) throw new IllegalArgumentException("省份和城市必须填写文字");
+        String province=DispatchPreference.text(teacher.get("base_province")),city=DispatchPreference.text(teacher.get("base_city"));
+        if(!city.isEmpty()) {DispatchPreference.validateRegion(teacher,"base_province","base_city",true);return;}
+        String normalized=DispatchPreference.province(province);
+        if(province.length()>64 || !province.isEmpty() && !DispatchPreference.PROVINCES.contains(normalized))
+            throw new IllegalArgumentException("请选择有效的常驻省份；不确定可暂留空");
+        teacher.put("base_province",normalized);teacher.put("base_city","");
+    }
+
+    private static Double teacherFeeValue(Map<String,Object> body) {
+        Object raw=body.get("fee_rate");
+        if(raw==null || raw instanceof String && ((String)raw).isBlank()) return null;
+        double value;
+        try {value=Double.parseDouble(String.valueOf(raw));}
+        catch(NumberFormatException invalid) {throw new IllegalArgumentException("课酬标准应填写有效数字，不确定可留空");}
+        if(!Double.isFinite(value) || value<0) throw new IllegalArgumentException("课酬标准须为非负有限数字，不确定可留空");
+        return value;
+    }
+
     private static void validateSave(String mod, Map<String, Object> body, long id,
                                      Map<String, Object> existing) throws Exception {
         if (id > 0 && existing == null) throw new ApiException(404, "要修改的记录不存在或已被删除");
 
         // Old clients must not erase newly added scheduling fields on full-row updates.
         if ("teachers".equals(mod)) {
-            preserveMissing(body, existing, "base_province", "base_city");
-            DispatchPreference.validateRegion(body, "base_province", "base_city", true);
+            preserveMissing(body, existing, FIELDS.get("teachers"));
+            if(existing!=null) body.put("status",existing.get("status"));
+            else if(!"待完善".equals(str(body,"status"))) body.put("status","在库");
+            String name=str(body,"name").strip();
+            if(name.isEmpty() || name.length()>64) throw new ApiException(400,"请填写讲师姓名（不超过64字）");
+            body.put("name",name);
+            String level = str(body, "teacher_level").strip();
+            if (!level.isEmpty() && TeacherLevel.rank(level) == 0)
+                throw new ApiException(400, "讲师等级请选择：讲师、高级讲师、特级讲师或特聘讲师");
+            body.put("teacher_level", level.isEmpty() ? null : level);
+            validateTeacherResidence(body);
+            body.put("fee_rate",teacherFeeValue(body));
         }
         if ("demands".equals(mod)) {
             body.put("expect_date", ScheduleDates.canonical(body.get("expect_date")));
@@ -543,12 +581,13 @@ public class Api {
                 if (i > 0) sql.append(',');
                 sql.append(fields[i]).append("=?");
                 Object v = b.get(fields[i]);
-                if (NUMERIC_FIELDS.contains(fields[i])) v = Json.num(b, fields[i]);
+                if ("teachers".equals(mod) && "fee_rate".equals(fields[i])) v=teacherFeeValue(b);
+                else if (NUMERIC_FIELDS.contains(fields[i])) v = Json.num(b, fields[i]);
                 if ("status".equals(fields[i]) && "users".equals(mod)) v = (long) Json.num(b, fields[i]);
                 // 流程状态及其审计字段只能由专用动作推进，普通编辑不得绕过。
                 if ("demands".equals(mod) && "status".equals(fields[i])) v = demandTargetStatus;
                 else if (existing != null && protectedWorkflowField(mod, fields[i])) v = existing.get(fields[i]);
-                args.add(v == null ? "" : v);
+                args.add("teacher_level".equals(fields[i]) || "teachers".equals(mod) && "fee_rate".equals(fields[i]) ? v : v == null ? "" : v);
             }
             sql.append(" WHERE id=?");
             args.add(id);
@@ -590,10 +629,12 @@ public class Api {
                 if (i > 0) { cols.append(','); vals.append(','); }
                 cols.append(fields[i]); vals.append('?');
                 Object v = b.get(fields[i]);
-                if (NUMERIC_FIELDS.contains(fields[i])) v = Json.num(b, fields[i]);
+                if ("teachers".equals(mod) && "fee_rate".equals(fields[i])) v=teacherFeeValue(b);
+                else if (NUMERIC_FIELDS.contains(fields[i])) v = Json.num(b, fields[i]);
                 if ("demands".equals(mod) && "status".equals(fields[i])) v = demandTargetStatus;
+                else if("teachers".equals(mod) && "status".equals(fields[i]) && "待完善".equals(str(b,"status"))) v="待完善";
                 else if (protectedWorkflowField(mod, fields[i])) v = initialWorkflowValue(mod, fields[i]);
-                args.add(v == null ? "" : v);
+                args.add("teacher_level".equals(fields[i]) || "teachers".equals(mod) && "fee_rate".equals(fields[i]) ? v : v == null ? "" : v);
             }
             if ("users".equals(mod)) {
                 cols.append(",password"); vals.append(",?");
@@ -1341,8 +1382,11 @@ public class Api {
     private static void teacherResidence(HttpExchange ex) throws Exception {
         Map<String, Object> input = body(ex);
         long id = Json.lng(input, "id");
-        if (Db.one("SELECT id FROM teachers WHERE id=?", id) == null) throw new ApiException(404, "师资记录不存在");
-        DispatchPreference.validateRegion(input, "base_province", "base_city", true);
+        Map<String,Object> teacher=Db.one("SELECT id,status,base_province,base_city FROM teachers WHERE id=?",id);
+        if (teacher == null) throw new ApiException(404, "师资记录不存在");
+        preserveMissing(input,teacher,"base_province","base_city");
+        input.put("status",teacher.get("status"));
+        validateTeacherResidence(input);
         Db.exec("UPDATE teachers SET base_province=?,base_city=? WHERE id=?", input.get("base_province"), input.get("base_city"), id);
         ok(ex, "常驻地区已保存；未改动其他师资资料");
     }
@@ -1357,7 +1401,11 @@ public class Api {
             if (activeDispatches > 0)
                 throw new ApiException(400, "该师资仍有 " + activeDispatches + " 条待执行授课安排，请先完成或重新调度");
             Db.exec("UPDATE teachers SET status='出库', out_date=? WHERE id=?", today(), id);
-        } else Db.exec("UPDATE teachers SET status='在库', out_date='' WHERE id=?", id);
+        } else {
+            Map<String,Object> ready=new LinkedHashMap<>(teacher);ready.put("status","在库");
+            validateTeacherResidence(ready);
+            Db.exec("UPDATE teachers SET status='在库', out_date='' WHERE id=?", id);
+        }
         ok(ex, "已" + st);
     }
 
