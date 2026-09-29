@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'none'; img-src 'self' data: blob:; font-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; worker-src 'none'; media-src 'none'">
+  <meta name="referrer" content="no-referrer">
+  <title>研序 · 模块演示</title>
+  <link rel="stylesheet" href="./host.css">
+  <script type="module" src="./host.js"></script>
+</head>
+<body class="yx-demo-host">
+  <a id="module-skip" class="yx-host-skip" href="#module-heading">跳到模块内容</a>
+  <header class="yx-host-topbar">
+    <a class="yx-host-brand" href="#M01" aria-label="研序模块演示首页"><span class="yx-host-brand-mark" aria-hidden="true">研</span><span>研序<span class="yx-host-brand-subtitle">模块工作台</span></span></a>
+    <span class="yx-host-demo-badge">合成数据演示</span>
+    <span class="yx-host-person">合成演示用户</span>
+  </header>
+  <div class="yx-host-layout">
+    <aside class="yx-host-sidebar">
+      <div class="yx-host-nav-heading"><span>模块导航</span><button id="module-menu-toggle" type="button" aria-controls="module-nav" aria-expanded="false">展开导航</button></div>
+      <nav id="module-nav" class="yx-host-nav" aria-label="业务模块"></nav>
+      <p class="yx-host-sidebar-note">9 个独立模块<br>演示交互 · 待逐项验收</p>
+    </aside>
+    <main id="module-main" class="yx-host-main">
+      <div class="yx-host-safety" role="note"><strong>仅使用合成数据</strong><span>当前为独立演示页面，业务网络请求已禁用。演示结果不代表正式数据或已通过验收。</span></div>
+      <div class="yx-host-module-header"><div><p id="module-code" class="yx-host-eyebrow">模块演示</p><h1 id="module-heading" tabindex="-1">正在准备演示</h1><p id="module-description" class="yx-host-description"></p></div><span id="module-status" class="yx-host-status" role="status">准备中</span></div>
+      <div id="module-outlet" class="yx-host-outlet" aria-busy="true"></div>
+      <noscript><p>请启用 JavaScript 查看模块演示。</p></noscript>
+      <footer class="yx-host-footer">研序系统 · 独立模块演示<span>合成场景，不连接业务接口</span></footer>
+    </main>
+  </div>
+  <div id="module-notification" class="yx-host-toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>

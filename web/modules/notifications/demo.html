@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <meta name="description" content="S01 内部通知逻辑测试，不作为正式界面交付。正式功能沿用原研序工作台；本页不外发消息。">
+    <title>研序 · 内部通知逻辑测试</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="./style.css">
+  </head>
+  <body style="margin: 0;">
+    <main id="notification-demo"></main>
+    <noscript>本页是本地合成通知演示，需要启用 JavaScript 才能预览交互，不会发送任何消息。</noscript>
+    <script type="module">
+      import { mount } from './index.js';
+      const lifecycle = new AbortController();
+      await mount(document.getElementById('notification-demo'), {
+        mode: 'demo',
+        signal: lifecycle.signal,
+        user: null,
+        request: () => { throw new Error('合成演示禁止请求服务端。'); },
+        notify: () => {},
+        navigate: () => { throw new Error('合成演示仅在本页展示合成事项。'); }
+      });
+      window.addEventListener('pagehide', () => lifecycle.abort(), { once: true });
+    </script>
+  </body>
+</html>

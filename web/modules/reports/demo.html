@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>研序 · M06 统计排名与导出 · 合成演示</title>
+</head>
+<body style="margin:0">
+  <main id="reports"><p>正在加载 M06 合成演示；请通过本地 HTTP 服务打开此页面。</p></main>
+  <script type="module">
+    import { mount } from './index.js';
+    const controller = new AbortController();
+    const mode = new URL(location.href).searchParams.get('mode') === 'live' ? 'live' : 'demo';
+    await mount(document.getElementById('reports'), {
+      mode, signal: controller.signal, user: null,
+      request: async () => { throw new Error('独立演示不接入任何正式接口'); },
+      notify: () => {}, navigate: () => {},
+    });
+    window.addEventListener('pagehide', () => controller.abort(), { once: true });
+  </script>
+</body>
+</html>

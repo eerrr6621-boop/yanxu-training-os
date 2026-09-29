@@ -1,6 +1,7 @@
 # Security model
 
-This document describes the security posture of the public v1.8 release.
+This document describes the application's security posture. Optional components
+remain disabled until explicitly configured; see their deployment instructions.
 
 ## Authentication and password storage
 
@@ -74,7 +75,11 @@ The API returns real HTTP status codes (`400`, `401`, `403`, `404`, `405`,
   than 100 nested containers. Business numeric fields are finite-checked again
   before storage, with integer/range checks where applicable.
 - Teacher resumes are stored in a separate non-public directory. Text PDFs are
-  capped at 15 MiB and PPTX profiles at 80 MiB by default. Extractors enforce
+  hard-capped at 15 MiB and PPTX profiles at 200 MiB. Configuration may lower,
+  but cannot raise, either cap. The reverse proxy
+  must permit 200 MiB on the private resume upload path, while retaining its
+  existing limits on other endpoints. Uploads stream to private disk; media
+  inside PPTX is not expanded. Extractors enforce
   page/slide and text limits and run in a separate JVM with bounded heap and
   wall-clock time. PPTX extraction reads slide XML only and rejects traversal
   entries; it never expands files into the application directory.
@@ -124,8 +129,44 @@ profile or delete operation. Downloads are attachment-only, `no-store` and
 `nosniff`. Directory responses omit storage names, hashes and complete extracted
 text. Recommendation processing is local and deterministic: resume/client text
 is untrusted data, no external model receives it, only in-library teachers can be
-returned, and no recommendation endpoint creates a dispatch. Gender and other
-protected personal attributes do not contribute to the score.
+returned, and no recommendation endpoint creates a dispatch. Structured gender
+and other personal-attribute fields are not direct inputs to the rule score.
+Explicit personal fields in semantic source text are conservatively omitted;
+this is not a comprehensive guarantee of bias-free natural-language ranking.
+
+## Optional local semantic worker
+
+The default recommendation path needs no model. The optional Python worker binds
+only to IPv4 loopback and requires a separate random bearer token of at least 32
+characters. Java uses a fixed loopback destination, no proxy and no redirects;
+neither the browser nor a resume can select its endpoint. Do not expose this port
+through nginx. Model preparation downloads pinned official safetensors once;
+runtime inference uses local checksum-verified ONNX/tokenizer files only.
+
+The worker receives the effective professional text, with the existing common
+contact/identity-number redaction. Explicit personal-attribute and negated units
+are omitted conservatively; this is not a comprehensive natural-language fairness
+or negation guarantee. Only already eligible candidates are compared, and every
+returned quote must occur in the current source. Manual profiles override previous
+raw text. All candidate responses are validated before attaching any model output.
+Timeouts, malformed output and overload preserve the rule-based results. No
+recommendation writes records or holds the business mutation lock during inference.
+
+The private bounded SQLite cache stores salted HMAC keys and vectors, not raw
+text. Vectors are sensitive derived data, not anonymized information. Their TTL
+for reuse is seven days; expired rows are physically removed on later successful
+vector writes, so an idle cache can retain them longer. Deleting a resume does
+not immediately purge its old cached vector. Changed or deleted source is not
+reused for that profile's new results. Operators needing immediate
+purge must stop the worker and remove its dedicated cache. Models, caches and
+tokens never belong in public static roots, source control or public backups.
+Single-encoding native calls are not hard-interruptible; use service-level memory
+and CPU limits and target-host load testing. See [deployment and limits](../semantic/README.md).
+
+Railway lookup is not connected. The UI uses a fixed official 12306 link, does
+not forward private profile data or credentials, and does not scrape, book or
+invent route results. A future authorized provider needs separate terms, input
+validation, freshness, station/date disambiguation and failure-path review.
 
 ## Browser and static-content protections
 

@@ -39,6 +39,7 @@ async function call(path, body, tk) {
   let r = await call('/login', { username: 'admin', password: 'admin123' }, '');
   ok('管理员登录', r.code === 0 && r.data.token);
   token = r.data.token;
+  const fixture = await require('./scripts/IntegrationHttpFixtures.cjs').createIntegrationHttpFixtures(call, ok);
 
   // 2. 各模块列表
   for (const m of ['demands', 'bids', 'projects', 'teachers', 'teacher_evals', 'dispatches', 'questionnaires', 'charges', 'fees', 'costs', 'users']) {
@@ -46,16 +47,22 @@ async function call(path, body, tk) {
     ok('列表 ' + m, r.code === 0 && Array.isArray(r.data), `(${r.data.length}条)`);
   }
 
-  // 3. 培训需求 → 投标 → 中标 → 自动立项
-  r = await call('/demands', { title: '测试-数字化转型专题培训', unit: '测试单位A', contact: '测试员', phone: '13900000000', hours: 16, content: '数字化转型理论与实践', teacher_req: '有数字化咨询经验', expect_date: '2026-11-01', status: '待处理', remark: '' });
-  ok('新增培训需求', r.code === 0 && r.data > 0);
-  const demandId = r.data;
-  r = await call('/bids', { demand_id: demandId, amount: 45000, proposal: '测试投标方案', bid_date: '2026-07-30', status: '待评审', review: '' });
-  ok('新增投标', r.code === 0 && r.data > 0);
-  const bidId = r.data;
-  r = await call('/bids/win', { id: bidId });
-  ok('投标中标并自动立项', r.code === 0 && r.data.project_id > 0, '项目ID=' + (r.data && r.data.project_id));
-  const projId = r.data.project_id;
+  // 3. 需求草稿 → 原签报结果 → 团队受理生成项目
+  let workflow = await fixture.draft({ title: '测试-数字化转型专题培训', unit: '测试单位A', contact: '测试员', phone: '13900000000', hours: 16, content: '数字化转型理论与实践', teacher_req: '有数字化咨询经验', expect_date: '2026-11-01' });
+  ok('新增培训需求草稿', workflow.id > 0 && workflow.draft);
+  const demandId = workflow.id;
+  workflow = await fixture.submit(workflow);
+  ok('投标需求提交后等待原签报结果', !workflow.draft && workflow.queue === 'waiting_bid_result');
+  r = await call('/bids', { demand_id: demandId, amount: 45000, proposal: '测试投标方案', bid_date: '2026-07-30', status: '待评审' });
+  ok('新流程投标禁止旧入口绕过签报登记', r.code === 409);
+  r = await call('/bids/win', { id: 1, demand_id: demandId });
+  ok('旧中标动作不能改绑新流程需求以绕过受理', r.code === 409);
+  workflow = await fixture.won(workflow);
+  ok('登记中标后仍须团队受理', workflow.queue === 'ready' && !workflow.project_id);
+  workflow = await fixture.accept(workflow);
+  const projId = workflow.project_id;
+  ok('团队受理后生成待启动项目', projId > 0);
+  await fixture.configureProject(projId, { amount: 45000 });
   r = await call('/demands?id=' + demandId);
   ok('需求状态已更新为已立项', r.code === 0 && r.data.find(d => d.id === demandId && d.status === '已立项'));
 
@@ -70,17 +77,18 @@ async function call(path, body, tk) {
   r = await call('/dispatches?id=&project_id=' + projId);
   const dp = r.data.find(d => d.id === dpId);
   ok('调度状态=已确认且含消息日志', dp && dp.status === '已确认' && dp.msg_log.includes('已确认'));
-  r = await call('/dispatches/complete', { id: dpId });
+  const verifiedDelivery = await fixture.verifyDispatch(dpId, '360');
+  r = await call('/dispatches/complete', { id: dpId, expected_version: verifiedDelivery.version });
   ok('实际授课后完成交付记录', r.code === 0);
   r = await call('/dispatches?project_id=' + projId);
   ok('调度状态=已完成', r.code === 0 && r.data.find(d => d.id === dpId && d.status === '已完成'));
 
-  // 5. 课酬自动计算
+  // 5. 新流程阻断旧费率；未迁移历史项目保留原财务兼容覆盖。
   r = await call('/fees/calc', { project_id: projId });
-  ok('课酬自动计算', r.code === 0 && r.data.length === 1 && r.data[0].amount === 8 * 2200, JSON.stringify(r.data && r.data[0] && r.data[0].amount));
-  const feeId = r.data[0].id;
-  r = await call('/fees/pay', { id: feeId });
-  ok('课酬发放', r.code === 0);
+  ok('新流程正式规则未启用时不能套用旧师资费率', r.code === 409);
+  r = await call('/fees?project_id=' + projId);
+  ok('受控项目不生成旧课酬记录', r.code === 0 && r.data.length === 0);
+  await fixture.completeLegacyQuestionnaireProject();
 
   // 6. 收费
   r = await call('/charges', { project_id: projId, amount: 45000, received: 0, charge_date: '', status: '未收费', invoice: '', remark: '' });
@@ -102,7 +110,10 @@ async function call(path, body, tk) {
     { type: 'single', title: '是否愿意再次参加', options: ['愿意', '不愿意'] },
     { type: 'text', title: '意见与建议' },
   ]);
-  r = await call('/questionnaires', { title: '测试-培训效果评估问卷', target: '参训学员', project_id: projId, questions, status: '草稿' });
+  r = await call('/questionnaires', { title: '新流程禁止问卷', target: '参训学员', project_id: projId, questions, status: '草稿' });
+  ok('新流程项目不能创建发送问卷', r.code === 400 && /原问卷平台/.test(r.msg));
+  // 旧问卷全流程只在原合成seed项目验证兼容。
+  r = await call('/questionnaires', { title: '测试-培训效果评估问卷', target: '参训学员', project_id: 2, questions, status: '草稿' });
   ok('创建问卷', r.code === 0 && r.data > 0);
   const qid = r.data;
   r = await call('/q/publish', { id: qid });

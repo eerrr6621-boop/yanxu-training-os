@@ -33,6 +33,11 @@ public class Main {
     }
 
     public static void main(String[] args) throws Exception {
+        start(args, null);
+    }
+
+    /** Package-local startup composition for a trusted in-process host; never configurable by HTTP. */
+    static void start(String[] args, NotificationChannelsLoginVerification suppliedLoginService) throws Exception {
         configureHttpLimits();
         int port = 8080;
         if (args.length > 0) {
@@ -41,6 +46,28 @@ public class Main {
         // 初始化数据库（自动建表+示例数据）
         Db.init();
         TeacherIntelligence.init();
+
+        TrainingSummariesFeedbackSource.connect(new TrainingSummariesFeedbackSource.ReviewedProvider() {
+            public Map<String, Object> capture(Auth.Session session, long project, String organization) throws Exception {
+                return SurveySummaryImportsFormal.captureReviewed(session, project, organization);
+            }
+            public void validate(Object snapshot) throws Exception {
+                SurveySummaryImportsFormal.validateReviewedSnapshot(snapshot);
+            }
+        });
+
+        // Startup composition is explicit; missing mail configuration never changes login policy.
+        if (suppliedLoginService == null) {
+            var loginMail = LoginVerificationMailAdapter.fromEnvironment();
+            LoginVerificationHost.installService(
+                    new NotificationChannelsLoginVerification(System::currentTimeMillis, loginMail.sender()));
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                if (loginMail.sender() != null) loginMail.sender().close();
+            }, "yanxu-login-mail-shutdown"));
+            System.out.println("  登录邮件配置: " + loginMail.state());
+        } else {
+            LoginVerificationHost.installService(suppliedLoginService);
+        }
 
         // 定位 web 目录（支持从项目根目录或 jar 同级启动）
         webRoot = findWebRoot();

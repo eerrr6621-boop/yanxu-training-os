@@ -1,9 +1,14 @@
 package com.training;
 
 import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.Headers;
+import com.sun.net.httpserver.HttpContext;
+import com.sun.net.httpserver.HttpPrincipal;
 
 import java.io.*;
 import java.net.URLDecoder;
+import java.net.InetSocketAddress;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -23,10 +28,54 @@ public class Api {
     private static final String SESSION_COOKIE = "yx_session";
     private static final int MAX_BODY_BYTES = 1024 * 1024;
 
+    /** Keep API caches local: the JDK exchange's attribute map can be shared by its context. */
+    private static final class RequestExchange extends HttpExchange {
+        private final HttpExchange delegate;
+        private Object requestBody;
+        private Object pendingResponse;
+
+        RequestExchange(HttpExchange delegate) { this.delegate = Objects.requireNonNull(delegate); }
+        @Override public Object getAttribute(String name) {
+            if (BODY_ATTRIBUTE.equals(name)) return requestBody;
+            if (RESPONSE_ATTRIBUTE.equals(name)) return pendingResponse;
+            return delegate.getAttribute(name);
+        }
+        @Override public void setAttribute(String name, Object value) {
+            if (BODY_ATTRIBUTE.equals(name)) requestBody = value;
+            else if (RESPONSE_ATTRIBUTE.equals(name)) pendingResponse = value;
+            else delegate.setAttribute(name, value);
+        }
+        @Override public Headers getRequestHeaders() { return delegate.getRequestHeaders(); }
+        @Override public Headers getResponseHeaders() { return delegate.getResponseHeaders(); }
+        @Override public URI getRequestURI() { return delegate.getRequestURI(); }
+        @Override public String getRequestMethod() { return delegate.getRequestMethod(); }
+        @Override public HttpContext getHttpContext() { return delegate.getHttpContext(); }
+        @Override public void close() { delegate.close(); }
+        @Override public InputStream getRequestBody() { return delegate.getRequestBody(); }
+        @Override public OutputStream getResponseBody() { return delegate.getResponseBody(); }
+        @Override public void sendResponseHeaders(int code, long length) throws IOException { delegate.sendResponseHeaders(code, length); }
+        @Override public InetSocketAddress getRemoteAddress() { return delegate.getRemoteAddress(); }
+        @Override public int getResponseCode() { return delegate.getResponseCode(); }
+        @Override public InetSocketAddress getLocalAddress() { return delegate.getLocalAddress(); }
+        @Override public String getProtocol() { return delegate.getProtocol(); }
+        @Override public void setStreams(InputStream input, OutputStream output) { delegate.setStreams(input, output); }
+        @Override public HttpPrincipal getPrincipal() { return delegate.getPrincipal(); }
+    }
+
     private static final class ApiResponse {
         final int httpCode;
         final byte[] body;
-        ApiResponse(int httpCode, byte[] body) { this.httpCode = httpCode; this.body = body; }
+        final String contentType;
+        final String filename;
+        ApiResponse(int httpCode, byte[] body) {
+            this(httpCode, body, "application/json; charset=utf-8", null);
+        }
+        ApiResponse(int httpCode, byte[] body, String contentType, String filename) {
+            this.httpCode = httpCode;
+            this.body = body;
+            this.contentType = contentType;
+            this.filename = filename;
+        }
     }
 
     // 各模块允许写入的字段
@@ -40,7 +89,7 @@ public class Api {
         FIELDS.put("demands", new String[]{"title","unit","contact","phone","hours","content","teacher_req","expect_date","status","remark","training_province","training_city","training_mode","training_period"});
         FIELDS.put("bids", new String[]{"demand_id","amount","proposal","bid_date","status","review"});
         FIELDS.put("projects", new String[]{"demand_id","bid_id","title","unit","hours","amount","start_date","end_date","owner","participant_count","delivery_mode","venue","contract_no","status","remark"});
-        FIELDS.put("teachers", new String[]{"name","gender","org","title","field","phone","email","fee_rate","intro","status","in_date","out_date","base_province","base_city"});
+        FIELDS.put("teachers", new String[]{"name","gender","org","title","field","phone","email","fee_rate","intro","status","in_date","out_date","base_province","base_city","teacher_level"});
         FIELDS.put("teacher_evals", new String[]{"teacher_id","project_id","score","comment","evaluator","eval_date"});
         FIELDS.put("dispatches", new String[]{"project_id","teacher_id","subject","teach_date","start_time","end_time","venue","confirm_deadline","material_status","hours","status","sent_at","confirmed_at","msg_log","remark"});
         FIELDS.put("questionnaires", new String[]{"title","target","project_id","questions","status"});
@@ -51,14 +100,77 @@ public class Api {
     }
 
     public static void handle(HttpExchange ex) throws IOException {
+        ex = new RequestExchange(ex);
         String path = ex.getRequestURI().getPath();
         try {
-            String method = ex.getRequestMethod();
-            if ("POST".equalsIgnoreCase(method)) {
-                requireJsonContentType(ex);
-                ex.setAttribute(BODY_ATTRIBUTE, readBodyLimited(ex));
+            if (SurveySummaryImportsIntegration.matches(path)) {
+                // Only this bounded preview reads a larger body, outside the shared business lock.
+                Auth.Session supplied;
+                synchronized (MUTATION_LOCK) { supplied = Auth.get(token(ex)); }
+                if (supplied == null) clearSessionCookie(ex);
+                SurveySummaryImportsIntegration.handle(ex, supplied);
+            } else {
+                String method = ex.getRequestMethod();
+                if (OrganizationAccountAccessInspection.matches(path)) {
+                    // This read-only administrator query must reject writes before reading a body.
+                    OrganizationAccountAccessInspection.preflight(ex);
+                }
+                if (OrganizationAccountRelationships.matches(path)) {
+                    OrganizationAccountRelationships.preflight(ex);
+                }
+                if (OrganizationAccountProvisioningHost.matches(path)) {
+                    OrganizationAccountProvisioningHost.preflight(ex);
+                }
+                if (OrganizationManagementGroupHttp.matches(path)) OrganizationManagementGroupHttp.preflight(ex);
+                if (OrganizationManagementSupplementHttp.matches(path)) {
+                    OrganizationManagementSupplementHttp.preflight(ex);
+                }
+                if (OrganizationAccountImportHost.matches(path)) {
+                    ex.getResponseHeaders().set("Cache-Control", "no-store");
+                    synchronized (MUTATION_LOCK) {
+                        Auth.Session importActor = Auth.get(token(ex));
+                        if (importActor == null) clearSessionCookie(ex);
+                        OrganizationAccountImportHost.requireAdmin(importActor);
+                    }
+                }
+                if (TeacherRosterImportHost.matches(path)) {
+                    ex.getResponseHeaders().set("Cache-Control", "no-store");
+                    synchronized (MUTATION_LOCK) {
+                        Auth.Session rosterActor = Auth.get(token(ex));
+                        if (rosterActor == null) clearSessionCookie(ex);
+                        TeacherRosterImportHost.requireAdmin(rosterActor);
+                    }
+                }
+                if (NotificationChannelsAccountEmailPreparation.matches(path) || NotificationChannelsAccountEmailMaintenance.matches(path)) {
+                    // Personal contact preparation authenticates before inspecting a private request body.
+                    ex.getResponseHeaders().set("Cache-Control", "no-store");
+                    synchronized (MUTATION_LOCK) {
+                        Auth.Session emailActor = Auth.current(Auth.get(token(ex)));
+                        if (emailActor == null) {
+                            clearSessionCookie(ex);
+                            throw new ApiException(401, "未登录或会话已过期，请重新登录");
+                        }
+                        if (!Auth.isAdmin(emailActor))
+                            throw new ApiException(403, "仅系统管理员可登记账号邮箱");
+                    }
+                }
+                if (path.equals("/api/training-summaries/photos/upload")) {
+                    ex.getResponseHeaders().set("Cache-Control", "no-store");
+                    synchronized (MUTATION_LOCK) {
+                        if (Auth.current(Auth.get(token(ex))) == null) {
+                            clearSessionCookie(ex);
+                            throw new ApiException(401, "未登录或会话已过期，请重新登录");
+                        }
+                    }
+                }
+                if ("POST".equalsIgnoreCase(method)) {
+                    requireJsonContentType(ex);
+                    ex.setAttribute(BODY_ATTRIBUTE, readBodyLimited(ex));
+                }
+                if (TrustedDeviceHost.matches(path)) TrustedDeviceHost.handle(ex);
+                else if (LoginVerificationHost.matches(path)) LoginVerificationHost.handle(ex);
+                else synchronized (MUTATION_LOCK) { route(ex, path); }
             }
-            synchronized (MUTATION_LOCK) { route(ex, path); }
         } catch (ApiException e) {
             err(ex, e.code, e.getMessage());
         } catch (IllegalArgumentException e) {
@@ -72,7 +184,6 @@ public class Api {
 
     private static void route(HttpExchange ex, String path) throws Exception {
         // ---------- 无需登录 ----------
-        if (path.equals("/api/login")) { requireMethod(ex, "POST"); login(ex); return; }
         if (path.equals("/api/q/pub")) { requireMethod(ex, "GET", "HEAD"); qPub(ex); return; }
         if (path.equals("/api/q/answer")) { requireMethod(ex, "POST"); qAnswer(ex); return; }
 
@@ -84,9 +195,29 @@ public class Api {
         if (path.equals("/api/me")) { requireMethod(ex, "GET", "HEAD"); ok(ex, me(s)); return; }
         if (path.equals("/api/password")) { requireMethod(ex, "POST"); changePwd(ex, s); return; }
 
+        if (OrganizationManagementGroupHttp.handle(ex, s)) return;
+        if (OrganizationManagementSupplementHttp.handle(ex, s)) return;
+        if (OrganizationAccountImportHost.handle(ex, s)) return;
+        if (OrganizationAccountProvisioningHost.handle(ex, s)) return;
+        if (TeacherRosterImportHost.handle(ex, s)) return;
+        if (NotificationChannelsAccountEmailMaintenance.handle(ex, s)) return;
+        if (NotificationChannelsAccountEmailPreparation.handle(ex, s)) return;
+            if (OrganizationAccountAccessInspection.handle(ex, s)) return;
+            if (OrganizationAccountRelationships.handle(ex, s)) return;
+        if (OrganizationAccessStore.handle(ex, s)) return;
+        if (WorkflowIntegration.handle(ex, s)) return;
+        if (NotificationChannelsIntegration.handle(ex, s)) return;
+        if (CourseCatalogIntegration.handle(ex, s)) return;
+        if (IntegrationDeliveryHost.handle(ex, s)) return;
+        if (ManagementReportsIntegration.handle(ex, s)) return;
+        if (ManagementSettlementBridge.handle(ex, s)) return;
+        if (SurveySummaryImportsFormal.handle(ex, s)) return;
+        if (TrainingSummariesIntegration.handle(ex, s)) return;
+        WorkflowLegacyAccess.check(ex, path, s);
+
         if (path.startsWith("/api/stats/")) {
-            if (path.equals("/api/stats/overview")) { requireMethod(ex, "GET", "HEAD"); statsOverview(ex); return; }
-            if (path.equals("/api/stats/report")) { requireMethod(ex, "GET", "HEAD"); statsReport(ex); return; }
+            if (path.equals("/api/stats/overview")) { requireMethod(ex, "GET", "HEAD"); statsOverview(ex, s); return; }
+            if (path.equals("/api/stats/report")) { requireMethod(ex, "GET", "HEAD"); statsReport(ex, s); return; }
             if (path.equals("/api/stats/q")) { requireMethod(ex, "GET", "HEAD"); qStats(ex); return; }
         }
 
@@ -98,13 +229,13 @@ public class Api {
 
         // 工作流动作
         if (path.equals("/api/bids/win")) { requireMethod(ex, "POST"); requireWrite(s); bidWin(ex); return; }
-        if (path.equals("/api/projects/check")) { requireMethod(ex, "GET", "HEAD"); projectTransitionCheck(ex); return; }
+        if (path.equals("/api/projects/check")) { requireMethod(ex, "GET", "HEAD"); projectTransitionCheck(ex, s); return; }
         if (path.equals("/api/projects/start")) { requireMethod(ex, "POST"); requireWrite(s); projectStart(ex); return; }
-        if (path.equals("/api/projects/complete")) { requireMethod(ex, "POST"); requireWrite(s); projectTransition(ex, "complete"); return; }
-        if (path.equals("/api/projects/archive")) { requireMethod(ex, "POST"); requireWrite(s); projectTransition(ex, "archive"); return; }
+        if (path.equals("/api/projects/complete")) { requireMethod(ex, "POST"); requireWrite(s); projectTransition(ex, "complete", s); return; }
+        if (path.equals("/api/projects/archive")) { requireMethod(ex, "POST"); requireWrite(s); projectTransition(ex, "archive", s); return; }
         if (path.equals("/api/dispatches/send")) { requireMethod(ex, "POST"); requireWrite(s); dispatchSend(ex); return; }
         if (path.equals("/api/dispatches/confirm")) { requireMethod(ex, "POST"); requireWrite(s); dispatchConfirm(ex); return; }
-        if (path.equals("/api/dispatches/complete")) { requireMethod(ex, "POST"); requireWrite(s); dispatchComplete(ex); return; }
+        if (path.equals("/api/dispatches/complete")) { requireMethod(ex, "POST"); dispatchComplete(ex, s); return; }
         if (path.equals("/api/q/publish")) { requireMethod(ex, "POST"); requireWrite(s); qStatus(ex, "已发布"); return; }
         if (path.equals("/api/q/close")) { requireMethod(ex, "POST"); requireWrite(s); qStatus(ex, "已关闭"); return; }
         if (path.equals("/api/q/send")) { requireMethod(ex, "POST"); requireWrite(s); qSend(ex); return; }
@@ -123,11 +254,18 @@ public class Api {
             if (rest.endsWith("/delete")) { mod = rest.substring(0, rest.length() - 7); del = true; }
             if (FIELDS.containsKey(mod)) {
                 if ("users".equals(mod) && !Auth.isAdmin(s)) { err(ex, 403, "无权限"); return; }
-                if (del) { requireMethod(ex, "POST"); requireWrite(s); delete(ex, mod, s); return; }
-                if ("GET".equalsIgnoreCase(ex.getRequestMethod()) || "HEAD".equalsIgnoreCase(ex.getRequestMethod())) { list(ex, mod); return; }
+                if (del) {
+                    requireMethod(ex, "POST"); requireWrite(s);
+                    if ("projects".equals(mod)) Db.transaction(() -> { delete(ex, "projects", s); return null; });
+                    else delete(ex, mod, s);
+                    return;
+                }
+                if ("GET".equalsIgnoreCase(ex.getRequestMethod()) || "HEAD".equalsIgnoreCase(ex.getRequestMethod())) { list(ex, mod, s); return; }
                 requireMethod(ex, "POST");
                 requireWrite(s);
-                save(ex, mod, s); return;
+                if ("projects".equals(mod)) Db.transaction(() -> { save(ex, "projects", s); return null; });
+                else save(ex, mod, s);
+                return;
             }
         }
         err(ex, 404, "接口不存在: " + path);
@@ -135,14 +273,13 @@ public class Api {
 
     // ================= 登录/用户 =================
 
-    private static void login(HttpExchange ex) throws Exception {
-        Map<String, Object> b = body(ex);
-        String token = Auth.login(Json.str(b, "username"), Json.str(b, "password"));
-        if (token == null) { clearSessionCookie(ex); err(ex, 401, "用户名或密码错误（或账号已停用）"); return; }
+    static void loginSuccess(HttpExchange ex, String token) throws Exception {
+        Auth.Session session = Auth.get(token);
+        if (session == null) throw new ApiException(401, "登录核验已失效，请重新登录");
         setSessionCookie(ex, token);
         Map<String, Object> r = new LinkedHashMap<>();
         r.put("token", token);
-        r.put("user", me(Auth.get(token)));
+        r.put("user", me(session));
         ok(ex, r);
     }
 
@@ -158,12 +295,14 @@ public class Api {
 
     private static void changePwd(HttpExchange ex, Auth.Session s) throws Exception {
         Map<String, Object> b = body(ex);
-        String oldP = Json.str(b, "old"), newP = Json.str(b, "new");
-        if (newP.length() < 8) throw new ApiException(400, "新密码长度至少8位");
+        String oldP = Json.str(b, "old"), newP = passwordInput(b, "new", false);
         Map<String, Object> u = Db.one("SELECT * FROM users WHERE id=?", s.uid);
         if (u == null || !Auth.verify(oldP, String.valueOf(u.get("password"))))
             throw new ApiException(400, "原密码错误");
-        Db.exec("UPDATE users SET password=? WHERE id=?", Auth.hash(newP), s.uid);
+        TrustedDevices.mutation(s.uid, true, () -> {
+            Db.exec("UPDATE users SET password=? WHERE id=?", Auth.hash(newP), s.uid);
+            return null;
+        });
         Auth.revokeUserSessions(s.uid);
         clearSessionCookie(ex);
         ok(ex, "密码修改成功");
@@ -171,13 +310,24 @@ public class Api {
 
     private static void resetPwd(HttpExchange ex) throws Exception {
         Map<String, Object> b = body(ex);
-        String newP = Json.str(b, "password");
-        if (newP.length() < 8) throw new ApiException(400, "新密码长度至少8位");
+        String newP = passwordInput(b, "password", false);
         long id = Json.lng(b, "id");
         if (Db.one("SELECT id FROM users WHERE id=?", id) == null) throw new ApiException(404, "用户不存在");
-        Db.exec("UPDATE users SET password=? WHERE id=?", Auth.hash(newP), id);
+        TrustedDevices.mutation(id, true, () -> {
+            Db.exec("UPDATE users SET password=? WHERE id=?", Auth.hash(newP), id);
+            return null;
+        });
         Auth.revokeUserSessions(id);
         ok(ex, "密码已重置");
+    }
+
+    /** Match the HTTP login length limit; existing-user edits may leave the password unchanged. */
+    private static String passwordInput(Map<String, Object> body, String field, boolean allowUnchanged) throws ApiException {
+        Object value = body.get(field);
+        if (allowUnchanged && (value == null || "".equals(value))) return "";
+        if (!(value instanceof String password) || password.length() < 8 || password.length() > 1024)
+            throw new ApiException(400, "新密码必须是8至1024位字符串");
+        return password;
     }
 
     // ================= 通用 CRUD =================
@@ -211,7 +361,7 @@ public class Api {
         }
     }
 
-    private static void list(HttpExchange ex, String mod) throws Exception {
+    private static void list(HttpExchange ex, String mod, Auth.Session actor) throws Exception {
         Map<String, String> q = query(ex);
         StringBuilder sql = new StringBuilder(listSql(mod));
         List<Object> args = new ArrayList<>();
@@ -252,7 +402,7 @@ public class Api {
         }
         if (!conds.isEmpty()) sql.append(" WHERE ").append(String.join(" AND ", conds));
         sql.append(" ORDER BY ").append(alias).append(".id DESC");
-        ok(ex, Db.query(sql.toString(), args.toArray()));
+        ok(ex, WorkflowReadAccessBridge.listRows(mod, Db.query(sql.toString(), args.toArray()), actor, q));
     }
 
     private static Map<String, Object> requireProject(long projectId) throws Exception {
@@ -351,14 +501,57 @@ public class Api {
         for (String field : fields) if (!body.containsKey(field)) body.put(field, existing.get(field));
     }
 
+    /** Only the stored/explicit creation draft status permits an unfinished city.
+     * No invented city, province, price or grade is supplied as a default. */
+    static void validateTeacherResidence(Map<String,Object> teacher) {
+        if(DispatchPreference.text(teacher.get("base_city")).matches("(?:待完善|城市待完善|后补|稍后填写)"))
+            throw new IllegalArgumentException("未知城市请留空保存待完善档案，不要把占位文字作为城市");
+        if(!"待完善".equals(str(teacher,"status"))) {
+            DispatchPreference.validateRegion(teacher,"base_province","base_city",true);return;
+        }
+        for(String key:List.of("base_province","base_city"))
+            if(teacher.get(key)!=null && !(teacher.get(key) instanceof String)) throw new IllegalArgumentException("省份和城市必须填写文字");
+        String province=DispatchPreference.text(teacher.get("base_province")),city=DispatchPreference.text(teacher.get("base_city"));
+        if(!city.isEmpty()) {DispatchPreference.validateRegion(teacher,"base_province","base_city",true);return;}
+        String normalized=DispatchPreference.province(province);
+        if(province.length()>64 || !province.isEmpty() && !DispatchPreference.PROVINCES.contains(normalized))
+            throw new IllegalArgumentException("请选择有效的常驻省份；不确定可暂留空");
+        teacher.put("base_province",normalized);teacher.put("base_city","");
+    }
+
+    private static Double teacherFeeValue(Map<String,Object> body) {
+        Object raw=body.get("fee_rate");
+        if(raw==null || raw instanceof String && ((String)raw).isBlank()) return null;
+        double value;
+        try {value=Double.parseDouble(String.valueOf(raw));}
+        catch(NumberFormatException invalid) {throw new IllegalArgumentException("课酬标准应填写有效数字，不确定可留空");}
+        if(!Double.isFinite(value) || value<0) throw new IllegalArgumentException("课酬标准须为非负有限数字，不确定可留空");
+        return value;
+    }
+
     private static void validateSave(String mod, Map<String, Object> body, long id,
                                      Map<String, Object> existing) throws Exception {
         if (id > 0 && existing == null) throw new ApiException(404, "要修改的记录不存在或已被删除");
 
+        // Controlled delivery keeps ordinary material/remark edits compatible with partial clients.
+        if ("dispatches".equals(mod) && existing != null &&
+                DeliverySettlementIntegration.controlled(lng(existing, "project_id")))
+            preserveMissing(body, existing, FIELDS.get("dispatches"));
+
         // Old clients must not erase newly added scheduling fields on full-row updates.
         if ("teachers".equals(mod)) {
-            preserveMissing(body, existing, "base_province", "base_city");
-            DispatchPreference.validateRegion(body, "base_province", "base_city", true);
+            preserveMissing(body, existing, FIELDS.get("teachers"));
+            if(existing!=null) body.put("status",existing.get("status"));
+            else if(!"待完善".equals(str(body,"status"))) body.put("status","在库");
+            String name=str(body,"name").strip();
+            if(name.isEmpty() || name.length()>64) throw new ApiException(400,"请填写讲师姓名（不超过64字）");
+            body.put("name",name);
+            String level = str(body, "teacher_level").strip();
+            if (!level.isEmpty() && TeacherLevel.rank(level) == 0)
+                throw new ApiException(400, "讲师等级请选择：讲师、高级讲师、特级讲师或特聘讲师");
+            body.put("teacher_level", level.isEmpty() ? null : level);
+            validateTeacherResidence(body);
+            body.put("fee_rate",teacherFeeValue(body));
         }
         if ("demands".equals(mod)) {
             body.put("expect_date", ScheduleDates.canonical(body.get("expect_date")));
@@ -407,14 +600,16 @@ public class Api {
                 Map<String, Object> originalProject = requireProject(lng(existing, "project_id"));
                 if ("已归档".equals(str(originalProject, "status")))
                     throw new ApiException(400, "项目已归档，相关业务记录不能再修改");
-                if ("dispatches".equals(mod) && "已完成".equals(str(originalProject, "status")))
+                if ("dispatches".equals(mod) && "已完成".equals(str(originalProject, "status")) &&
+                        !IntegrationDeliveryHost.completedMaintenance(existing, body))
                     throw new ApiException(400, "项目已完成交付，授课记录已锁定，不能再修改");
             }
             Map<String, Object> targetProject = requireProject(Json.lng(body, "project_id"));
             String projectStatus = str(targetProject, "status");
             if ("已归档".equals(projectStatus))
                 throw new ApiException(400, "项目已归档，不能新增、移动或修改相关业务记录");
-            if ("dispatches".equals(mod) && "已完成".equals(projectStatus))
+            if ("dispatches".equals(mod) && "已完成".equals(projectStatus) &&
+                    !IntegrationDeliveryHost.completedMaintenance(existing, body))
                 throw new ApiException(400, existing == null ? "项目已完成交付，不能再新增排课" : "项目已完成交付，授课记录已锁定，不能再修改");
         }
 
@@ -522,15 +717,23 @@ public class Api {
         Map<String, Object> b = body(ex);
         long id = b.containsKey("id") ? Json.lng(b, "id") : 0;
         if (b.containsKey("id") && id <= 0) throw new ApiException(400, "记录编号必须是正整数");
+        WorkflowIntegration.guardLegacyMutation(mod, id, b);
+        if ("projects".equals(mod) && id > 0) {
+            TrainingSummariesIntegration.guardLegacyProjectMutation("update", id, b);
+            SurveySummaryImportsFormal.guardLegacyProjectMutation("update", id, b);
+        }
         String[] fields = FIELDS.get(mod);
         Map<String, Object> existing = id > 0 ? Db.one("SELECT * FROM " + mod + " WHERE id=?", id) : null;
-        String requestedPassword = "users".equals(mod) ? Json.str(b, "password") : "";
+        if ("fees".equals(mod) || "dispatches".equals(mod))
+            DeliverySettlementIntegration.guardLegacyMutation(mod, id, b);
+        String requestedPassword = "users".equals(mod) ? passwordInput(b, "password", existing != null) : "";
         if ("users".equals(mod)) {
             b.put("username", Json.str(b, "username").trim());
-            if ((existing == null || !requestedPassword.isEmpty()) && requestedPassword.length() < 8)
-                throw new ApiException(400, "密码长度至少8位");
         }
         validateSave(mod, b, id, existing);
+        if ("users".equals(mod) && Json.num(b, "status") == 1 && requestedPassword.isEmpty()
+                && !Auth.validStoredPassword(existing == null ? null : String.valueOf(existing.get("password"))))
+            throw new ApiException(400, "启用账号前请先设置有效密码");
         String demandTargetStatus = "demands".equals(mod) ? demandStatusForSave(existing, b) : null;
         if ("users".equals(mod) && existing != null && actor.uid == id &&
                 (!str(existing, "role").equals(Json.str(b, "role")) || (int) Json.num(b, "status") != 1))
@@ -543,12 +746,13 @@ public class Api {
                 if (i > 0) sql.append(',');
                 sql.append(fields[i]).append("=?");
                 Object v = b.get(fields[i]);
-                if (NUMERIC_FIELDS.contains(fields[i])) v = Json.num(b, fields[i]);
+                if ("teachers".equals(mod) && "fee_rate".equals(fields[i])) v=teacherFeeValue(b);
+                else if (NUMERIC_FIELDS.contains(fields[i])) v = Json.num(b, fields[i]);
                 if ("status".equals(fields[i]) && "users".equals(mod)) v = (long) Json.num(b, fields[i]);
                 // 流程状态及其审计字段只能由专用动作推进，普通编辑不得绕过。
                 if ("demands".equals(mod) && "status".equals(fields[i])) v = demandTargetStatus;
                 else if (existing != null && protectedWorkflowField(mod, fields[i])) v = existing.get(fields[i]);
-                args.add(v == null ? "" : v);
+                args.add("teacher_level".equals(fields[i]) || "teachers".equals(mod) && "fee_rate".equals(fields[i]) ? v : v == null ? "" : v);
             }
             sql.append(" WHERE id=?");
             args.add(id);
@@ -557,10 +761,12 @@ public class Api {
                     !str(existing, "role").equals(Json.str(b, "role")) ||
                     lng(existing, "status") != (long) Json.num(b, "status") ||
                     !requestedPassword.isEmpty());
+            // Display-name changes invalidate device identity durably; keep original short-session revoke condition.
+            boolean revokeDevices = "users".equals(mod) && (revokeSessions || !Objects.equals(existing.get("name"), b.get("name") == null ? "" : String.valueOf(b.get("name"))));
             if ("users".equals(mod)) {
                 final String updateSql = sql.toString();
                 final Object[] updateArgs = args.toArray();
-                Db.transaction(() -> {
+                TrustedDevices.mutation(id, revokeDevices, () -> {
                     Db.exec(updateSql, updateArgs);
                     if (!requestedPassword.isEmpty())
                         Db.exec("UPDATE users SET password=? WHERE id=?", Auth.hash(requestedPassword), id);
@@ -590,10 +796,12 @@ public class Api {
                 if (i > 0) { cols.append(','); vals.append(','); }
                 cols.append(fields[i]); vals.append('?');
                 Object v = b.get(fields[i]);
-                if (NUMERIC_FIELDS.contains(fields[i])) v = Json.num(b, fields[i]);
+                if ("teachers".equals(mod) && "fee_rate".equals(fields[i])) v=teacherFeeValue(b);
+                else if (NUMERIC_FIELDS.contains(fields[i])) v = Json.num(b, fields[i]);
                 if ("demands".equals(mod) && "status".equals(fields[i])) v = demandTargetStatus;
+                else if("teachers".equals(mod) && "status".equals(fields[i]) && "待完善".equals(str(b,"status"))) v="待完善";
                 else if (protectedWorkflowField(mod, fields[i])) v = initialWorkflowValue(mod, fields[i]);
-                args.add(v == null ? "" : v);
+                args.add("teacher_level".equals(fields[i]) || "teachers".equals(mod) && "fee_rate".equals(fields[i]) ? v : v == null ? "" : v);
             }
             if ("users".equals(mod)) {
                 cols.append(",password"); vals.append(",?");
@@ -618,10 +826,28 @@ public class Api {
     private static void delete(HttpExchange ex, String mod, Auth.Session actor) throws Exception {
         Map<String, Object> b = body(ex);
         long id = Json.lng(b, "id");
+        WorkflowIntegration.guardLegacyMutation(mod, id, null);
+        if ("projects".equals(mod)) {
+            TrainingSummariesIntegration.guardLegacyProjectMutation("delete", id, null);
+            SurveySummaryImportsFormal.guardLegacyProjectMutation("delete", id, null);
+        }
         Map<String, Object> row = Db.one("SELECT * FROM " + mod + " WHERE id=?", id);
         if (row == null) throw new ApiException(404, "要删除的记录不存在或已被删除");
+        if ("teachers".equals(mod) && TeacherRosterImport.hasImportedTeacher(id))
+            throw new ApiException(409, "该教师已有名册接收记录，不能删除；请保留档案及来源关系");
+        if ("fees".equals(mod) || "dispatches".equals(mod))
+            DeliverySettlementIntegration.guardLegacyMutation(mod + "/delete", id, b);
         if ("users".equals(mod) && actor.uid == id)
             throw new ApiException(400, "不能删除当前登录账号，请由另一位管理员操作");
+        if ("users".equals(mod)) {
+            if (OrganizationAccountImport.hasImportedAccount(id))
+                throw new ApiException(409, "该账号已有人员导入记录，不能删除；请停用账号并保留历史关系");
+            NotificationChannelsIntegration.guardAccountDeletion(id);
+            NotificationChannelsAccountEmailPreparation.guardAccountDeletion(id);
+            OrganizationAccess.Configuration config = OrganizationAccessStore.configuration();
+            if (config != null && config.accountBindings().stream().anyMatch(binding -> binding.accountId() == id))
+                throw new ApiException(400, "该账号仍有关联人员，不能删除；请停用账号并保留人员关系");
+        }
 
         if (PROJECT_CHILD_MODULES.contains(mod)) {
             Map<String, Object> project = requireProject(lng(row, "project_id"));
@@ -658,12 +884,14 @@ public class Api {
             if (!"草稿".equals(str(row, "status")) || sends > 0)
                 throw new ApiException(400, "问卷已发布或已发送，不能删除；可关闭问卷并保留统计记录");
         } else if ("teachers".equals(mod)) {
+            DeliverySettlementReferences.guardTeacherDeletion(id);
             long refs = lng(Db.one("SELECT " +
                     "(SELECT COUNT(*) FROM dispatches WHERE teacher_id=?) + " +
                     "(SELECT COUNT(*) FROM fees WHERE teacher_id=?) + " +
                     "(SELECT COUNT(*) FROM teacher_evals WHERE teacher_id=?) + " +
-                    "(SELECT COUNT(*) FROM teacher_resumes WHERE teacher_id=?) c", id, id, id, id), "c");
-            if (refs > 0) throw new ApiException(400, "该师资已有排课、课酬、评价或简历记录，请使用出库保留历史档案");
+                    "(SELECT COUNT(*) FROM teacher_resumes WHERE teacher_id=?) + " +
+                    "(SELECT COUNT(*) FROM m04_teacher_bindings WHERE teacher_id=?) c", id, id, id, id, id), "c");
+            if (refs > 0) throw new ApiException(400, "该师资已有课程绑定、排课、课酬、评价或简历记录，请使用出库保留历史档案");
         } else if ("bids".equals(mod)) {
             if ("已中标".equals(str(row, "status")) ||
                     lng(Db.one("SELECT COUNT(*) c FROM projects WHERE bid_id=?", id), "c") > 0)
@@ -685,6 +913,8 @@ public class Api {
                     Db.exec("UPDATE demands SET status='待处理' WHERE id=? AND status='已投标'", demandId);
                 return null;
             });
+        } else if ("users".equals(mod)) {
+            TrustedDevices.mutation(id, true, () -> { Db.exec("DELETE FROM users WHERE id=?", id); return null; });
         } else {
             Db.exec("DELETE FROM " + mod + " WHERE id=?", id);
         }
@@ -734,10 +964,12 @@ public class Api {
      * 项目闭环校验：完成交付只验证课程是否真实完成；归档再验证回款、课酬及未关闭流程。
      * 无法从现有字段可靠推断的事项只提示，不阻断，避免把内部师资或免评项目误判为异常。
      */
-    private static Map<String, Object> projectTransitionState(long id, String action) throws Exception {
+    private static Map<String, Object> projectTransitionState(long id, String action, Auth.Session actor) throws Exception {
         if (!"complete".equals(action) && !"archive".equals(action)) throw new ApiException(400, "不支持的项目操作");
         Map<String, Object> project = Db.one("SELECT * FROM projects WHERE id=?", id);
         if (project == null) throw new ApiException(404, "项目不存在或已被删除");
+        if (DeliverySettlementIntegration.controlled(id))
+            return IntegrationDeliveryHost.projectTransitionState(project, action, actor);
 
         Map<String, Object> delivery = Db.one(
                 "SELECT COALESCE(SUM(CASE WHEN status<>'已拒绝' THEN 1 ELSE 0 END),0) total, " +
@@ -877,12 +1109,12 @@ public class Api {
         return result;
     }
 
-    private static void projectTransitionCheck(HttpExchange ex) throws Exception {
+    private static void projectTransitionCheck(HttpExchange ex, Auth.Session actor) throws Exception {
         Map<String, String> q = query(ex);
         long id;
         try { id = Long.parseLong(q.getOrDefault("id", "0")); }
         catch (NumberFormatException e) { throw new ApiException(400, "项目编号格式不正确"); }
-        ok(ex, projectTransitionState(id, q.getOrDefault("action", "complete")));
+        ok(ex, projectTransitionState(id, q.getOrDefault("action", "complete"), actor));
     }
 
     /** 兼容历史库中“项目已由中标记录形成，但需求仍停留在已投标”的窄范围脏状态。 */
@@ -896,6 +1128,7 @@ public class Api {
     /** 待启动项目完成基本资料检查后进入正式交付。 */
     private static void projectStart(HttpExchange ex) throws Exception {
         long id = Json.lng(body(ex), "id");
+        WorkflowIntegration.guardLegacyMutation("projects/start", id, body(ex));
         Map<String, Object> project = requireProject(id);
         if ("进行中".equals(str(project, "status"))) { ok(ex, "项目已经启动"); return; }
         if (!"待启动".equals(str(project, "status")))
@@ -929,10 +1162,15 @@ public class Api {
         ok(ex, "项目已启动，现已进入交付阶段");
     }
 
-    private static void projectTransition(HttpExchange ex, String action) throws Exception {
+    private static void projectTransition(HttpExchange ex, String action, Auth.Session actor) throws Exception {
         long id = Json.lng(body(ex), "id");
         Map<String, Object> check = Db.transaction(() -> {
-            Map<String, Object> state = projectTransitionState(id, action);
+            if ("archive".equals(action)) {
+                DeliverySettlementIntegration.guardLegacyArchive(id);
+                TrainingSummariesIntegration.guardLegacyProjectMutation("archive", id, null);
+                SurveySummaryImportsFormal.guardLegacyProjectMutation("archive", id, null);
+            }
+            Map<String, Object> state = projectTransitionState(id, action, actor);
             @SuppressWarnings("unchecked")
             List<Map<String, Object>> blockers = (List<Map<String, Object>>) state.get("blockers");
             if (!blockers.isEmpty()) {
@@ -969,6 +1207,7 @@ public class Api {
     /** 投标中标：更新投标/需求状态，自动生成培训项目 */
     private static void bidWin(HttpExchange ex) throws Exception {
         long id = Json.lng(body(ex), "id");
+        WorkflowIntegration.guardLegacyMutation("bids/win", id, body(ex));
         Map<String, Object> bid = Db.one("SELECT * FROM bids WHERE id=?", id);
         if (bid == null) throw new ApiException(404, "投标记录不存在");
         Map<String, Object> existingProject = Db.one("SELECT id FROM projects WHERE bid_id=?", id);
@@ -1044,21 +1283,39 @@ public class Api {
     }
 
     /** 课程完成：仅允许已确认且授课日期不晚于今天的安排完成。 */
-    private static void dispatchComplete(HttpExchange ex) throws Exception {
-        long id = Json.lng(body(ex), "id");
-        Map<String, Object> dp = Db.one("SELECT p2.*, t.name AS tname, t.status AS teacher_status FROM dispatches p2 LEFT JOIN teachers t ON t.id=p2.teacher_id WHERE p2.id=?", id);
-        if (dp == null) throw new ApiException(404, "调度记录不存在");
-        if ("已完成".equals(str(dp, "status"))) { ok(ex, "该课程已完成，无需重复操作"); return; }
-        requireDeliveryProjectOpen(lng(dp, "project_id"));
-        requireTeacherInLibrary(dp);
-        if (!"已确认".equals(str(dp, "status"))) throw new ApiException(400, "只有师资已确认的课程才能标记完成");
-        if (str(dp, "teach_date").isEmpty()) throw new ApiException(400, "请先补充授课日期");
-        if (str(dp, "teach_date").compareTo(today()) > 0) throw new ApiException(400, "授课日期尚未到达，不能提前标记完成");
-        String now = now();
-        String log = str(dp, "msg_log") + (str(dp, "msg_log").isEmpty() ? "" : "\n") +
-                "【" + now + "】课程已完成：" + str(dp, "subject") + "，" + dbl(dp, "hours") + "课时。";
-        Db.exec("UPDATE dispatches SET status='已完成', msg_log=? WHERE id=?", log, id);
-        ok(ex, "课程已完成，现已纳入项目交付课时");
+    private static void dispatchComplete(HttpExchange ex, Auth.Session actor) throws Exception {
+        Map<String, Object> request = body(ex);
+        String result = Db.transaction(() -> {
+            long id = IntegrationDeliveryHost.safeInteger(request.get("id"), false, "id");
+            Map<String, Object> dp = Db.one("SELECT p2.*, t.name AS tname, t.status AS teacher_status FROM dispatches p2 LEFT JOIN teachers t ON t.id=p2.teacher_id WHERE p2.id=?", id);
+            if (dp == null) throw new ApiException(404, "调度记录不存在");
+            boolean controlled = DeliverySettlementIntegration.controlled(lng(dp, "project_id"));
+            if (controlled) {
+                for (String key : request.keySet())
+                    if (!Set.of("id", "expected_version").contains(key))
+                        throw new ApiException(400, "课程完成不接受字段：" + key);
+                if (Auth.get(token(ex)) != actor || Auth.current(actor) == null)
+                    throw new ApiException(401, "登录会话无效或已失效");
+                long expectedVersion = IntegrationDeliveryHost.safeInteger(request.get("expected_version"), true, "expected_version");
+                DeliverySettlementIntegration.requireCompletion(actor, id, expectedVersion);
+            } else {
+                requireWrite(actor);
+                WorkflowIntegration.requireProjectAccess(lng(dp, "project_id"), actor, true);
+            }
+            if ("已完成".equals(str(dp, "status"))) return "该课程已完成，无需重复操作";
+            requireDeliveryProjectOpen(lng(dp, "project_id"));
+            requireTeacherInLibrary(dp);
+            if (!"已确认".equals(str(dp, "status"))) throw new ApiException(400, "只有师资已确认的课程才能标记完成");
+            if (str(dp, "teach_date").isEmpty()) throw new ApiException(400, "请先补充授课日期");
+            if (str(dp, "teach_date").compareTo(today()) > 0) throw new ApiException(400, "授课日期尚未到达，不能提前标记完成");
+            String now = now();
+            String log = str(dp, "msg_log") + (str(dp, "msg_log").isEmpty() ? "" : "\n") +
+                    "【" + now + "】课程已完成：" + str(dp, "subject") +
+                    (controlled ? "，已核对实际授课记录（事实版本 " + request.get("expected_version") + "）。" : "，" + dbl(dp, "hours") + "课时。");
+            Db.exec("UPDATE dispatches SET status='已完成', msg_log=? WHERE id=?", log, id);
+            return "课程已完成，现已纳入项目交付课时";
+        });
+        ok(ex, result);
     }
 
     private static void qStatus(HttpExchange ex, String st) throws Exception {
@@ -1251,6 +1508,7 @@ public class Api {
     private static void feeCalc(HttpExchange ex) throws Exception {
         long pid = Json.lng(body(ex), "project_id");
         List<Map<String, Object>> created = Db.transaction(() -> {
+            DeliverySettlementIntegration.guardLegacyMutation("fees/calc", pid, body(ex));
             requireProjectNotArchived(pid);
             List<Map<String, Object>> rows = Db.query(
                     "SELECT d.teacher_id, SUM(d.hours) AS hours, t.name AS tname, t.fee_rate FROM dispatches d " +
@@ -1298,6 +1556,7 @@ public class Api {
         long id = Json.lng(body(ex), "id");
         Map<String, Object> fee = Db.one("SELECT * FROM fees WHERE id=?", id);
         if (fee == null) throw new ApiException(404, "课酬记录不存在");
+        DeliverySettlementIntegration.guardLegacyMutation("fees/pay", id, body(ex));
         if ("已发放".equals(str(fee, "status"))) { ok(ex, "该笔课酬已发放，无需重复操作"); return; }
         requireProjectNotArchived(lng(fee, "project_id"));
         if (!"待发放".equals(str(fee, "status"))) throw new ApiException(400, "当前课酬状态不能执行发放");
@@ -1341,8 +1600,11 @@ public class Api {
     private static void teacherResidence(HttpExchange ex) throws Exception {
         Map<String, Object> input = body(ex);
         long id = Json.lng(input, "id");
-        if (Db.one("SELECT id FROM teachers WHERE id=?", id) == null) throw new ApiException(404, "师资记录不存在");
-        DispatchPreference.validateRegion(input, "base_province", "base_city", true);
+        Map<String,Object> teacher=Db.one("SELECT id,status,base_province,base_city FROM teachers WHERE id=?",id);
+        if (teacher == null) throw new ApiException(404, "师资记录不存在");
+        preserveMissing(input,teacher,"base_province","base_city");
+        input.put("status",teacher.get("status"));
+        validateTeacherResidence(input);
         Db.exec("UPDATE teachers SET base_province=?,base_city=? WHERE id=?", input.get("base_province"), input.get("base_city"), id);
         ok(ex, "常驻地区已保存；未改动其他师资资料");
     }
@@ -1357,25 +1619,29 @@ public class Api {
             if (activeDispatches > 0)
                 throw new ApiException(400, "该师资仍有 " + activeDispatches + " 条待执行授课安排，请先完成或重新调度");
             Db.exec("UPDATE teachers SET status='出库', out_date=? WHERE id=?", today(), id);
-        } else Db.exec("UPDATE teachers SET status='在库', out_date='' WHERE id=?", id);
+        } else {
+            Map<String,Object> ready=new LinkedHashMap<>(teacher);ready.put("status","在库");
+            validateTeacherResidence(ready);
+            Db.exec("UPDATE teachers SET status='在库', out_date='' WHERE id=?", id);
+        }
         ok(ex, "已" + st);
     }
 
     // ================= 统计分析 =================
 
-    private static void statsOverview(HttpExchange ex) throws Exception {
+    private static void statsOverview(HttpExchange ex, Auth.Session actor) throws Exception {
         Map<String, Object> r = new LinkedHashMap<>();
-        r.put("demands", Db.count("demands"));
-        r.put("projects", Db.count("projects"));
+        r.put("demands", WorkflowLegacyAccess.count("demands", actor));
+        r.put("projects", WorkflowLegacyAccess.count("projects", actor));
         r.put("teachers", Db.one("SELECT COUNT(*) c FROM teachers WHERE status='在库'").get("c"));
-        r.put("questionnaires", Db.count("questionnaires"));
+        r.put("questionnaires", WorkflowLegacyAccess.count("questionnaires", actor));
 
-        Map<String, Object> money = Db.one("SELECT COALESCE(SUM(amount),0) amt FROM projects");
-        Map<String, Object> recv = Db.one("SELECT COALESCE(SUM(received),0) r, COALESCE(SUM(amount),0) a FROM charges");
-        Map<String, Object> fee = Db.one("SELECT COALESCE(SUM(amount),0) a, COALESCE(SUM(CASE WHEN status='待发放' THEN amount END),0) p FROM fees");
-        Map<String, Object> cost = Db.one("SELECT COALESCE(SUM(amount),0) a FROM costs");
-        Map<String, Object> hours = Db.one("SELECT COALESCE(SUM(hours),0) h FROM dispatches WHERE status IN ('已确认','已完成')");
-        Map<String, Object> eval = Db.one("SELECT ROUND(AVG(score),2) a, COUNT(*) c FROM teacher_evals");
+        Map<String, Object> money = Db.one("SELECT COALESCE(SUM(amount),0) amt FROM " + WorkflowLegacyAccess.scopedTable("projects", actor));
+        Map<String, Object> recv = Db.one("SELECT COALESCE(SUM(received),0) r, COALESCE(SUM(amount),0) a FROM " + WorkflowLegacyAccess.scopedTable("charges", actor));
+        Map<String, Object> fee = Db.one("SELECT COALESCE(SUM(amount),0) a, COALESCE(SUM(CASE WHEN status='待发放' THEN amount END),0) p FROM " + WorkflowLegacyAccess.scopedTable("fees", actor));
+        Map<String, Object> cost = Db.one("SELECT COALESCE(SUM(amount),0) a FROM " + WorkflowLegacyAccess.scopedTable("costs", actor));
+        Map<String, Object> hours = Db.one("SELECT COALESCE(SUM(hours),0) h FROM " + WorkflowLegacyAccess.scopedTable("dispatches", actor) + " WHERE status IN ('已确认','已完成')");
+        Map<String, Object> eval = Db.one("SELECT ROUND(AVG(score),2) a, COUNT(*) c FROM " + WorkflowLegacyAccess.scopedTable("teacher_evals", actor));
 
         double amt = dbl(money, "amt"), feeA = dbl(fee, "a"), costA = dbl(cost, "a");
         r.put("project_amount", amt);
@@ -1389,29 +1655,29 @@ public class Api {
         r.put("eval_avg", eval.get("a") == null ? 0 : eval.get("a"));
         r.put("eval_count", eval.get("c"));
 
-        r.put("monthly", Db.query("SELECT SUBSTRING(start_date,1,7) AS ym, COUNT(*) AS cnt, COALESCE(SUM(amount),0) AS amt FROM projects WHERE start_date<>'' GROUP BY SUBSTRING(start_date,1,7) ORDER BY ym"));
-        r.put("by_unit", Db.query("SELECT unit, COUNT(*) AS cnt, COALESCE(SUM(amount),0) AS amt FROM projects GROUP BY unit ORDER BY amt DESC"));
+        r.put("monthly", Db.query("SELECT SUBSTRING(start_date,1,7) AS ym, COUNT(*) AS cnt, COALESCE(SUM(amount),0) AS amt FROM " + WorkflowLegacyAccess.scopedTable("projects", actor) + " WHERE start_date<>'' GROUP BY SUBSTRING(start_date,1,7) ORDER BY ym"));
+        r.put("by_unit", Db.query("SELECT unit, COUNT(*) AS cnt, COALESCE(SUM(amount),0) AS amt FROM " + WorkflowLegacyAccess.scopedTable("projects", actor) + " GROUP BY unit ORDER BY amt DESC"));
         r.put("by_teacher", Db.query("SELECT t.name, " +
-                "COALESCE((SELECT SUM(d.hours) FROM dispatches d WHERE d.teacher_id=t.id AND d.status IN ('已确认','已完成')),0) AS hours, " +
-                "COALESCE((SELECT SUM(f.amount) FROM fees f WHERE f.teacher_id=t.id),0) AS fee " +
+                "COALESCE((SELECT SUM(d.hours) FROM " + WorkflowLegacyAccess.scopedTable("dispatches", actor) + " d WHERE d.teacher_id=t.id AND d.status IN ('已确认','已完成')),0) AS hours, " +
+                "COALESCE((SELECT SUM(f.amount) FROM " + WorkflowLegacyAccess.scopedTable("fees", actor) + " f WHERE f.teacher_id=t.id),0) AS fee " +
                 "FROM teachers t ORDER BY hours DESC"));
-        r.put("cost_type", Db.query("SELECT type, COALESCE(SUM(amount),0) AS amt FROM costs GROUP BY type"));
-        r.put("demand_status", Db.query("SELECT status, COUNT(*) AS cnt FROM demands GROUP BY status"));
-        r.put("teacher_score", Db.query("SELECT t.name, ROUND(AVG(e.score),2) AS score, COUNT(*) AS cnt FROM teacher_evals e JOIN teachers t ON t.id=e.teacher_id GROUP BY t.name ORDER BY score DESC"));
+        r.put("cost_type", Db.query("SELECT type, COALESCE(SUM(amount),0) AS amt FROM " + WorkflowLegacyAccess.scopedTable("costs", actor) + " GROUP BY type"));
+        r.put("demand_status", Db.query("SELECT status, COUNT(*) AS cnt FROM " + WorkflowLegacyAccess.scopedTable("demands", actor) + " GROUP BY status"));
+        r.put("teacher_score", Db.query("SELECT t.name, ROUND(AVG(e.score),2) AS score, COUNT(*) AS cnt FROM " + WorkflowLegacyAccess.scopedTable("teacher_evals", actor) + " e JOIN teachers t ON t.id=e.teacher_id GROUP BY t.name ORDER BY score DESC"));
         ok(ex, r);
     }
 
     /** 自动生成分析报告 */
-    private static void statsReport(HttpExchange ex) throws Exception {
+    private static void statsReport(HttpExchange ex, Auth.Session actor) throws Exception {
         StringBuilder sb = new StringBuilder();
-        Map<String, Object> p = Db.one("SELECT COUNT(*) c, COALESCE(SUM(amount),0) amt, COALESCE(SUM(hours),0) h FROM projects");
-        Map<String, Object> recv = Db.one("SELECT COALESCE(SUM(received),0) r, COALESCE(SUM(amount),0) a FROM charges");
-        Map<String, Object> fee = Db.one("SELECT COALESCE(SUM(amount),0) a, COALESCE(SUM(CASE WHEN status='待发放' THEN amount END),0) p FROM fees");
-        Map<String, Object> cost = Db.one("SELECT COALESCE(SUM(amount),0) a FROM costs");
-        Map<String, Object> eval = Db.one("SELECT ROUND(AVG(score),2) a FROM teacher_evals");
-        List<Map<String, Object>> byUnit = Db.query("SELECT unit, COUNT(*) cnt, COALESCE(SUM(amount),0) amt FROM projects GROUP BY unit ORDER BY amt DESC");
-        List<Map<String, Object>> byTeacher = Db.query("SELECT t.name, COALESCE(SUM(d.hours),0) hours FROM teachers t LEFT JOIN dispatches d ON d.teacher_id=t.id AND d.status IN ('已确认','已完成') GROUP BY t.name ORDER BY hours DESC");
-        List<Map<String, Object>> costType = Db.query("SELECT type, COALESCE(SUM(amount),0) amt FROM costs GROUP BY type ORDER BY amt DESC");
+        Map<String, Object> p = Db.one("SELECT COUNT(*) c, COALESCE(SUM(amount),0) amt, COALESCE(SUM(hours),0) h FROM " + WorkflowLegacyAccess.scopedTable("projects", actor));
+        Map<String, Object> recv = Db.one("SELECT COALESCE(SUM(received),0) r, COALESCE(SUM(amount),0) a FROM " + WorkflowLegacyAccess.scopedTable("charges", actor));
+        Map<String, Object> fee = Db.one("SELECT COALESCE(SUM(amount),0) a, COALESCE(SUM(CASE WHEN status='待发放' THEN amount END),0) p FROM " + WorkflowLegacyAccess.scopedTable("fees", actor));
+        Map<String, Object> cost = Db.one("SELECT COALESCE(SUM(amount),0) a FROM " + WorkflowLegacyAccess.scopedTable("costs", actor));
+        Map<String, Object> eval = Db.one("SELECT ROUND(AVG(score),2) a FROM " + WorkflowLegacyAccess.scopedTable("teacher_evals", actor));
+        List<Map<String, Object>> byUnit = Db.query("SELECT unit, COUNT(*) cnt, COALESCE(SUM(amount),0) amt FROM " + WorkflowLegacyAccess.scopedTable("projects", actor) + " GROUP BY unit ORDER BY amt DESC");
+        List<Map<String, Object>> byTeacher = Db.query("SELECT t.name, COALESCE(SUM(d.hours),0) hours FROM teachers t LEFT JOIN " + WorkflowLegacyAccess.scopedTable("dispatches", actor) + " d ON d.teacher_id=t.id AND d.status IN ('已确认','已完成') GROUP BY t.name ORDER BY hours DESC");
+        List<Map<String, Object>> costType = Db.query("SELECT type, COALESCE(SUM(amount),0) amt FROM " + WorkflowLegacyAccess.scopedTable("costs", actor) + " GROUP BY type ORDER BY amt DESC");
 
         double amt = dbl(p, "amt"), r = dbl(recv, "r"), f = dbl(fee, "a"), c = dbl(cost, "a");
         double profit = amt - f - c;
@@ -1420,10 +1686,10 @@ public class Api {
         sb.append("生成时间：").append(now()).append("\n\n");
         sb.append("一、总体概况\n");
         sb.append(String.format("  累计培训需求 %d 项；已立项项目 %d 个，合同总额 %.2f 元，计划课时合计 %.0f 课时。\n",
-                Db.count("demands"), lng(p, "c"), amt, dbl(p, "h")));
+                WorkflowLegacyAccess.count("demands", actor), lng(p, "c"), amt, dbl(p, "h")));
         sb.append(String.format("  师资库在库师资 %d 人；累计讲师履约评价 %d 份，平均评分 %.2f 分（5分制）。\n\n",
                 Long.parseLong(String.valueOf(Db.one("SELECT COUNT(*) c FROM teachers WHERE status='在库'").get("c"))),
-                Db.count("teacher_evals"), eval.get("a") == null ? 0.0 : dbl(eval, "a")));
+                WorkflowLegacyAccess.count("teacher_evals", actor), eval.get("a") == null ? 0.0 : dbl(eval, "a")));
 
         sb.append("二、财务状况\n");
         sb.append(String.format("  应收培训费 %.2f 元，已收 %.2f 元，收费率 %.1f%%。\n", dbl(recv, "a"), r, dbl(recv, "a") > 0 ? r / dbl(recv, "a") * 100 : 0));
@@ -1522,23 +1788,38 @@ public class Api {
         ex.getResponseHeaders().add("Set-Cookie", value);
     }
 
-    private static void clearSessionCookie(HttpExchange ex) {
+    static void clearSessionCookie(HttpExchange ex) {
         String value = SESSION_COOKIE + "=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax";
         if (secureCookie(ex)) value += "; Secure";
         ex.getResponseHeaders().add("Set-Cookie", value);
     }
 
     private static Map<String, Object> readBodyLimited(HttpExchange ex) throws IOException, ApiException {
+        boolean managementGroupRequest = OrganizationManagementGroupHttp.matches(ex.getRequestURI().getPath());
+        boolean supplementRequest = OrganizationManagementSupplementHttp.matches(ex.getRequestURI().getPath());
+        boolean relationshipRequest = OrganizationAccountRelationships.matches(ex.getRequestURI().getPath());
+        boolean provisioningRequest = OrganizationAccountProvisioningHost.matches(ex.getRequestURI().getPath());
+        boolean photoUpload = "/api/training-summaries/photos/upload".equals(ex.getRequestURI().getPath());
+        int limit = photoUpload ? 7 * 1024 * 1024 : LoginVerificationHost.matches(ex.getRequestURI().getPath()) || relationshipRequest || provisioningRequest || supplementRequest || managementGroupRequest ? 4096 : MAX_BODY_BYTES;
         try (InputStream in = ex.getRequestBody()) {
             ByteArrayOutputStream bos = new ByteArrayOutputStream();
             byte[] buf = new byte[4096];
             int n, total = 0;
             while ((n = in.read(buf)) > 0) {
                 total += n;
-                if (total > MAX_BODY_BYTES) throw new ApiException(413, "请求内容过大");
+                if (total > limit) throw new ApiException(413, "请求内容过大");
                 bos.write(buf, 0, n);
             }
+            if (managementGroupRequest) return OrganizationManagementGroupHttp.parseBody(bos.toByteArray());
+            if (supplementRequest) return OrganizationManagementSupplementHttp.parseBody(bos.toByteArray());
+            if (relationshipRequest || provisioningRequest) return OrganizationAccountRelationships.parseBody(bos.toByteArray());
             String s = bos.toString(StandardCharsets.UTF_8);
+            if (LoginVerificationHost.matches(ex.getRequestURI().getPath()))
+                return LoginVerificationHost.parseBody(s);
+            if (NotificationChannelsAccountEmailMaintenance.matches(ex.getRequestURI().getPath()))
+                return NotificationChannelsAccountEmailMaintenance.parseBody(s);
+            if (NotificationChannelsAccountEmailPreparation.matches(ex.getRequestURI().getPath()))
+                return NotificationChannelsAccountEmailPreparation.parseBody(s);
             if (s.trim().isEmpty()) return new LinkedHashMap<>();
             try {
                 Object parsed = Json.parse(s);
@@ -1594,12 +1875,32 @@ public class Api {
         ex.setAttribute(RESPONSE_ATTRIBUTE, new ApiResponse(httpCode, b));
     }
 
+    /** Buffer an authorized document or versioned project image; send outside MUTATION_LOCK. */
+    static void file(HttpExchange ex, byte[] body, String contentType, String filename) {
+        boolean workbook = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet".equals(contentType)
+                && filename != null && filename.matches("[A-Za-z0-9][A-Za-z0-9_-]{0,120}\\.xlsx");
+        boolean document = "application/vnd.openxmlformats-officedocument.wordprocessingml.document".equals(contentType)
+                && filename != null && filename.matches("[A-Za-z0-9][A-Za-z0-9_-]{0,120}\\.docx");
+        boolean photo = filename != null && ("image/jpeg".equals(contentType) && filename.matches("photo-[0-9a-f]{32}\\.jpg")
+                || "image/png".equals(contentType) && filename.matches("photo-[0-9a-f]{32}\\.png"));
+        if (body == null || body.length == 0 || body.length > (photo ? 5 : 16) * 1024 * 1024
+                || !(workbook || document || photo))
+            throw new IllegalArgumentException("导出文件格式或大小无效");
+        ex.setAttribute(RESPONSE_ATTRIBUTE, new ApiResponse(200, body.clone(), contentType, filename));
+    }
+
     private static void flushResponse(HttpExchange ex) throws IOException {
         Object pending = ex.getAttribute(RESPONSE_ATTRIBUTE);
         ApiResponse response = pending instanceof ApiResponse
                 ? (ApiResponse) pending
                 : new ApiResponse(500, "{\"code\":500,\"msg\":\"服务器未生成响应\"}".getBytes(StandardCharsets.UTF_8));
-        ex.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
+        ex.getResponseHeaders().set("Content-Type", response.contentType);
+        if (response.filename != null) {
+            ex.getResponseHeaders().set("Content-Disposition", "attachment; filename=\"" + response.filename + "\"");
+            ex.getResponseHeaders().set("X-Content-Type-Options", "nosniff");
+        } else {
+            ex.getResponseHeaders().remove("Content-Disposition");
+        }
         ex.getResponseHeaders().set("Cache-Control", "no-store");
         ex.getResponseHeaders().set("Pragma", "no-cache");
         if ("HEAD".equalsIgnoreCase(ex.getRequestMethod())) {

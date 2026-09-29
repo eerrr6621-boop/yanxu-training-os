@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>M04 课程目录与资格 · 合成演示</title>
+</head>
+<body>
+  <main id="catalog-root"></main>
+  <script type="module">
+    import { mount } from './index.js';
+    const lifecycle = new AbortController();
+    const cleanup = await mount(document.getElementById('catalog-root'), {
+      mode: 'demo', signal: lifecycle.signal,
+      request() { throw new Error('合成演示不得调用请求接口'); }
+    });
+    window.addEventListener('pagehide', () => { lifecycle.abort(); cleanup?.(); }, { once: true });
+  </script>
+</body>
+</html>

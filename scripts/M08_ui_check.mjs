@@ -1,0 +1,110 @@
+import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
+import { readFile } from 'node:fs/promises';
+import { dirname, resolve, extname, isAbsolute } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+const app = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const moduleDir = resolve(app, 'web/modules/summaries');
+const { createDemoController, createDemoSummary } = await import(pathToFileURL(resolve(moduleDir, 'index.js')));
+const { buildDemoDocx } = await import(pathToFileURL(resolve(moduleDir, 'docx.js')));
+let checks = 0;
+const ok = (condition) => { assert.ok(condition); checks++; };
+const rejects = (fn) => { assert.throws(fn); checks++; };
+const c = createDemoController();
+rejects(() => c.exportCurrent());
+c.save(); const first = c.current;
+c.editPublicity('introduction', '<script>synthetic escaped content & text</script>');
+rejects(() => c.exportCurrent()); rejects(() => c.submit());
+c.save(); c.submit();
+rejects(() => c.editPublicity('introduction', 'bad')); rejects(() => c.review('BRANCH', false, ''));
+c.review('BRANCH', false, '补充后续练习（合成演示）');
+rejects(() => c.review('BRANCH', true)); c.newRevision();
+ok(first.status === 'DRAFT' && first.revision === 1 && Object.isFrozen(first.content));
+c.submit(); c.review('BRANCH', true, '负责人复核通过（合成演示）'); ok(c.current.status === 'IN_REVIEW'); c.review('BP', true, 'BP复核通过（合成演示）');
+const approved = c.current;
+c.newRevision(); ok(c.current.status === 'DRAFT' && approved.status === 'APPROVED');
+ok(Buffer.from(buildDemoDocx(approved)).equals(Buffer.from(buildDemoDocx(approved))));
+const wrong = createDemoSummary(); wrong.feedback.projectId = 999; rejects(() => buildDemoDocx(wrong));
+const live = createDemoSummary(); live.synthetic = false; rejects(() => buildDemoDocx(live));
+const missing = createDemoSummary(); missing.feedback = null; missing.project.branchCode = null;
+missing.project.courseCodes = []; missing.project.participantCount = null;
+missing.project.startDate = null; missing.project.endDate = null;
+ok(buildDemoDocx(missing).length > 1000);
+const invalid = createDemoSummary(); invalid.content.publicity.introduction = '\ud800'; rejects(() => buildDemoDocx(invalid));
+ok(Object.isFrozen(c.working.publicity) && Object.isFrozen(c.working.publicity.sections));
+const articleController = createDemoController(); articleController.save();
+const priorArticle = articleController.current;
+articleController.editPublicity('photoCaption', '新增图注 & <文字>', 0);
+rejects(() => articleController.exportCurrent()); articleController.save();
+ok(priorArticle.content.publicity.photoCaptions[0] !== articleController.current.content.publicity.photoCaptions[0]);
+const articleBytes = Buffer.from(articleController.exportCurrent()).toString('utf8');
+ok(articleBytes.includes('新增图注 &amp; &lt;文字&gt;'));
+ok(!articleBytes.includes('TargetMode="External"') && !articleBytes.includes('word/media/'));
+const emptyArticle = createDemoSummary(); emptyArticle.content = {achievements:'',issues:'',nextSteps:'', publicity:{title:'标题',introduction:'',sections:[{heading:'空标题',body:''}],photoCaptions:['课堂']}};
+const emptyController = createDemoController(emptyArticle); emptyController.save(); rejects(() => emptyController.submit());
+const legacy = createDemoSummary(); delete legacy.content.publicity; legacy.content.achievements = '旧版总结保留';
+ok(Buffer.from(buildDemoDocx(legacy)).toString('utf8').includes('旧版总结保留'));
+const tooMany = createDemoSummary(); tooMany.content.publicity.photoCaptions = Array(7).fill('图注'); rejects(() => buildDemoDocx(tooMany));
+const packageRoot = process.env.M08_PLAYWRIGHT || 'playwright';
+const { chromium } = await import(isAbsolute(packageRoot) ? pathToFileURL(packageRoot).href : packageRoot);
+const server = createServer(async (req, res) => {
+  const filename = req.url === '/' ? 'demo.html' : decodeURIComponent(req.url.split('?')[0]).slice(1);
+  if (!['demo.html', 'index.js', 'styles.css', 'docx.js'].includes(filename)) { res.writeHead(404).end(); return; }
+  try {
+    res.setHeader('Content-Type', ({'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8'})[extname(filename)]);
+    res.end(await readFile(resolve(moduleDir, filename)));
+  } catch { res.writeHead(404).end(); }
+});
+await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
+let browser;
+try {
+  browser = await chromium.launch({headless:true, executablePath:process.env.M08_BROWSER_BIN || undefined});
+  const page = await browser.newPage({viewport:{width:1360,height:980}, acceptDownloads:true});
+  const errors = []; page.on('pageerror', (e) => errors.push(e.message));
+  const outgoing = []; page.on('request', req => { if (!req.url().startsWith(`http://127.0.0.1:${server.address().port}/`)) outgoing.push(req.url()); });
+  await page.goto(`http://127.0.0.1:${server.address().port}/`);
+  await page.waitForSelector('.yx-summaries');
+  await page.locator('[data-action="save"]').click();
+  await page.locator('[data-publicity-field="introduction"]').fill('合成演示测试：课程练习已完成。');
+  ok(await page.locator('[data-action="export"]').isDisabled());
+  await page.locator('[data-action="save"]').click();
+  await page.locator('[data-action="submit"]').click();
+  ok(await page.locator('[data-publicity-field="introduction"]').evaluate(el => el.readOnly));
+  await page.locator('[data-action="return"][data-role="BRANCH"]').click();
+  ok((await page.locator('[data-notice]').textContent()).includes('必须填写'));
+  await page.locator('[data-review-note]').fill('请补充后续行动（合成演示）。');
+  await page.locator('[data-action="return"][data-role="BRANCH"]').click();
+  await page.locator('[data-action="new"]').click();
+  await page.locator('[data-action="submit"]').click();
+  await page.locator('[data-action="approve"][data-role="BRANCH"]').click();
+  ok(await page.locator('[data-action="approve"][data-role="BP"]').isEnabled());
+  await page.locator('[data-action="approve"][data-role="BP"]').click();
+  const download = page.waitForEvent('download'); await page.locator('[data-action="export"]').click();
+  ok((await download).suggestedFilename().endsWith('_APPROVED.docx'));
+  ok(await page.locator('input[type="file"]').count() === 0);
+  ok(await page.locator('.yx-summary-history li').count() >= 6);
+  if (process.argv[2]) await page.screenshot({path:process.argv[2],fullPage:true});
+  await page.setViewportSize({width:390,height:844});
+  ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+  await page.evaluate(async () => {
+    const { mount } = await import('./index.js');
+    const root = document.createElement('div'); document.body.replaceChildren(root);
+    window.m08Calls = 0; window.m08Root = root;
+    window.m08Cleanup = await mount(root, {mode:'live', request:()=>{window.m08Calls++; throw new Error('Unexpected request');}});
+  });
+  ok((await page.locator('.yx-summaries').textContent()).includes('正式模式尚未接入'));
+  ok(await page.locator('[data-action="save"]').count() === 0);
+  ok(await page.evaluate(() => window.m08Calls === 0));
+  await page.evaluate(() => window.m08Cleanup()); ok(await page.locator('.yx-summaries').count() === 0);
+  await page.evaluate(async () => {
+    const { mount } = await import('./index.js'); const signal = new AbortController();
+    window.m08Cleanup = await mount(window.m08Root, {mode:'demo',signal:signal.signal}); signal.abort();
+  });
+  ok(await page.locator('.yx-summaries').count() === 0);
+  ok(errors.length === 0); ok(outgoing.length === 0);
+  console.log(`M08 UI/export PASS: ${checks} checks`);
+} finally {
+  if (browser) await browser.close();
+  await new Promise(resolve => server.close(resolve));
+}

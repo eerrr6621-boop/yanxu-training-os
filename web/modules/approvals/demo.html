@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>研序 · 审批内部逻辑测试（非正式界面）</title>
+</head>
+<body>
+  <main id="approvals"></main>
+  <script type="module">
+    import { mount } from './index.js';
+    const controller = new AbortController();
+    const cleanup = await mount(document.getElementById('approvals'), { mode: 'demo', signal: controller.signal });
+    window.addEventListener('pagehide', cleanup, { once: true });
+  </script>
+</body>
+</html>

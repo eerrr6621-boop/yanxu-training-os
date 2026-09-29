@@ -10,8 +10,15 @@ A full-lifecycle training-operations platform: from client demand to bid, projec
 
 > 中文文档见 [README_zh.md](README_zh.md)
 
-Current release: **1.9.0** (2026-09-07). See the [live site](https://training.jxyftd.tech/),
-[product updates](https://training.jxyftd.tech/updates.html), and [release verification](docs/RELEASE_V13.md).
+Current release: **1.10.0** (2026-09-28), with source synchronized on 2026-09-29.
+See the [live site](https://training.jxyftd.tech/),
+[product updates](https://training.jxyftd.tech/updates.html), and [release and setup notes](docs/RELEASE_V1_10.md).
+
+This release adds organization-scoped roles, email enrollment and verification,
+internal demand approvals, course-specific instructor qualifications, delivery
+and settlement ledgers, imported survey results, and reviewed Word summaries to
+the existing desktop interface. Real personnel, account credentials, production
+databases, email configuration and private source documents are not distributed.
 
 The V13 interface uses a continuous project workspace, quiet navigation and
 native system typography. See the [visual maintenance guide](docs/DESIGN_V13.md).
@@ -36,30 +43,40 @@ It is deliberately built with **no framework and no build step**: a single Java 
 - **Public training-material library** — a no-login download center for course packs and templates, with editable multi-file upload queues for system admins and business managers, publishing controls, download counts and safe file storage.
 - **Private faculty intelligence** — upload PDF or PPTX instructor profiles, review the extracted professional profile, and turn an existing demand or pasted client brief into explainable teacher recommendations. Verified delivery metrics stay separate from claims written in a resume.
 - **Project workspace** — risk-first view per project: blockers and warnings are merged per business record and deep-link to the exact row that needs action; completion and archive are gated by real closure checks (hours scheduled & confirmed, collections, fees).
-- **Role-based access** — `admin` / `manager` / `viewer`, enforced server-side on every write endpoint and mirrored in the UI (read-only users get no write affordances).
-- **Evaluation surveys** — draft → publish → anonymous public answer link → live statistics (score distribution, single-choice charts, text feedback) → close.
-- **Money that adds up** — instructor fees auto-computed from confirmed hours × rate with duplicate-generation protection; collections support partial payments and settlement; costs roll into an estimated balance.
+- **Roles and internal approvals** — base `admin` / `manager` / `viewer` roles combine with organization, region and assigned-post scopes. Direct requests pass through branch and regional approval before team acceptance; externally managed bids record their outcomes.
+- **Imported feedback and reviewed summaries** — import results from the existing survey provider, preview and validate revisions, independently review replacements, then use the accepted results in internal summaries and Word export. Legacy survey routes remain for compatibility.
+- **Delivery and settlement** — distinguish estimated, planned, actual and payable hours; support teaching and development fees, explicit policy approval, paid and unpaid corrections, cross-day adjustments, legacy migration and coded settlement exports. Each currency entry rounds before aggregation.
 - **Responsive & accessible** — desktop / tablet / phone layouts, keyboard navigation, focus management, `prefers-reduced-motion` respected everywhere.
-- **Regression suite** — 52 end-to-end API checks, 137 business-integrity/security checks and 68 faculty-matching checks; three fresh isolated loopback instances, 257 API checks in total, plus separate frontend, locality/migration and offline weather suites.
+- **Regression suite** — isolated API, authorization, business, module and frontend checks, with separate locality/migration, semantic, sourced-railway and offline weather suites. Tests use synthetic data and disposable databases.
 
 ## Quick start
 
-Requirements: Java 17+ (Node.js 18+ only if you want to run the regression suite).
+Requirements: Java 17+ (the complete regression suite also needs Node.js 18+ and
+Python 3). Optional offline semantic assistance requires its own Python runtime;
+see the [setup and limits](semantic/README.md).
 
 ```bash
-./run.sh --demo        # Mac / Linux
-# or: run.bat          # Windows
+./run.sh               # Mac / Linux: empty business data on a new installation
+# or: run.bat          # Windows: same clean default
 ```
 
-Then open <http://localhost:8080>. Demo mode seeds a **fresh, isolated** database (`demo-data/`) with sample business data and these accounts:
+Then open <http://localhost:8080>. The normal launchers, including `启动系统.command`,
+use `data/` and do not create sample teachers, training projects, or related business records.
+On a fresh database the server creates one `admin` login. Supply a private
+`bootstrap.admin.password` of at least 12 characters, or use the generated first-run
+password shown locally at startup. Existing database contents are not deleted by a launcher.
 
-| Role | Username | Password |
-|---|---|---|
-| System admin | `admin` | `admin123` |
-| Business manager | `manager` | `manager123` |
-| Read-only viewer | `viewer` | `viewer123` |
+Sample data is available only through an explicit isolated test launch:
 
-`./run.sh` without `--demo` starts in production mode against `data/` and creates **no** default accounts or sample data.
+```bash
+./run.sh --demo        # Mac / Linux, isolated demo-data/
+# or: run.bat --demo   # Windows, isolated demo-data/
+```
+
+This opt-in test mode uses only sample business data and test accounts
+`admin / admin123`, `manager / manager123`, and `viewer / viewer123`.
+Keep its `demo-data/` directory separate from the working `data/` directory.
+Never import demo people or projects as real records.
 
 ## Architecture
 
@@ -84,7 +101,14 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for endpoint groups, workflow r
 
 Faculty operators can follow the [faculty guide (Chinese)](docs/FACULTY_GUIDE.md)
 for resume maintenance, matching limits and verified delivery metrics. Matching
-is local and rule-based; it does not use an external language model or OCR.
+uses local rules, with optional offline small-model evidence assistance. It does
+not use an external language model or OCR. Railway live data is not connected;
+the official 12306 link is a manual verification entry, not a ticket API.
+
+The unreleased local v7 source enumerates the entire product city directory for
+[rail-first / air-backup coverage](docs/TRANSPORT_COVERAGE_V7.md). Railway witnesses
+remain a partial, expiring reference set; a complete city list is not a complete
+transport dataset. No full nationwide timetable feed or airline API is enabled.
 
 ## Running the regression suite
 
@@ -130,7 +154,7 @@ The reference production topology is a systemd service bound to `127.0.0.1` behi
 R7 adds an optional local-IP city/weather surface and public update timeline.
 Weather is disabled until configured; see [docs/WEATHER.md](docs/WEATHER.md) for
 provider credentials, trusted proxy requirements and privacy/accuracy boundaries.
-Version 1.9.0 was deployed and verified on 2026-09-07. Public update notes contain
+Version 1.10.0 was deployed on 2026-09-28. Public update notes contain
 only actual releases, with daily grouping and verified timestamps. Source pushes
 and production deployments are tracked separately.
 

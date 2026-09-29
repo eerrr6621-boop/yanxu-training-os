@@ -8,7 +8,7 @@ for(const item of releases){check(/^\d{4}-\d{2}(?:-\d{2})?$/.test(item.date),'re
 check(releases.find(x=>x.id==='initial').date==='2026-07','do not invent initial day');check(!releases.some(x=>x.id==='v13-r2'),'do not invent absent R2');
 const html=fs.readFileSync('web/materials.html','utf8'),app=fs.readFileSync('web/app.js','utf8'),environment=fs.readFileSync('web/environment.js','utf8');
 for(const id of ['material-grid','material-categories','admin-actions','add-material','material-search'])check(html.split('id="'+id+'"').length===2,'preserved unique hook '+id);
-check(/materials\.js\?v=20260906v13r7/.test(html),'unchanged material logic cache version');check(/v13\.css\?v=20260907v13r1/.test(html),'current shared CSS cache version');
+check(/materials\.js\?v=20260906v13r7/.test(html),'unchanged material logic cache version');check(/v13\.css\?v=20260922recommend1/.test(html),'current shared CSS cache version');
 check(!/navigator\.geolocation|localStorage|sessionStorage/.test(environment),'no permission prompt/IP persistence');check(!/<select|city-input|city-select/.test(environment),'no manual city selection');
 check(app.includes('environmentPanel?.destroy()'),'disposable lifecycle');
 check(fs.statSync('web/assets/book-paper-v13r7.jpg').size<100000,'paper browser budget <100KB');

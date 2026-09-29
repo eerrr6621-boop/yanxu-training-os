@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>M05 课时与课酬 · 内部逻辑演示</title>
+</head>
+<body style="margin:0;padding:clamp(16px,4vw,40px);background:#f5f7fa">
+  <main id="settlement-demo"></main>
+  <script type="module">
+    import { mount } from './index.js';
+    const controller = new AbortController();
+    const cleanup = await mount(document.getElementById('settlement-demo'), { mode: 'demo', signal: controller.signal });
+    window.addEventListener('pagehide', cleanup, { once: true });
+  </script>
+</body>
+</html>

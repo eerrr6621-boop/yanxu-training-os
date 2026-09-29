@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>M08 培训宣传总结 内部合成测试</title>
+</head>
+<body style="margin:0;background:#f3f6f2">
+  <main id="summary-demo"><p>正在加载内部合成测试；正式功能沿用原系统项目页面。</p></main>
+  <script type="module">
+    import { mount } from './index.js';
+    const root = document.getElementById('summary-demo');
+    if (!['localhost', '127.0.0.1', '[::1]'].includes(location.hostname)) {
+      root.textContent = '此独立演示仅可通过本机 localhost 访问。此页仅用于内部逻辑测试，正式功能由总控接回原系统项目页面。';
+    } else {
+      const scope = new AbortController();
+      await mount(root, {
+        mode: 'demo', signal: scope.signal, user: null,
+        request() { throw new Error('合成演示禁止调用服务端接口。'); },
+        notify() {}, navigate() {}
+      });
+      addEventListener('pagehide', () => scope.abort(), { once: true });
+    }
+  </script>
+</body>
+</html>

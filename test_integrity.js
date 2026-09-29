@@ -297,6 +297,7 @@ async function waitForResumeItem(teacherId, auth, timeoutMs = 8000) {
   let r = await call('/login', { username: 'admin', password: 'admin123' }, '');
   check('管理员登录', r.code === 0 && r.data && r.data.token);
   token = r.data.token;
+  const fixture = await require('./scripts/IntegrationHttpFixtures.cjs').createIntegrationHttpFixtures(call, check);
 
   let http = await callWithStatus('/dispatches?project_id=not-a-number');
   check('非法 project_id 返回 HTTP 400', http.status === 400 && http.body.code === 400);
@@ -318,19 +319,21 @@ async function waitForResumeItem(teacherId, auth, timeoutMs = 8000) {
   });
 
   r = await call('/demands', demandPayload('新需求不能伪造完成', '已完成'));
-  check('新需求不能伪造完成状态', r.code === 400);
+  check('新需求不能伪造完成状态或绕过草稿入口', r.code === 409);
   r = await call('/demands', demandPayload('新需求不能伪造流标', '已流标'));
-  check('新需求不能伪造流标状态', r.code === 400);
+  check('新需求不能伪造流标状态或绕过草稿入口', r.code === 409);
 
-  r = await call('/demands', demandPayload('合法启动需求'));
-  check('创建合法待处理需求测试数据', r.code === 0);
-  const startableDemandId = r.data;
-  r = await call('/bids', { demand_id: startableDemandId, amount: 1000, proposal: '完整性测试方案', bid_date: '2026-08-01', status: '待评审', review: '' });
-  check('合法需求可创建投标', r.code === 0);
-  const startableBidId = r.data;
-  r = await call('/bids/win', { id: startableBidId });
-  check('中标流程自动创建待启动项目', r.code === 0 && r.data && r.data.project_id > 0);
-  const startableProjectId = r.data.project_id;
+  let startableWorkflow = await fixture.draft(demandPayload('合法启动需求'));
+  check('创建合法待处理需求测试数据', startableWorkflow.id > 0);
+  const startableDemandId = startableWorkflow.id;
+  startableWorkflow = await fixture.submit(startableWorkflow);
+  check('合法投标需求可提交并等待原签报', startableWorkflow.queue === 'waiting_bid_result');
+  startableWorkflow = await fixture.won(startableWorkflow);
+  check('中标结果登记不能自动立项', startableWorkflow.queue === 'ready' && !startableWorkflow.project_id);
+  startableWorkflow = await fixture.accept(startableWorkflow);
+  check('团队受理创建待启动项目', startableWorkflow.project_id > 0);
+  const startableProjectId = startableWorkflow.project_id;
+  await fixture.configureProject(startableProjectId, { amount: 1000 });
   const startableProjects = await call('/projects');
   const startableProjectRow = startableProjects.data.find((x) => x.id === startableProjectId);
   r = await call('/projects', {
@@ -351,15 +354,15 @@ async function waitForResumeItem(teacherId, auth, timeoutMs = 8000) {
     participant_count: 10, delivery_mode: '线下集中', venue: '测试教室',
     contract_no: 'TEST-INTEGRITY-001', status: '已归档', remark: '',
   });
-  check('新项目不能伪造归档状态', r.code === 0);
-  const projectId = r.data;
+  check('新项目不能伪造归档状态或绕过团队受理', r.code === 409);
+  const { projectId } = await fixture.project({ title: '完整性测试项目', unit: '测试单位', hours: 4, amount: 1000, start_date: '2026-08-03', end_date: '2026-08-04', owner: '测试员', participant_count: 10, delivery_mode: '线下集中', venue: '测试教室', contract_no: 'TEST-INTEGRITY-001' });
   r = await call('/projects', {
     demand_id: -1, bid_id: -1, title: '负数来源不能绕过校验', unit: '测试单位', hours: 4, amount: 1000,
     start_date: '2026-08-03', end_date: '2026-08-04', owner: '测试员',
     participant_count: 10, delivery_mode: '线下集中', venue: '测试教室',
     contract_no: 'TEST-NEGATIVE-SOURCE', status: '待启动', remark: '',
   });
-  check('新项目拒绝负数需求与投标来源编号', r.code === 400);
+  check('新项目拒绝负数来源和绕过团队受理', r.code === 409);
   r = await call('/projects');
   let project = r.data.find((x) => x.id === projectId);
   check('新项目由服务端设为待启动', project && project.status === '待启动');
@@ -381,7 +384,10 @@ async function waitForResumeItem(teacherId, auth, timeoutMs = 8000) {
     teach_date: '2026-08-04', hours: 4, material_status: '已就绪',
     status: '已完成', sent_at: '伪造', confirmed_at: '伪造', msg_log: '伪造', remark: '',
   });
-  check('新调度不能伪造完成状态', r.code === 0);
+  check('受控新调度明确拒绝伪造完成状态', r.code === 409);
+  r = await call('/dispatches', { project_id: projectId, teacher_id: 4, subject: '完整性测试课程',
+    teach_date: '2026-08-04', hours: 4, material_status: '已就绪', status: '待发送', remark: '' });
+  check('受控新调度可正常建立待发送记录', r.code === 0);
   const dispatchId = r.data;
   r = await call('/dispatches?project_id=' + projectId);
   let dispatch = r.data.find((x) => x.id === dispatchId);
@@ -395,26 +401,21 @@ async function waitForResumeItem(teacherId, auth, timeoutMs = 8000) {
   check('邀请发送后不能偷改课时', r.code === 400);
   r = await call('/dispatches/confirm', { id: dispatchId, accept: 1 });
   check('记录师资确认', r.code === 0);
-  r = await call('/dispatches/complete', { id: dispatchId });
+  const verifiedDelivery = await fixture.verifyDispatch(dispatchId, '180');
+  r = await call('/dispatches/complete', { id: dispatchId, expected_version: verifiedDelivery.version });
   check('实际授课后标记完成', r.code === 0);
   r = await call('/dispatches/delete', { id: dispatchId });
-  check('已完成课程不能删除', r.code === 400);
+  check('已留存授课事实的课程不能删除', r.code === 409);
 
   r = await call('/fees', {
     project_id: projectId, teacher_id: 4, hours: 4, rate: 2200, amount: 1,
     status: '已发放', pay_date: '2026-08-04', remark: '伪造少付',
   });
-  check('课酬金额必须等于课时乘标准', r.code === 400);
-
+  check('受控项目不能由旧费用入口写入课酬', r.code === 409);
   r = await call('/fees/calc', { project_id: projectId });
-  check('按已确认或完成课时生成课酬', r.code === 0 && r.data.length === 1 && closeEnough(r.data[0].hours, 4));
-  const feeId = r.data[0].id;
-  r = await call('/fees/pay', { id: feeId });
-  check('已完成授课可以发放课酬', r.code === 0);
-  r = await call('/fees/calc', { project_id: projectId });
-  check('重新计算不重复生成已发课酬', r.code === 0 && r.data.length === 0);
+  check('受控项目不能套用旧师资费率', r.code === 409);
   r = await call('/fees?project_id=' + projectId);
-  check('项目只保留一笔已发课酬', r.code === 0 && r.data.length === 1 && r.data[0].status === '已发放');
+  check('被拦截的旧费用操作没有留下记录', r.code === 0 && r.data.length === 0);
 
   r = await call('/charges', {
     project_id: projectId, amount: 1000, received: 1000, status: '已结清',
@@ -440,26 +441,32 @@ async function waitForResumeItem(teacherId, auth, timeoutMs = 8000) {
     title: '归档自动关闭测试问卷', target: '参训学员', project_id: projectId,
     questions: JSON.stringify([{ type: 'score', title: '总体满意度' }]), status: '已发布',
   });
-  check('新问卷不能伪造发布状态', r.code === 0);
+  check('新流程项目不能创建问卷或伪造发布状态', r.code === 400 && /原问卷平台/.test(r.msg));
+  const legacyQuestionnaireProjectId = 2;
+  r = await call('/questionnaires', { title: '历史归档自动关闭测试问卷', target: '参训学员', project_id: legacyQuestionnaireProjectId, questions: JSON.stringify([{ type: 'score', title: '总体满意度' }]), status: '已发布' });
+  check('历史项目新问卷不能伪造发布状态', r.code === 0);
   const questionnaireId = r.data;
+  r = await call('/questionnaires?project_id=' + legacyQuestionnaireProjectId);
+  check('历史项目新问卷由服务端设为草稿', r.code === 0 && r.data.find(x => x.id === questionnaireId && x.status === '草稿'));
 
   r = await call('/projects/complete', { id: projectId });
   check('交付事实完整后项目可完成', r.code === 0 && r.data.status === '已完成');
   r = await call('/dispatches?project_id=' + projectId);
   dispatch = r.data.find((x) => x.id === dispatchId);
   r = await call('/dispatches', { ...dispatch, material_status: '准备中' });
-  check('项目完成后既有授课记录也不可修改', r.code === 400);
+  check('项目完成后仍可维护课程材料状态', r.code === 0);
+  r = await call('/dispatches', { ...dispatch, hours: Number(dispatch.hours) + 1 });
+  check('项目完成后不能借材料维护修改计划课时', [400, 409].includes(r.code));
+  r = await call('/dispatches?project_id=' + projectId);
+  const maintainedDispatch = r.data.find((x) => x.id === dispatchId);
+  check('材料维护不会改变已完成课程的计划课时和状态', maintainedDispatch.material_status === '准备中' && maintainedDispatch.hours === dispatch.hours && maintainedDispatch.status === '已完成');
   r = await call('/dispatches', {
     project_id: projectId, teacher_id: 4, subject: '完成后伪增课程',
     teach_date: '2026-08-04', hours: 1, status: '待发送', remark: '',
   });
   check('已完成项目不能新增排课', r.code === 400);
 
-  r = await call('/projects', {
-    title: '移动调度测试项目', unit: '测试单位', hours: 1, amount: 0,
-    start_date: '2026-08-04', end_date: '2026-08-04', status: '进行中', remark: '',
-  });
-  const otherProjectId = r.data;
+  const { projectId: otherProjectId } = await fixture.project({ title: '移动调度测试项目', unit: '测试单位', hours: 1, amount: 0, start_date: '2026-08-04', end_date: '2026-08-04' });
   r = await call('/dispatches', {
     project_id: otherProjectId, teacher_id: 4, subject: '待移动课程',
     teach_date: '2026-08-04', hours: 1, status: '待发送', remark: '',
@@ -471,21 +478,26 @@ async function waitForResumeItem(teacherId, auth, timeoutMs = 8000) {
   check('不能把已有调度移动进已完成项目', r.code === 400);
 
   r = await call('/projects/check?id=' + projectId + '&action=archive');
-  check('回款和课酬闭环后满足归档条件', r.code === 0 && r.data.ready === true);
+  check('受控项目在正式支付核对未接入时不可归档', r.code === 0 && r.data.ready === false);
   r = await call('/projects/archive', { id: projectId });
-  check('项目归档成功', r.code === 0 && r.data.status === '已归档');
-  r = await call('/questionnaires?project_id=' + projectId);
+  check('受控项目归档明确阻断而不改变完成状态', r.code === 409);
+  await fixture.completeLegacyQuestionnaireProject();
+  const legacyFees = await call('/fees?project_id=' + legacyQuestionnaireProjectId);
+  const feeId = legacyFees.data[0].id;
+  r = await call('/projects/archive', { id: legacyQuestionnaireProjectId });
+  check('历史问卷所在seed项目按真实交付结算事实归档', r.code === 0 && r.data.status === '已归档');
+  r = await call('/questionnaires?project_id=' + legacyQuestionnaireProjectId);
   check('归档自动关闭未闭环问卷', r.code === 0 && r.data.find((x) => x.id === questionnaireId && x.status === '已关闭'));
 
   r = await call('/projects');
-  project = r.data.find((x) => x.id === projectId);
+  project = r.data.find((x) => x.id === legacyQuestionnaireProjectId);
   r = await call('/projects', { ...project, hours: 8, status: '进行中' });
-  check('归档项目业务事实只读', r.code === 400);
-  r = await call('/costs', { project_id: projectId, type: '其他', amount: 10, cost_date: '2026-08-04', note: '伪增' });
+  check('历史归档项目业务事实仍只读', r.code === 400);
+  r = await call('/costs', { project_id: legacyQuestionnaireProjectId, type: '其他', amount: 10, cost_date: '2026-08-04', note: '伪增' });
   check('归档项目不能新增成本', r.code === 400);
   r = await call('/fees/delete', { id: feeId });
   check('归档项目课酬不能删除', r.code === 400);
-  r = await call('/fees/calc', { project_id: projectId });
+  r = await call('/fees/calc', { project_id: legacyQuestionnaireProjectId });
   check('归档项目不能重新计算课酬', r.code === 400);
 
   const [allDispatches, allFees, stats] = await Promise.all([
@@ -755,7 +767,7 @@ async function waitForResumeItem(teacherId, auth, timeoutMs = 8000) {
   check('简历管理目录仅返回安全元数据', resumeHttp.status === 200 && maleResume && !hasForbiddenResumeMetadata(resumeHttp.body.data));
   check('简历服务分别公开 PDF 与 PPTX 的受控大小边界',
     Number(resumeHttp.body.data.max_pdf_bytes) === 15 * 1024 * 1024 &&
-    Number(resumeHttp.body.data.max_pptx_bytes) === 80 * 1024 * 1024);
+    Number(resumeHttp.body.data.max_pptx_bytes) === 200 * 1024 * 1024);
   const exposedResumeName = String(maleResume && (maleResume.file_name || maleResume.resume_name || maleResume.original_name) || '');
   check('简历原始文件名会移除路径穿越片段', exposedResumeName && !exposedResumeName.includes('..') && !/[\\/]/.test(exposedResumeName));
 

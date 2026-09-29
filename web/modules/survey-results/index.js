@@ -1,0 +1,270 @@
+/* M07 评分工作簿只读预览。宿主加载 styles.css；不持久化个人答卷。 */
+const MAX_BYTES = 5 * 1024 * 1024;
+const DEMO_PROJECTS = [
+  { id: 9001, key: 'DEMO-P001', name: '合成项目 · 服务沟通课程' },
+  { id: 9002, key: 'DEMO-P002', name: '合成项目 · 项目协作课程' }
+];
+const DEMO_RULES = { id: 'draft-per-question-v1', label: '统计口径草案', minScore: '0', maxScore: '10', confirmed: false,
+  description: '每题独立统计数值评分，空白不记零；状态暂不筛选；均值显示2位；草案预览，正式结果以机构已发布规则为准' };
+const DEMO_LABELS = ["讲师着装专业得体（满分10分）","讲师仪容仪表规范（满分10分）","课程内容匹配需求，对技能提升有帮助（满分10分）","课程时长适中，授课进度合理（满分10分）","课程目标清晰、逻辑通顺，利于系统学习（满分10分）","教学方式丰富多样，易于融入学习（满分10分）","课程教材匹配度高，有助于掌握学习内容（满分10分）","讲师积极答疑，有效引导课堂参与（满分10分）","课堂互动氛围良好，讲师能够有效引导学员参与讨论（满分10分）","本次课程总体满意度（满分10分）"];
+const ISSUE_TEXT = {
+  FILE_EMPTY: '工作簿为空，请重新选择原平台导出的 Excel。',
+  FILE_TOO_LARGE: '工作簿超过当前大小上限，请拆分后重试。',
+  INVALID_XLSX: '无法识别这个 Excel 文件，请检查是否为正常导出的 .xlsx 文件。',
+  XLSX_LIMIT: '工作簿的内容超过预览限制，请拆分后重试。',
+  XLSX_STRUCTURE: '工作簿结构不完整，暂时无法读取评分。',
+  SHEET_MISSING: '没有找到本次问卷的评分工作表。',
+  HEADER_MISMATCH: '评分题目与已接入的问卷格式不一致，需要核对。',
+  DUPLICATE_HEADER: '评分表中存在重复题目，暂时无法明确对应。',
+  NO_RESPONSE_ROWS: '评分表中没有找到答卷记录。',
+  INVALID_SCORE: '这里不是可统计的数值评分，已单独计为异常。',
+  OUT_OF_RANGE: '评分超出当前草案范围，已单独计为异常。',
+  FORMULA_SCORE: '评分单元格含公式，暂不纳入平均分。',
+  PERCENT_SCORE: '评分单元格使用百分比格式，暂不按分数统计。',
+  DATE_SCORE: '评分单元格使用日期格式，暂不按分数统计。',
+  SCORE_PRECISION: '评分的小数精度不符合当前草案要求，需核对。',
+  CELL_ERROR: '评分单元格存在 Excel 错误，已单独计为异常。',
+  NO_VALID_SCORES: '本题暂无有效评分，因此平均分显示为“—”。'
+};
+const DUPLICATE_TEXT = {
+  NOT_CHECKED: ['历史重复检查尚未接入', '当前不能据此判断这份文件是否已经导入。'],
+  NONE: ['当前未发现重复文件', '只针对当前可见项目的已有记录进行检查。'],
+  EXACT_FILE: ['发现相同的历史文件', '该项目已有文件内容完全相同的记录，请先复核；不会自动保存或覆盖。'],
+  SAME_SCORES_CANDIDATE: ['评分内容可能重复', '忽略身份等信息后，评分内容与该项目的历史记录相同；这还不能证明属于同一批次。']
+};
+const esc = value => String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
+class ViewError extends Error {}
+const fail = message => { throw new ViewError(message); };
+const count = value => Number.isSafeInteger(value) && value >= 0 && value <= 10000000;
+const column = value => typeof value === 'string' && /^(?:[A-Z]|A[A-Z]|B[A-L])$/.test(value);
+const decimal = value => typeof value === 'string' && value.length < 40 && /^-?\d+(?:\.\d+)?$/.test(value) && Number.isFinite(Number(value));
+
+function demoPreview(kind, projectId) {
+  const normal = [[9,8,9,10,8,9,9,8,9,9], [8,9,8,9,8,8,9,9,8,8], [10,9,9,9,10,9,10,9,9,10], [9,10,8,10,9,10,8,10,10,9]];
+  const mixed = [[9,8,9,10,'',9,9,8,9,9], [8,'',8,'合成异常',8,8,9,9,8,''], [10,9,9,12,10,9,10,9,9,10], ['',10,8,10,9,10,8,10,10,-1]];
+  const rows = kind === 'normal' ? normal : mixed;
+  const issues = [];
+  const questions = DEMO_LABELS.map((label, index) => {
+    const values = []; let blankCount = 0; let invalidCount = 0;
+    rows.forEach((row, rowIndex) => {
+      const value = row[index];
+      if (value === '') blankCount++;
+      else if (typeof value !== 'number' || value < 0 || value > 10) {
+        invalidCount++;
+        issues.push({ row: rowIndex + 2, column: String.fromCharCode(65 + index), code: typeof value !== 'number' ? 'INVALID_SCORE' : 'OUT_OF_RANGE', severity: 'ERROR' });
+      } else values.push(value);
+    });
+    return { key: `q${index + 1}`, label, column: String.fromCharCode(65 + index), validCount: values.length, blankCount, invalidCount,
+      averageText: values.length ? (values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(2) : null };
+  });
+  const project = DEMO_PROJECTS.find(item => item.id === projectId) || DEMO_PROJECTS[0];
+  return { mode: 'RESPONSE_SUMMARY_PREVIEW', state: 'PREVIEW', adapterId: 'synthetic-response-xlsx-v1', synthetic: true, canCommit: false, policyConfirmed: false,
+    rulesDraft: DEMO_RULES, projectId: project.id, projectName: project.name, responseRowCount: rows.length, questions,
+    overallQuestionKey: 'q10', issues, duplicateCheck: { status: kind === 'normal' ? 'NOT_CHECKED' : 'EXACT_FILE', recordIds: [] } };
+}
+
+function draftRules(rules) {
+  if (!rules || rules.confirmed !== false || typeof rules.id !== 'string' || !decimal(String(rules.minScore)) || !decimal(String(rules.maxScore)) || Number(rules.minScore) >= Number(rules.maxScore)) fail('统计口径配置不完整，暂时不能生成草案。');
+  return { id: rules.id, label: '统计口径草案', minScore: String(rules.minScore), maxScore: String(rules.maxScore), confirmed: false };
+}
+
+function configFrom(result) {
+  if (!result || typeof result.adapterId !== 'string' || !result.adapterId.trim()) fail('主系统尚未提供可用的评分预览配置。');
+  if (result.ready !== true || result.synthetic !== false) return { ready: false, synthetic: false, adapterId: result.adapterId };
+  if (!Array.isArray(result.projects) || result.projects.some(project => !Number.isSafeInteger(project?.id) || project.id <= 0 || typeof project.key !== 'string' || typeof project.name !== 'string') || new Set(result.projects.map(project => project.id)).size !== result.projects.length) fail('可选择的培训项目尚未准备好，请稍后重试。');
+  if (!Number.isSafeInteger(result.maxBytes) || result.maxBytes <= 0) fail('主系统尚未提供有效的文件大小限制。');
+  return { ready: true, synthetic: false, adapterId: result.adapterId, projects: result.projects.map(({ id, key, name }) => ({ id, key, name })),
+    rulesDraft: draftRules(result.rulesDraft), maxBytes: Math.min(MAX_BYTES, result.maxBytes), defaultProjectId: result.projects.some(project => project.id === result.defaultProjectId) ? result.defaultProjectId : null };
+}
+
+// 仅保留统计白名单；个人行、原始单元格、任意后端报错文字都不进入页面。
+function previewFrom(result, config, selectedProjectId) {
+  if (!result || result.mode !== 'RESPONSE_SUMMARY_PREVIEW' || !['PREVIEW', 'ERROR'].includes(result.state) || result.synthetic !== false || result.canCommit !== false || result.policyConfirmed !== false || result.adapterId !== config.adapterId || result.projectId !== selectedProjectId) fail('返回结果不符合当前项目的只读草案约定，已停止展示。');
+  const rulesDraft = draftRules(result.rulesDraft);
+  if (rulesDraft.id !== config.rulesDraft.id || rulesDraft.minScore !== config.rulesDraft.minScore || rulesDraft.maxScore !== config.rulesDraft.maxScore) fail('统计口径在处理期间发生变化，请重新检查接入状态。');
+  if (!count(result.responseRowCount) || !Array.isArray(result.questions) || result.questions.length > 64 || !Array.isArray(result.issues) || result.issues.length > 2000) fail('返回的统计数据不完整，暂时无法展示。');
+  const questions = result.questions.map(question => {
+    if (!question || !/^q\d{1,2}$/.test(question.key) || typeof question.label !== 'string' || question.label.length > 300 || !column(question.column) || ![question.validCount, question.blankCount, question.invalidCount].every(count) || question.validCount + question.blankCount + question.invalidCount !== result.responseRowCount) fail('返回的逐题统计口径不一致，请稍后重试。');
+    if (question.validCount === 0 ? question.averageText !== null : !decimal(question.averageText) || Number(question.averageText) < Number(rulesDraft.minScore) || Number(question.averageText) > Number(rulesDraft.maxScore)) fail('返回的平均分不完整或超出当前草案范围。');
+    return { key: question.key, label: question.label, column: question.column, validCount: question.validCount, blankCount: question.blankCount, invalidCount: question.invalidCount, averageText: question.averageText };
+  });
+  if (new Set(questions.map(question => question.key)).size !== questions.length || new Set(questions.map(question => question.column)).size !== questions.length) fail('返回的题目对应关系有重复，请稍后重试。');
+  const issues = result.issues.map(item => {
+    if (!item || !count(item.row) || (item.column !== '' && item.column != null && !column(item.column)) || typeof item.code !== 'string' || !['ERROR', 'WARNING', 'INFO'].includes(item.severity)) fail('返回的问题清单格式不完整，请稍后重试。');
+    return { row: item.row, column: column(item.column) ? item.column : '', code: Object.hasOwn(ISSUE_TEXT, item.code) ? item.code : 'REVIEW_REQUIRED', severity: item.severity };
+  });
+  if (!questions.length && !issues.some(item => item.severity === 'ERROR')) fail('没有可显示的统计结果，请检查评分工作簿。');
+  if ((result.state === 'ERROR') !== (questions.length === 0)) fail('返回的预览状态与统计结果不一致，已停止展示。');
+  if (!result.duplicateCheck || !Object.hasOwn(DUPLICATE_TEXT, result.duplicateCheck.status)) fail('返回的重复检查状态不完整，请稍后重试。');
+  const issueCount = result.issueCount == null ? issues.length : result.issueCount;
+  if (!count(issueCount) || issueCount < issues.length || (result.issuesTruncated === true) !== (issueCount > issues.length)) fail('返回的问题数量不完整，请稍后重试。');
+  const project = config.projects.find(item => item.id === selectedProjectId);
+  return { mode: result.mode, state: result.state, adapterId: result.adapterId, synthetic: false, canCommit: false, policyConfirmed: false, rulesDraft,
+    projectId: project.id, projectName: project.name, responseRowCount: result.responseRowCount, questions,
+    overallQuestionKey: result.overallQuestionKey === 'q10' ? 'q10' : '', issues, issueCount, issuesTruncated: result.issuesTruncated === true,
+    duplicateCheck: { status: result.duplicateCheck.status, recordIds: [] } };
+}
+
+function encodeBytes(buffer) {
+  const bytes = new Uint8Array(buffer);
+  const parts = [];
+  for (let index = 0; index < bytes.length; index += 8192) parts.push(String.fromCharCode(...bytes.subarray(index, index + 8192)));
+  return btoa(parts.join(''));
+}
+
+export async function mount(root, context = {}) {
+  if (!root || typeof root.replaceChildren !== 'function') throw new TypeError('M07 mount 需要有效的根元素。');
+  if (context.signal?.aborted) return () => {};
+  const container = root.ownerDocument.createElement('section');
+  container.className = 'yx-survey-results'; container.setAttribute('aria-label', '培训评价汇总草案');
+  root.replaceChildren(container);
+  const demo = context.mode === 'demo';
+  const lifecycle = new AbortController();
+  let alive = true, fileTicket = 0, requestTicket = 0;
+  let previewController = null;
+  const state = { config: null, loading: false, reading: false, previewing: false, error: '', file: null,
+    projectId: demo ? 9001 : null, sample: 'normal', preview: demo ? demoPreview('normal', 9001) : null, filter: 'all' };
+  const current = () => alive && !lifecycle.signal.aborted && !context.signal?.aborted && container.parentNode === root;
+  const ready = () => !demo && context.mode === 'live' && state.config?.ready === true && state.config.synthetic === false && typeof context.request === 'function';
+  const projects = () => demo ? DEMO_PROJECTS : ready() ? state.config.projects : [];
+  const rules = () => demo ? DEMO_RULES : ready() ? state.config.rulesDraft : null;
+  const knownProject = () => projects().some(project => project.id === state.projectId);
+  const canPreview = () => ready() && state.file && knownProject() && !state.reading && !state.previewing;
+  const stopPreview = () => { requestTicket++; previewController?.abort(); previewController = null; state.previewing = false; };
+
+  function cleanup() {
+    if (!alive) return;
+    alive = false; fileTicket++; stopPreview(); lifecycle.abort();
+    context.signal?.removeEventListener('abort', cleanup);
+    container.removeEventListener('click', click); container.removeEventListener('change', change);
+    state.file = null; state.preview = null;
+    if (container.parentNode === root) container.remove();
+  }
+
+  async function request(url, options, signal = lifecycle.signal) {
+    if (typeof context.request !== 'function') fail('评分汇总逻辑已实现，等待主系统接入后即可选择文件。');
+    const result = await context.request(url, { ...options, signal });
+    if (result && typeof result.json === 'function') {
+      if (result.ok === false) fail(result.status === 403 ? '当前账号没有这个项目的预览权限，请选择可查看的项目。' : '主系统暂时无法完成预览，请稍后重试。');
+      return result.json();
+    }
+    return result;
+  }
+
+  const errorMessage = (error, fallback) => error instanceof ViewError ? error.message : fallback;
+  function sourceView() {
+    const limit = ready() ? state.config.maxBytes : MAX_BYTES;
+    return `<div class="form-grid yx-x-source" aria-label="选择工作簿与项目"><div class="form-item"><label>原平台评分 Excel</label><div class="yx-x-file"><strong>${demo ? '合成评分样例.xlsx' : state.reading ? '正在读取所选文件…' : state.file ? '已选择评分工作簿' : '尚未选择工作簿'}</strong><small>${demo ? '4 条合成答卷 · 10 道题' : state.file ? `${(state.file.byteLength / 1024).toFixed(1)} KiB · 点击生成后才发送` : `仅 .xlsx · 最大 ${(limit / 1048576).toFixed(limit % 1048576 ? 1 : 0)} MiB`}</small></div>${demo ? `<div class="toolbar yx-x-toggle" role="group" aria-label="合成评分样例"><button type="button" class="btn sm ${state.sample === 'normal' ? '' : 'gray'}" data-action="sample" data-value="normal" aria-pressed="${state.sample === 'normal'}">正常评分</button><button type="button" class="btn sm ${state.sample === 'mixed' ? '' : 'gray'}" data-action="sample" data-value="mixed" aria-pressed="${state.sample === 'mixed'}">含空白与异常</button></div>` : `<label class="btn gray yx-x-file-button ${!ready() ? 'yx-x-disabled' : ''}">${state.file ? '重新选择 Excel' : '选择 Excel'}<input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" data-file aria-label="选择评分Excel"${!ready() ? ' disabled' : ''}></label>`}</div><div class="form-item"><label>培训项目<select data-project aria-label="培训项目"${!demo && !ready() ? ' disabled' : ''}><option value="">请选择项目</option>${projects().map(project => `<option value="${project.id}"${state.projectId === project.id ? ' selected' : ''}>${esc(project.name)}</option>`).join('')}</select></label><small>${demo ? '仅关联合成项目，不读取真实文件。' : '只显示当前账号可查看的项目，不按姓名关联。'}</small>${demo ? '<p class="modal-note">切换样例或项目，即可查看合成结果。</p>' : `<div><button type="button" class="btn" data-action="preview"${!canPreview() ? ' disabled' : ''}>${state.previewing ? '正在生成草案…' : '生成汇总草案'}</button></div>`}</div></div>${state.error ? `<p class="field-error yx-x-error" role="alert">${esc(state.error)}</p>` : ''}${!demo && !ready() ? `<div class="inline-note yx-x-connection"><span>${state.loading ? '正在检查主系统接入状态…' : '评分汇总逻辑已实现，等待主系统接入；当前不读取或发送文件。'}</span>${!state.loading ? '<button type="button" data-action="reload" class="btn gray sm">重新检查</button>' : ''}</div>` : ''}`;
+  }
+
+  function rulesView() {
+    const rule = rules();
+    return `<details class="yx-x-rules" aria-label="草案预览的统计口径"><summary><span class="tag orange">草案预览</span> 每题独立统计，空白和异常不参与均值</summary><ul><li>每题使用自己的有效评分数作为分母；空白不记 0，异常单独列出。</li><li>${rule ? `${esc(rule.minScore)}–${esc(rule.maxScore)} 分为当前草案范围` : '评分范围由接入配置提供'}，正式结果以机构已发布规则为准。</li><li>答卷记录数按非空记录行统计，不等于独立人数或有效答卷数；不按状态或隐藏行筛选，也不自动去重。</li><li>总体满意度直接取“本次课程总体满意度”这一题，不平均十题，也不转百分比。</li></ul></details>`;
+  }
+
+  function issuesView(preview) {
+    const issues = preview.issues;
+    return `<section class="yx-x-issues" aria-label="需要复核的问题"><div class="section-title"><div><span>需要核对的位置 <span class="tag orange">${preview.issueCount ?? issues.length}</span></span><small>只显示评分位置，不展示个人信息或原始评分行。</small></div></div>${preview.issuesTruncated ? `<p class="inline-note">共 ${preview.issueCount} 条问题，当前显示前 ${issues.length} 条；题目统计包含全部记录。</p>` : ''}${issues.length ? `<ol>${issues.map(item => `<li><span class="tag ${item.severity === 'ERROR' ? 'red' : 'orange'}">${item.row > 0 && item.column ? `${esc(item.column)}${item.row}` : item.column ? `${esc(item.column)} 列` : '工作簿'}</span><span>${esc(ISSUE_TEXT[item.code] || '该位置需要复核，请检查源表评分格式。')}</span></li>`).join('')}</ol>` : '<p class="modal-note">当前未发现评分格式问题。此处为草案预览，正式结果以机构已发布规则为准。</p>'}</section>`;
+  }
+
+  function resultView() {
+    const preview = state.preview;
+    if (!preview) return `<div class="mini-empty yx-x-empty" aria-live="polite"><p>${state.reading ? '正在准备所选工作簿' : state.previewing ? '正在逐题整理评分' : ready() ? '选择 Excel 和项目后，即可查看各题统计草案。' : '正式预览尚未接入，当前没有统计结果。'}</p></div>`;
+    if (!preview.questions.length) return `<div class="error-state yx-x-failed"><h3>这份 Excel 还不能生成汇总</h3><p>请先根据提示核对评分表，修正后重新预览。</p></div>${issuesView(preview)}`;
+    const overall = preview.questions.find(question => question.key === preview.overallQuestionKey);
+    const invalid = preview.questions.reduce((sum, question) => sum + question.invalidCount, 0);
+    const blanks = preview.questions.reduce((sum, question) => sum + question.blankCount, 0);
+    const questionIssues = preview.questions.filter(question => question.invalidCount > 0 || question.blankCount > 0 || question.validCount === 0);
+    const questions = state.filter === 'review' ? questionIssues : preview.questions;
+    const duplicate = DUPLICATE_TEXT[preview.duplicateCheck.status];
+    return `<div class="q-stats-summary yx-x-summary-stats yx-x-overview" aria-label="项目汇总草案"><div><span aria-hidden="true">分</span><small>总体满意度 · 草案</small><b class="yx-x-overall-number"><strong>${esc(overall?.averageText ?? '—')}</strong> / ${esc(preview.rulesDraft.maxScore)} 分</b></div><div><span aria-hidden="true">份</span><small>答卷记录数（未去重）</small><b>${preview.responseRowCount}</b></div><div><span aria-hidden="true">项</span><small>空白 / 异常评分项</small><b>${blanks} / ${invalid}</b></div></div><p class="modal-note yx-x-overall-note">${esc(preview.projectName)} · ${overall ? `总体题有效 ${overall.validCount} · 空白 ${overall.blankCount} · 异常 ${overall.invalidCount}${overall.validCount === 0 ? ' · 暂无有效评分' : ''}` : '未找到总体题，不生成总体数值'}</p>
+    <div class="toolbar yx-x-table-tools"><div class="yx-x-toggle" role="group" aria-label="筛选题目"><button type="button" class="btn sm ${state.filter === 'all' ? '' : 'gray'}" data-action="filter" data-value="all" aria-pressed="${state.filter === 'all'}">全部 ${preview.questions.length} 题</button><button type="button" class="btn sm ${state.filter === 'review' ? '' : 'gray'}" data-action="filter" data-value="review" aria-pressed="${state.filter === 'review'}">有空白或异常 ${questionIssues.length} 题</button></div><span class="tag orange">仅预览 · 尚未保存</span></div>
+    <div class="table-wrap yx-x-table-scroll" tabindex="0" aria-label="逐题统计表"><table class="tbl"><thead><tr><th scope="col">题目</th><th scope="col">有效评分数</th><th scope="col">空白数</th><th scope="col">异常数</th><th scope="col">平均分</th></tr></thead><tbody>${questions.length ? questions.map(question => `<tr><td data-label="题目"><span class="yx-x-question"><span class="tag gray">${esc(question.column)}</span><span>${esc(question.label)}${question.key === preview.overallQuestionKey ? '<small>总体满意度来源题</small>' : ''}</span></span></td><td data-label="有效评分数">${question.validCount}</td><td data-label="空白数">${question.blankCount}</td><td data-label="异常数">${question.invalidCount ? `<span class="tag orange">${question.invalidCount}</span>` : '0'}</td><td data-label="平均分"><strong>${esc(question.averageText ?? '—')}</strong>${question.averageText === null ? '<small>暂无有效评分</small>' : ''}</td></tr>`).join('') : '<tr><td colspan="5" data-label="筛选结果">当前没有含空白或异常的题目。</td></tr>'}</tbody></table></div><p class="modal-note">每题分母为本题有效评分数，空白与异常分别保留；不将答卷行数直接作为分母。</p>
+    <div class="inline-note yx-x-duplicate"><div><strong>${esc(duplicate[0])}</strong><p>${esc(duplicate[1])}</p></div></div>${issuesView(preview)}`;
+  }
+
+  function render() {
+    if (!current()) return;
+    container.innerHTML = `<div class="readonly-banner"><span class="tag ${demo ? 'orange' : 'blue'}">${demo ? '内部合成演示' : '只读预览'}</span><span>${demo ? '仅使用合成评分，不读取真实文件。' : '从原平台评分 Excel 生成统计草案。'}不发问卷，不保存或覆盖已有结果。</span></div>${sourceView()}${rulesView()}${resultView()}<p class="modal-note yx-x-privacy">姓名、工号等身份列不参与统计，也不在此处展示。</p>`;
+  }
+
+  async function loadConfig() {
+    if (demo || !current()) return;
+    stopPreview(); const ticket = requestTicket; fileTicket++;
+    state.loading = true; state.reading = false; state.config = null; state.file = null; state.preview = null; state.projectId = null; state.error = ''; render();
+    try {
+      const result = configFrom(await request('/api/survey-response-imports/config', { method: 'GET' }));
+      if (!current() || ticket !== requestTicket) return;
+      state.config = result; state.projectId = result.defaultProjectId ?? null;
+    } catch (error) {
+      if (!current() || ticket !== requestTicket) return;
+      state.error = errorMessage(error, '主系统接入检查暂未完成，请稍后重试。');
+    } finally { if (current() && ticket === requestTicket) { state.loading = false; render(); } }
+  }
+
+  async function readFile(file) {
+    if (!current() || !ready() || !file) return;
+    stopPreview(); const ticket = ++fileTicket;
+    state.error = ''; state.file = null; state.preview = null; state.reading = true; state.filter = 'all'; render();
+    try {
+      if (!/\.xlsx$/i.test(file.name)) fail('请选择原平台导出的 .xlsx 工作簿。');
+      if (file.size === 0) fail('所选工作簿为空，请重新选择。');
+      if (file.size > state.config.maxBytes) fail('所选工作簿超过当前大小上限，请拆分后重试。');
+      const bytes = await file.arrayBuffer();
+      if (!current() || ticket !== fileTicket) return;
+      if (bytes.byteLength === 0 || bytes.byteLength > state.config.maxBytes) fail('读取到的文件大小不符合预览限制，请重新选择。');
+      state.file = { fileName: file.name, byteLength: bytes.byteLength, xlsxBase64: encodeBytes(bytes) };
+    } catch (error) {
+      if (!current() || ticket !== fileTicket) return;
+      state.error = errorMessage(error, '工作簿读取失败，请重新选择原平台导出的文件。');
+    } finally { if (current() && ticket === fileTicket) { state.reading = false; render(); } }
+  }
+
+  async function runPreview() {
+    if (!current() || !canPreview()) return;
+    stopPreview(); const ticket = requestTicket;
+    previewController = new AbortController();
+    state.error = ''; state.preview = null; state.previewing = true; state.filter = 'all';
+    const projectId = state.projectId;
+    const body = JSON.stringify({ fileName: state.file.fileName, xlsxBase64: state.file.xlsxBase64, projectId });
+    render();
+    try {
+      const response = await request('/api/survey-response-imports/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }, previewController.signal);
+      if (!current() || ticket !== requestTicket) return;
+      state.preview = previewFrom(response, state.config, projectId);
+    } catch (error) {
+      if (!current() || ticket !== requestTicket) return;
+      state.error = errorMessage(error, '这次预览未完成，请检查文件与项目后重试。');
+    } finally { if (current() && ticket === requestTicket) { state.previewing = false; previewController = null; render(); } }
+  }
+
+  function click(event) {
+    if (!current()) return;
+    const button = event.target.closest?.('[data-action]');
+    if (!button || !container.contains(button) || button.disabled) return;
+    if (button.dataset.action === 'sample' && demo && ['normal', 'mixed'].includes(button.dataset.value)) {
+      state.sample = button.dataset.value; state.preview = demoPreview(state.sample, state.projectId); state.filter = 'all'; render();
+    } else if (button.dataset.action === 'filter' && ['all', 'review'].includes(button.dataset.value)) { state.filter = button.dataset.value; render(); }
+    else if (button.dataset.action === 'preview') void runPreview();
+    else if (button.dataset.action === 'reload' && !state.loading) void loadConfig();
+  }
+
+  function change(event) {
+    if (!current()) return;
+    const input = event.target;
+    if (input.matches?.('[data-file]')) void readFile(input.files?.[0]);
+    else if (input.matches?.('[data-project]') && (demo || ready())) {
+      stopPreview();
+      const id = Number(input.value);
+      state.projectId = projects().some(project => project.id === id) ? id : null;
+      state.error = ''; state.preview = demo && state.projectId ? demoPreview(state.sample, state.projectId) : null; state.filter = 'all'; render();
+    }
+  }
+
+  container.addEventListener('click', click); container.addEventListener('change', change);
+  context.signal?.addEventListener('abort', cleanup, { once: true });
+  render();
+  if (context.mode === 'live') void loadConfig();
+  else if (!demo) { state.error = '页面尚未取得有效的运行模式，文件选择已关闭。'; render(); }
+  return cleanup;
+}

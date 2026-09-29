@@ -1,0 +1,64 @@
+/* Shell selectors do not style module-owned controls. */
+:root { color-scheme: light; }
+body.yx-demo-host { margin: 0; background: #f5f7f9; color: #233238; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; font-size: 14px; line-height: 1.65; }
+.yx-host-topbar, .yx-host-layout, .yx-host-sidebar, .yx-host-main, .yx-host-nav a, .yx-host-safety, .yx-host-notice { box-sizing: border-box; }
+.yx-host-topbar { height: 78px; display: flex; align-items: center; gap: 20px; padding: 0 32px; background: #fff; border-bottom: 1px solid #e4e9ec; }
+.yx-host-brand { display: flex; gap: 11px; align-items: center; color: #193a35; text-decoration: none; font-size: 21px; font-weight: 720; letter-spacing: .05em; }
+.yx-host-brand-mark { display: grid; place-items: center; height: 40px; width: 40px; background: #204f46; border-radius: 12px; color: white; font-size: 23px; }
+.yx-host-brand-subtitle { display: block; font-size: 10px; font-weight: 450; color: #82928e; letter-spacing: .15em; }
+.yx-host-demo-badge { border: 1px solid #e9d8a9; background: #fff9e8; color: #846026; padding: 4px 10px; border-radius: 6px; font-size: 12px; white-space: nowrap; }
+.yx-host-person { margin-left: auto; color: #647771; font-size: 12px; }
+.yx-host-layout { display: grid; grid-template-columns: 226px minmax(0, 1fr); min-height: calc(100vh - 78px); }
+.yx-host-sidebar { background: #fbfcfc; border-right: 1px solid #e4e9ec; padding: 29px 16px; }
+.yx-host-nav-heading { margin: 0 12px 16px; display: flex; align-items: center; justify-content: space-between; color: #84918e; font-size: 11px; letter-spacing: .16em; }
+#module-menu-toggle { display: none; }
+.yx-host-nav { display: grid; gap: 7px; }
+.yx-host-nav a { display: flex; align-items: center; gap: 13px; min-height: 46px; padding: 9px 13px; color: #526662; text-decoration: none; border: 1px solid transparent; border-radius: 8px; }
+.yx-host-nav a:hover { background: #eff4f2; }
+.yx-host-nav a[aria-current="page"] { border-color: #d0e1db; background: #e5efeb; color: #184f3e; font-weight: 650; }
+.yx-host-nav-code { font-size: 11px; font-variant-numeric: tabular-nums; color: #84918e; }
+.yx-host-sidebar-note { margin: 34px 13px 0; color: #97a29e; font-size: 11px; line-height: 1.9; }
+.yx-host-main { min-width: 0; padding: 26px 34px 20px; }
+.yx-host-safety { display: flex; gap: 15px; padding: 11px 15px; border: 1px solid #e6dfca; background: #faf8ef; border-radius: 8px; color: #85704e; font-size: 12px; }
+.yx-host-safety strong { flex-shrink: 0; font-weight: 600; }
+.yx-host-module-header { display: flex; gap: 20px; align-items: center; justify-content: space-between; margin: 29px 0 23px; }
+.yx-host-eyebrow { color: #81948e; font-size: 10px; letter-spacing: .13em; margin: 0 0 5px; }
+#module-heading { font-size: 25px; line-height: 1.45; font-weight: 650; letter-spacing: .025em; margin: 0; }
+#module-heading:focus { outline: none; }
+.yx-host-description { font-size: 12px; color: #7b8985; margin: 7px 0 0; }
+.yx-host-status { flex-shrink: 0; color: #637f76; border: 1px solid #d6e1dc; background: #edf4f0; border-radius: 20px; padding: 4px 10px; font-size: 11px; }
+.yx-host-status[data-state="error"], .yx-host-status[data-state="pending"] { background: #faf4e9; border-color: #e7dcc8; color: #947548; }
+.yx-host-outlet { min-width: 0; min-height: 440px; }
+.yx-host-module-root { min-width: 0; }
+.yx-host-notice { display: grid; justify-items: center; align-content: center; min-height: 340px; padding: 36px; border: 1px solid #e0e7e3; border-radius: 13px; background: #fff; text-align: center; }
+.yx-host-notice h2 { font-size: 20px; color: #49615a; margin: 0 0 12px; font-weight: 600; }
+.yx-host-notice p { max-width: 480px; color: #81908a; font-size: 13px; margin: 0; }
+.yx-host-footer { display: flex; justify-content: space-between; gap: 10px; border-top: 1px solid #e3e9e6; padding-top: 17px; margin-top: 30px; font-size: 11px; color: #97a39f; }
+.yx-host-toast { position: fixed; bottom: 24px; right: 24px; z-index: 100; max-width: min(440px, calc(100vw - 48px)); box-sizing: border-box; padding: 13px 19px; background: #244b40; border: 1px solid #396151; border-radius: 9px; box-shadow: 0 5px 25px #193c3326; color: white; overflow-wrap: anywhere; }
+.yx-host-skip { position: fixed; top: -100px; left: 12px; z-index: 1000; color: #fff; background: #244b40; padding: 9px 15px; }
+.yx-host-skip:focus { top: 8px; }
+.yx-host-nav a:focus-visible, #module-menu-toggle:focus-visible, .yx-host-brand:focus-visible { outline: 2px solid #316e5c; outline-offset: 3px; }
+@media (min-width: 1500px) { .yx-host-main { padding-left: 48px; padding-right: 48px; } }
+@media (max-width: 800px) {
+  .yx-host-topbar { height: 68px; padding: 0 18px; gap: 13px; }
+  .yx-host-person { display: none; }
+  .yx-host-demo-badge { margin-left: auto; font-size: 10px; }
+  .yx-host-layout { display: block; }
+  .yx-host-sidebar { padding: 12px 18px; border-right: 0; border-bottom: 1px solid #e4e9ec; }
+  .yx-host-nav-heading { margin: 0; font-size: 12px; letter-spacing: .05em; }
+  #module-menu-toggle { display: inline-block; border: 1px solid #d2ded8; border-radius: 6px; padding: 6px 12px; background: white; color: #48685b; font: inherit; letter-spacing: 0; }
+  .yx-host-nav { display: none; }
+  .yx-host-nav[data-open="true"] { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 12px; }
+  .yx-host-nav a { padding: 9px; gap: 8px; }
+  .yx-host-sidebar-note { display: none; }
+  .yx-host-main { padding: 19px 16px; }
+  .yx-host-safety { display: block; font-size: 11px; }
+  .yx-host-safety strong { display: block; margin-bottom: 3px; }
+  .yx-host-module-header { gap: 8px; margin-top: 23px; }
+  #module-heading { font-size: 23px; }
+  .yx-host-status { font-size: 10px; padding: 4px 8px; }
+  .yx-host-description { font-size: 11px; }
+  .yx-host-notice { padding: 25px; min-height: 300px; }
+  .yx-host-footer { display: block; line-height: 1.9; }
+  .yx-host-footer span { display: block; }
+}

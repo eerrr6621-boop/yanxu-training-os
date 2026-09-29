@@ -17,9 +17,9 @@ concurrency:
 
 jobs:
   regression:
-    name: Java 17 · isolated API, integrity and faculty checks
+    name: Java 17 · isolated workflow and module checks
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 45
 
     steps:
       - name: Check out source
@@ -35,6 +35,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install workbook verification dependencies
+        run: python -m pip install -r requirements-test.txt
 
       - name: Compile and run isolated regression suites
         shell: bash

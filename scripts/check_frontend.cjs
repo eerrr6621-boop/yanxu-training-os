@@ -218,12 +218,22 @@ function inspectScripts(files, sourceByPath, webRoot) {
   }
   for (const file of files.filter((item) => path.extname(item).toLowerCase() === '.html')) {
     const source = sourceByPath.get(file);
-    const blocks = [...source.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)];
+    const blocks = [...source.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)];
     blocks.forEach((match, index) => {
-      if (!match[1].trim()) return;
+      const attributes = match[1];
+      if (/\bsrc\s*=/i.test(attributes) || !match[2].trim()) return;
+      const typeMatch = /\btype\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(attributes);
+      const type = typeMatch ? (typeMatch[1] ?? typeMatch[2] ?? typeMatch[3]).trim().toLowerCase() : '';
+      if (type && !['module', 'text/javascript', 'application/javascript', 'text/ecmascript', 'application/ecmascript'].includes(type)) return;
       inlineCount += 1;
-      try { new vm.Script(match[1], { filename: path.relative(webRoot, file) + ':inline-' + (index + 1) }); }
-      catch (error) { errors.push({ file: path.relative(webRoot, file), detail: String(error.message || error).slice(0, 500) }); }
+      const filename = path.relative(webRoot, file) + ':inline-' + (index + 1);
+      if (type === 'module') {
+        const checked = spawnSync(process.execPath, ['--input-type=module', '--check'], { input: match[2], encoding: 'utf8' });
+        if (checked.status !== 0) errors.push({ file: filename, detail: (checked.stderr || checked.stdout || 'module syntax error').trim().slice(0, 500) });
+      } else {
+        try { new vm.Script(match[2], { filename }); }
+        catch (error) { errors.push({ file: filename, detail: String(error.message || error).slice(0, 500) }); }
+      }
     });
   }
   return { checked: externalCount + inlineCount, external_count: externalCount, inline_count: inlineCount, errors };

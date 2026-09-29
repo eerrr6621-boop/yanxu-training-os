@@ -16,5 +16,7 @@ if not exist out\com\training\Main.class (
 )
 echo 启动服务器，浏览器将自动打开 http://localhost:8080
 echo 关闭本窗口即可停止系统。
-tools\jdk\bin\java.exe -Dfile.encoding=UTF-8 -Dbootstrap.demo=true -Ddata.dir=demo-data -cp "out;lib/h2.jar;lib/pdfbox-app-3.0.8.jar;lib/ip2region-3.3.7.jar" com.training.Main 8080
+set "YANXU_BOOTSTRAP_ARGS=-Dbootstrap.demo=false -Ddata.dir=data"
+if "%~1"=="--demo" set "YANXU_BOOTSTRAP_ARGS=-Dbootstrap.demo=true -Ddata.dir=demo-data -Dbind.address=127.0.0.1"
+tools\jdk\bin\java.exe -Dfile.encoding=UTF-8 %YANXU_BOOTSTRAP_ARGS% -cp "out;lib/h2.jar;lib/pdfbox-app-3.0.8.jar;lib/ip2region-3.3.7.jar" com.training.Main 8080
 pause

@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <title>M01 · 合成人员与权限演示</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body style="margin: 0; background: #f5f7f8;">
+    <main id="identity-demo"></main>
+    <script type="module">
+      import { mount } from './index.js';
+      const controller = new AbortController();
+      const cleanup = await mount(document.getElementById('identity-demo'), {
+        mode: new URLSearchParams(location.search).get('mode') === 'live' ? 'live' : 'demo',
+        signal: controller.signal,
+        request() { throw new Error('合成演示不允许业务网络请求。'); },
+        user: null,
+        notify() {},
+        navigate() {},
+      });
+      window.addEventListener('pagehide', () => { controller.abort(); cleanup?.(); }, { once: true });
+    </script>
+  </body>
+</html>

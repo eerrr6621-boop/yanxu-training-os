@@ -96,6 +96,7 @@ public class Db {
             // 不从单位/简历推断常驻地；历史未知值保留，首次编辑时由管理员补录。
             st.execute("ALTER TABLE teachers ADD COLUMN IF NOT EXISTS base_province VARCHAR(64)");
             st.execute("ALTER TABLE teachers ADD COLUMN IF NOT EXISTS base_city VARCHAR(64)");
+            st.execute("ALTER TABLE teachers ADD COLUMN IF NOT EXISTS teacher_level VARCHAR(32)");
             st.execute("ALTER TABLE demands ADD COLUMN IF NOT EXISTS training_province VARCHAR(64)");
             st.execute("ALTER TABLE demands ADD COLUMN IF NOT EXISTS training_city VARCHAR(64)");
             st.execute("ALTER TABLE demands ADD COLUMN IF NOT EXISTS training_mode VARCHAR(16)");
@@ -121,6 +122,22 @@ public class Db {
             }
         }
         seed();
+        OrganizationAccessStore.init();
+        OrganizationAccountImportHost.init();
+        OrganizationManagementSupplementHttp.init();
+        OrganizationManagementGroupHttp.init();
+        TeacherRosterImportHost.init();
+        NotificationChannelsAccountEmailPreparation.init();
+        FirstBindStore.init();
+        TrustedDevices.init();
+        WorkflowIntegration.init();
+        NotificationChannelsIntegration.init();
+        CourseCatalogIntegration.init();
+        DeliverySettlementIntegration.init();
+        try { SurveySummaryImportsFormal.init(); }
+        catch (SQLException failure) { throw failure; }
+        catch (Exception failure) { throw new SQLException("评分汇总初始化失败", failure); }
+        TrainingSummariesIntegration.init();
     }
 
     private static void seed() throws SQLException {

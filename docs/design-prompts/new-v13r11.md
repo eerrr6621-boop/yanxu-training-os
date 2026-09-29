@@ -5,7 +5,7 @@
 ## 来源与授权
 
 - 初稿使用内置 ImageGen 生成一次，没有变体或重试。
-- 原始绝对路径：`/Users/tongyuqing/.codex-account2/generated_images/01a076d2-eb6d-7e80-857b-05c2faf29947/exec-f077595a-18e4-4ca7-aedc-78e05fc077b7.png`
+- 原始绝对路径：`$HOME/.codex-account2/generated_images/01a076d2-eb6d-7e80-857b-05c2faf29947/exec-f077595a-18e4-4ca7-aedc-78e05fc077b7.png`
 - 原稿按字节原样保存在 `design/login/v13r11-originals/new-wordmark.png`，2048×768，1,131,830 bytes，RGBA。
 - 原稿 SHA-256：`f49112b9e37105e3ee16bebe7e5651c0bfa07b40651407db1d13cfccfba1b404`
 - 用户随后明确授权：本地去掉 NEW 多余光晕，保留生成字形，整理透明裁边、压缩小图后接入导航。本资产任务仅执行这些处理；不重绘字形、不新增设计、不再调用生成工具。

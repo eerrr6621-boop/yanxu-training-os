@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>内部逻辑测试 · 需求与受理（非正式界面）</title>
+  <link rel="stylesheet" href="./intake.css">
+</head>
+<body style="margin:0">
+  <main id="intake-root"></main>
+  <script type="module">
+    import { mount } from './index.js';
+    const lifecycle = new AbortController();
+    await mount(document.getElementById('intake-root'), {
+      mode: 'demo', signal: lifecycle.signal,
+      user: { user_code: 'DEMO-FILLER-01', display_name: '合成填报人 A', synthetic: true },
+      request() { throw new Error('合成演示禁止业务请求'); },
+      notify() {}, navigate() {},
+    });
+    window.addEventListener('pagehide', () => lifecycle.abort(), { once: true });
+  </script>
+</body>
+</html>

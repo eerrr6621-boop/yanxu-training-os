@@ -1,0 +1,11 @@
+project_key,summary_key,metric_key,value,unit,sample_count,revision
+DEMO-P001,DEMO-UNIT-A,satisfaction_pct,4.6,SCORE,80,1
+DEMO-P999,DEMO-UNKNOWN-A,satisfaction_pct,88,PERCENT,50,1
+DEMO-P001,DEMO-DUP-A,satisfaction_pct,91,PERCENT,80,1
+DEMO-P001,DEMO-DUP-A,satisfaction_pct,91,PERCENT,80,1
+DEMO-P002,DEMO-CONFLICT-A,satisfaction_pct,90,PERCENT,50,1
+DEMO-P002,DEMO-CONFLICT-A,satisfaction_pct,92,PERCENT,50,1
+DEMO-P001,DEMO-S001,satisfaction_pct,92.5,PERCENT,40,v1
+DEMO-P002,DEMO-S002,satisfaction_pct,90,PERCENT,50,v1
+DEMO-P001,DEMO-S003,satisfaction_pct,94,PERCENT,80,v2
+DEMO-P002,DEMO-SCORE-A,overall_score,6,SCORE,50,1

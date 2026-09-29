@@ -14,3 +14,47 @@ nohup.out
 
 # Internal operations handoff docs (credentials & runbooks) — intentionally not public
 handoff/
+
+# Local semantic artifacts/cache/venvs are never web assets or source control.
+semantic/model/
+semantic/.venv*/
+__pycache__/
+*.pyc
+*.sqlite
+# Internal organization directories are deployed privately, never as open-source data.
+config/dispatch-organizations.local.json
+config/dispatch-route-references.local.json
+config/transport-matrix.local.json
+config/transport-matrices.local/
+# Unlicensed historical research is not a deployable/public timetable catalog.
+config/rail-timetable.json
+
+# Deployment secrets and private account-delivery artifacts.
+.env
+.env.*
+*.pem
+*.key
+*credentials*.json
+*auth-state*.json
+private*/
+node_modules/
+
+# Local intake/operations records are not part of the public source release.
+docs/HANDOFF_20260909.md
+docs/GOAL_STATUS_20260909.md
+docs/GOAL_CHECKPOINT_20260907.md
+docs/VALIDATION_CHECKPOINT_20260908.md
+docs/PRODUCTION_DRAFT_UPLOAD_20260908.md
+docs/modules/M01/APPROVAL_ROLE_INTAKE.md
+docs/modules/M01/ORG_INTAKE.md
+docs/modules/M01/ROSTER_INTAKE.md
+docs/modules/M01/TEACHER_ACCOUNT_INTAKE.md
+docs/modules/M03/ORG_INTAKE_V1.*
+docs/modules/M04/POLICY_REVIEW_20260921.md
+docs/modules/M05/POLICY_REVIEW.md
+docs/modules/M05/*STATUS.md
+docs/modules/M08/DECISION_MATERIALS.md
+docs/modules/S01/ACCESS_AUDIT.md
+docs/modules/S01/IDENTITY_MATERIALS.md
+docs/modules/S01/MAIL_163_SETUP.md
+semantic/reports/

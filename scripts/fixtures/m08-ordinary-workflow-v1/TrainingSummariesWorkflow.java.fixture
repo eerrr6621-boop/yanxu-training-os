@@ -1,0 +1,212 @@
+package com.training;
+
+import com.sun.net.httpserver.HttpExchange;
+import java.math.BigDecimal;
+import java.sql.*;
+import java.time.Instant;
+import java.util.*;
+import static com.training.OrganizationAccess.*;
+
+/** Formal summary workflow. Server-resolved assignments; immutable content and append-only events. */
+public final class TrainingSummariesWorkflow {
+    private TrainingSummariesWorkflow() {}
+    private static final long MAX=9007199254740991L;
+    private static final int LIMIT=2000;
+    private static final long MAX_EVENT_CHARS=8L*1024*1024;
+    private static final String ZERO="0".repeat(64), FORMAT="M08-WORKFLOW-1";
+    public static final String DOCX="application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    public record Download(byte[] bytes,String filename,long workflowVersion) {
+        public Download { bytes=bytes.clone(); }
+        @Override public byte[] bytes(){return bytes.clone();}
+    }
+    private record Policy(String version,String order) {}
+    private record Event(long version,long revision,String action,String actor,long account,String config,String at,Map<String,Object> data,String previous,String hash) {}
+    private static final class State {
+        long version,revision,submitterAccount;String hash=ZERO,status="DRAFT",submitter,branch,bp,revisionHash;
+        Policy policy;final Map<String,Event> approvals=new LinkedHashMap<>();final List<Event> events=new ArrayList<>();
+    }
+    /** Called only by TrainingSummariesIntegration.init after its empty draft tables. */
+    static void init() throws SQLException {
+        if(!Db.get().getAutoCommit())throw new SQLException("总结流程初始化不能嵌入事务");
+        Db.exec("CREATE TABLE IF NOT EXISTS m08_summary_workflow_heads(project_id BIGINT PRIMARY KEY REFERENCES m08_summary_heads(project_id),version BIGINT NOT NULL CHECK(version>0),head_hash VARCHAR(64) NOT NULL)");
+        Db.exec("CREATE TABLE IF NOT EXISTS m08_summary_workflow_events(project_id BIGINT NOT NULL REFERENCES m08_summary_workflow_heads(project_id),version BIGINT NOT NULL CHECK(version>0),revision BIGINT NOT NULL,action VARCHAR(24) NOT NULL,actor_code VARCHAR(120) NOT NULL,account_id BIGINT NOT NULL,config_version VARCHAR(128) NOT NULL,created_at VARCHAR(40) NOT NULL,payload_json CLOB NOT NULL,previous_hash VARCHAR(64) NOT NULL,event_hash VARCHAR(64) NOT NULL,PRIMARY KEY(project_id,version),FOREIGN KEY(project_id,revision) REFERENCES m08_summary_revisions(project_id,revision))");
+        Db.exec("CREATE TABLE IF NOT EXISTS m08_summary_workflow_requests(account_id BIGINT NOT NULL,request_id VARCHAR(96) NOT NULL,project_id BIGINT NOT NULL,actor_code VARCHAR(120) NOT NULL,operation VARCHAR(24) NOT NULL,payload_hash VARCHAR(64) NOT NULL,result_version BIGINT NOT NULL,PRIMARY KEY(account_id,request_id),FOREIGN KEY(project_id,result_version) REFERENCES m08_summary_workflow_events(project_id,version))");
+    }
+    /** No HTTP policy setter. Deployment configuration is explicit and defaults to unconfigured. */
+    private static Policy configured() throws Api.ApiException {
+        String order=System.getProperty("training.summary.review.order","").strip();
+        String version=System.getProperty("training.summary.review.policyVersion","").strip();
+        if(order.isEmpty()&&version.isEmpty())return null;
+        if(!Set.of("BRANCH_THEN_BP","UNORDERED").contains(order)||!version.matches("[A-Za-z0-9][A-Za-z0-9_.:-]{0,95}"))fail(503,"总结复核规则配置无效");
+        return new Policy(version,order);
+    }
+    public static Map<String,Object> read(Auth.Session session,long project)throws Exception {
+        synchronized(Api.MUTATION_LOCK){noTransaction();var snapshot=TrainingSummariesIntegration.workflowSnapshot(session,project);State state=recover(snapshot);return describe(session,snapshot,state);}
+    }
+    public static Map<String,Object> history(Auth.Session session,long project,int offset,int limit)throws Exception {
+        synchronized(Api.MUTATION_LOCK){noTransaction();if(offset<0||offset>LIMIT||limit<1||limit>100)fail(400,"流程历史分页参数无效");var snapshot=TrainingSummariesIntegration.workflowSnapshot(session,project);State state=recover(snapshot);List<Map<String,Object>> items=new ArrayList<>();for(int i=state.events.size()-1-offset;i>=0&&items.size()<limit;i--)items.add(eventView(state.events.get(i)));return map("project_id",project,"workflow_version",state.version,"items",items,"total",state.events.size(),"offset",offset,"limit",limit,"read_only",true);}
+    }
+    /** Used in the existing response without another public read or nested transaction. */
+    static Map<String,Object> describe(Auth.Session session,TrainingSummariesIntegration.WorkflowSnapshot snapshot)throws Exception{return describe(session,snapshot,recover(snapshot));}
+    static void guardEdit(TrainingSummariesIntegration.WorkflowSnapshot snapshot)throws Exception {if("SUBMITTED".equals(effective(recover(snapshot),snapshot.revision())))fail(409,"总结正在复核，退回后才能修改或刷新来源");}
+    private static String effective(State s,long revision){return s.revision!=revision?"DRAFT":s.status;}
+    private static Map<String,Object> describe(Auth.Session session,TrainingSummariesIntegration.WorkflowSnapshot snapshot,State s)throws Exception {
+        String status=effective(s,snapshot.revision());Person p=OrganizationAccessStore.person(session);boolean mutable=editable(snapshot.projectStatus());
+        boolean edit=mutable&&!status.equals("SUBMITTED")&&allowed(session,"summary.edit",Action.HANDLE,snapshot.organization());
+        boolean submit=edit&&status.equals("DRAFT")&&snapshot.revision()>0&&configured()!=null&&p.personCode().equals(snapshot.author());
+        String role=null;if(status.equals("SUBMITTED")&&mutable){if(p.personCode().equals(s.branch)&&!s.approvals.containsKey("BRANCH")&&allowed(session,"summary.review.branch",Action.HANDLE,snapshot.organization()))role="BRANCH";if(p.personCode().equals(s.bp)&&!s.approvals.containsKey("BP")&&(s.policy.order.equals("UNORDERED")||s.approvals.containsKey("BRANCH"))&&allowed(session,"summary.review.bp",Action.HANDLE,snapshot.organization()))role="BP";}
+        boolean export=status.equals("APPROVED")&&Auth.isAdmin(session)&&allowed(session,"summary.export",Action.EXPORT,snapshot.organization());
+        List<Map<String,Object>> decisions=new ArrayList<>();for(var entry:s.approvals.entrySet())decisions.add(map("review_role",entry.getKey(),"actor_code",entry.getValue().actor,"reviewed_at",entry.getValue().at,"workflow_version",entry.getValue().version));
+        return map("project_id",snapshot.project(),"revision",snapshot.revision(),"workflow_version",s.version,"status",status,"submitted_revision",s.version==0?null:s.revision,
+            "submitter_code",s.submitter,"branch_reviewer_code",s.branch,"bp_reviewer_code",s.bp,"review_order",s.policy==null?null:s.policy.order,"policy_version",s.policy==null?null:s.policy.version,
+            "policy_configured",configured()!=null,"decisions",decisions,"capabilities",map("edit",edit,"refresh_sources",edit&&snapshot.revision()>0,"submit",submit,"review",role!=null,"review_role",role,"export",export),"photo_policy",TrainingSummariesPhotos.POLICY,"synthetic",false);
+    }
+    public static Map<String,Object> mutate(String operation,Auth.Session session,Map<String,Object> input)throws Exception {
+        if(operation==null||!Set.of("submit","review").contains(operation))throw new Api.ApiException(404,"总结流程操作不存在");
+        synchronized(Api.MUTATION_LOCK){noTransaction();Map<String,Object> body=request(input,operation);long project=number(body.get("project_id"),false);String request=requestId(body.get("request_id"));String payload=hash(canonical(map("operation",operation,"body",body)));
+            try{return Db.transaction(()->{
+                var snapshot=TrainingSummariesIntegration.workflowSnapshot(session,project);State state=recover(snapshot);Person actor=OrganizationAccessStore.person(session);requireMutable(snapshot);authorizeOperation(operation,session,snapshot,state,body,actor,false);
+                Map<String,Object> retry=retry(session,request,project,actor.personCode(),operation,payload,state);
+                if(retry!=null){verifyReplay(body,state.events.get(Math.toIntExact(number(retry.get("result_version"),false)-1)),operation);var result=describe(session,snapshot,state);result.put("replayed",true);result.put("result_workflow_version",number(retry.get("result_version"),false));return result;}
+                versions(body,snapshot,state);Map<String,Object> data;String action;
+                if(operation.equals("submit")){
+                    if(!effective(state,snapshot.revision()).equals("DRAFT"))fail(409,"请保存新的草稿后再提交");
+                    if(snapshot.content()==null||snapshot.content().isEmpty())fail(400,"请填写培训总结正文");
+                    if(!actor.personCode().equals(snapshot.author()))fail(403,"请由当前草稿填写人提交");
+                    Policy policy=configured();if(policy==null)fail(409,"总结复核规则尚未确认");
+                    String[] assigned=assignees(actor,snapshot.organization());freshSources(session,snapshot);
+                    data=map("revision_hash",snapshot.revisionHash(),"submitter_code",actor.personCode(),"branch_reviewer_code",assigned[0],"bp_reviewer_code",assigned[1],"policy_version",policy.version,"review_order",policy.order);action="SUBMIT";
+                }else{
+                    requireReview(session,snapshot,state,body,actor,true);String decision=(String)body.get("decision"),role=(String)body.get("review_role"),note=(String)body.getOrDefault("note","");
+                    if(decision.equals("APPROVE"))freshSources(session,snapshot);
+                    if(decision.equals("RETURN")&&note.isBlank())fail(400,"退回时请填写修改意见");
+                    data=map("review_role",role,"note",note);action=decision;
+                }
+                Event added=append(snapshot,state,action,actor.personCode(),session.uid,data);
+                verifySnapshot(session,snapshot);State recovered=recover(snapshot);
+                Db.exec("INSERT INTO m08_summary_workflow_requests(account_id,request_id,project_id,actor_code,operation,payload_hash,result_version) VALUES(?,?,?,?,?,?,?)",session.uid,request,project,actor.personCode(),operation,payload,added.version);
+                verifySnapshot(session,snapshot);authorizeOperation(operation,session,snapshot,state,body,actor,false);
+                var result=describe(session,snapshot,recovered);result.put("replayed",false);result.put("result_workflow_version",added.version);return result;
+            });}catch(SQLException e){if(Set.of("23505","40001").contains(e.getSQLState()))fail(409,"总结流程已更新，请核对当前版本后重试");throw e;}
+        }
+    }
+    public static Download export(Auth.Session session,Map<String,Object> input)throws Exception {
+        synchronized(Api.MUTATION_LOCK){noTransaction();Map<String,Object> body=request(input,"export");long project=number(body.get("project_id"),false);String request=requestId(body.get("request_id")),payload=hash(canonical(map("operation","export","body",body)));
+            return Db.transaction(()->{
+                var snapshot=TrainingSummariesIntegration.workflowSnapshot(session,project);State state=recover(snapshot);Person actor=OrganizationAccessStore.person(session);authorizeOperation("export",session,snapshot,state,body,actor,false);
+                if(!effective(state,snapshot.revision()).equals("APPROVED"))fail(409,"当前总结须经分公司负责人和BP两方复核通过后导出");
+                Map<String,Object> retry=retry(session,request,project,actor.personCode(),"export",payload,state);if(retry==null)versions(body,snapshot,state);else if(number(body.get("expected_version"),false)!=snapshot.revision())fail(409,"该导出请求已不再对应当前总结版本");
+                freshSources(session,snapshot);Map<String,Object> review=describe(session,snapshot,state);byte[] bytes=TrainingSummariesWord.render(snapshot,review);String digest=hashBytes(bytes),filename="training-summary-"+project+"-v"+snapshot.revision()+".docx";
+                long resultVersion;if(retry==null){Event event=append(snapshot,state,"EXPORT",actor.personCode(),session.uid,map("filename",filename,"document_hash",digest));resultVersion=event.version;Db.exec("INSERT INTO m08_summary_workflow_requests(account_id,request_id,project_id,actor_code,operation,payload_hash,result_version) VALUES(?,?,?,?,?,?,?)",session.uid,request,project,actor.personCode(),"export",payload,resultVersion);}else{resultVersion=number(retry.get("result_version"),false);Event event=state.events.get(Math.toIntExact(resultVersion-1));verifyReplay(body,event,"export");if(!event.action.equals("EXPORT")||!digest.equals(event.data.get("document_hash")))corrupt();}
+                verifySnapshot(session,snapshot);authorizeOperation("export",session,snapshot,state,body,actor,false);return new Download(bytes,filename,resultVersion);
+            });
+        }
+    }
+    private static void authorizeOperation(String operation,Auth.Session session,TrainingSummariesIntegration.WorkflowSnapshot snap,State state,Map<String,Object> body,Person person,boolean stage)throws Exception {
+        if(operation.equals("submit")){require(session,"summary.edit",Action.HANDLE,snap.organization());return;}
+        if(operation.equals("export")){if(!Auth.isAdmin(Auth.current(session)))fail(403,"正式Word仅限管理员账号导出");require(session,"summary.export",Action.EXPORT,snap.organization());return;}
+        requireReview(session,snap,state,body,person,stage);
+    }
+    private static void requireReview(Auth.Session session,TrainingSummariesIntegration.WorkflowSnapshot snap,State state,Map<String,Object> body,Person person,boolean stage)throws Exception {
+        String role=(String)body.get("review_role");require(session,role.equals("BRANCH")?"summary.review.branch":"summary.review.bp",Action.HANDLE,snap.organization());
+        if(!person.personCode().equals(role.equals("BRANCH")?state.branch:state.bp)||person.personCode().equals(state.submitter)||session.uid==state.submitterAccount)fail(403,"当前人员不是本次提交指定的复核人");
+        if(state.approvals.entrySet().stream().anyMatch(e->!e.getKey().equals(role)&&e.getValue().account==session.uid))fail(403,"两方复核不能由同一个账号完成");
+        if(stage){if(!effective(state,snap.revision()).equals("SUBMITTED")||state.approvals.containsKey(role))fail(409,"该复核步骤已处理或当前不在复核中");if(role.equals("BP")&&state.policy.order.equals("BRANCH_THEN_BP")&&!state.approvals.containsKey("BRANCH"))fail(409,"请先由分公司负责人复核");}
+    }
+    private static String[] assignees(Person submitter,String org)throws Exception {
+        String branch=submitter.leaderPersonCode(),bp=submitter.bpPersonCode();
+        if(branch==null||bp==null||branch.equals(bp)||branch.equals(submitter.personCode())||bp.equals(submitter.personCode()))fail(409,"请先配置两位不同且非填报人本人的负责人和BP");
+        Configuration c=OrganizationAccessStore.configuration();assigned(c,branch,"summary.review.branch",org);assigned(c,bp,"summary.review.bp",org);return new String[]{branch,bp};
+    }
+    private static void assigned(Configuration c,String code,String resource,String org)throws Exception {
+        List<AccountBinding> bindings=c.accountBindings().stream().filter(b->b.enabled()&&b.personCode().equals(code)).toList();if(bindings.size()!=1)fail(409,"复核人员缺少唯一有效账号绑定");long uid=bindings.get(0).accountId();Map<String,Object> user=Db.one("SELECT status FROM users WHERE id=?",uid);
+        if(user==null||!(user.get("status") instanceof Number n)||n.intValue()!=1||!new Engine(c).authorize("summary-assignee",ignored->OptionalLong.of(uid),new Resource(resource,org),Action.HANDLE).allowed())fail(409,"复核人员账号或对应机构范围的总结权限未配置");
+    }
+    private static void freshSources(Auth.Session session,TrainingSummariesIntegration.WorkflowSnapshot snap)throws Exception {
+        TrainingSummariesPhotos.verify(snap);
+        TrainingSummariesIntegration.requireWorkflowSources(session,snap);
+    }
+    private static void versions(Map<String,Object> body,TrainingSummariesIntegration.WorkflowSnapshot snapshot,State state)throws Api.ApiException {
+        if(number(body.get("expected_version"),false)!=snapshot.revision()||number(body.get("expected_workflow_version"),true)!=state.version)fail(409,"总结正文或复核进度已更新，请重新查看后操作");
+    }
+    private static Map<String,Object> retry(Auth.Session session,String request,long project,String actor,String op,String payload,State state)throws Exception {
+        var retry=Db.one("SELECT * FROM m08_summary_workflow_requests WHERE account_id=? AND request_id=?",session.uid,request);if(retry==null)return null;
+        if(number(retry.get("project_id"),false)!=project||!actor.equals(retry.get("actor_code"))||!op.equals(retry.get("operation"))||!payload.equals(retry.get("payload_hash")))fail(409,"请求编号已用于其他内容或人员绑定");
+        long version=number(retry.get("result_version"),false);if(version>state.events.size())corrupt();Event event=state.events.get(Math.toIntExact(version-1));if(event.account!=session.uid||!event.actor.equals(actor)||!(op.equals("submit")?event.action.equals("SUBMIT"):op.equals("review")?Set.of("APPROVE","RETURN").contains(event.action):event.action.equals("EXPORT")))corrupt();return retry;
+    }
+    private static void verifyReplay(Map<String,Object> body,Event event,String operation)throws Exception {
+        if(number(body.get("expected_version"),false)!=event.revision||number(body.get("expected_workflow_version"),true)!=event.version-1)corrupt();
+        if(operation.equals("review")&&(!Objects.equals(body.get("review_role"),event.data.get("review_role"))||!Objects.equals(body.get("decision"),event.action)||!Objects.equals(body.get("note"),event.data.get("note"))))corrupt();
+    }
+    private static long eventChars(long project)throws Exception {
+        return number(Db.one("SELECT COALESCE(SUM(CHAR_LENGTH(payload_json)),0) AS amount FROM m08_summary_workflow_events WHERE project_id=?",project).get("amount"),true);
+    }
+    private static void verifySnapshot(Auth.Session session,TrainingSummariesIntegration.WorkflowSnapshot expected)throws Exception {
+        TrainingSummariesPhotos.verify(expected);
+        if(!expected.equals(TrainingSummariesIntegration.workflowSnapshot(session,expected.project())))fail(409,"账号、来源或总结版本已变化，请重新查看");
+    }
+    private static Event append(TrainingSummariesIntegration.WorkflowSnapshot snap,State state,String action,String actor,long account,Map<String,Object> data)throws Exception {
+        if(state.version>=LIMIT||eventChars(snap.project())+canonical(data).length()>MAX_EVENT_CHARS)fail(409,"总结流程历史达到当前技术容量上限");long next=state.version+1;String config=OrganizationAccessStore.configuration().version();Event raw=new Event(next,snap.revision(),action,actor,account,config,Instant.now().toString(),data,state.hash,"");Event event=new Event(next,raw.revision,action,actor,account,config,raw.at,data,state.hash,eventHash(snap.project(),raw));
+        if(state.version==0)Db.exec("INSERT INTO m08_summary_workflow_heads(project_id,version,head_hash) VALUES(?,?,?)",snap.project(),next,event.hash);
+        else try(PreparedStatement p=Db.get().prepareStatement("UPDATE m08_summary_workflow_heads SET version=?,head_hash=? WHERE project_id=? AND version=? AND head_hash=?")){p.setLong(1,next);p.setString(2,event.hash);p.setLong(3,snap.project());p.setLong(4,state.version);p.setString(5,state.hash);if(p.executeUpdate()!=1)fail(409,"总结复核状态已更新");}
+        Db.exec("INSERT INTO m08_summary_workflow_events(project_id,version,revision,action,actor_code,account_id,config_version,created_at,payload_json,previous_hash,event_hash) VALUES(?,?,?,?,?,?,?,?,?,?,?)",snap.project(),next,event.revision,action,actor,account,config,event.at,canonical(data),state.hash,event.hash);return event;
+    }
+    static void verifyHistory(String operation,long project,long revision)throws Exception {
+        State state=recover(project,revision);
+        if(operation.equals("archive")&&effective(state,revision).equals("SUBMITTED"))fail(409,"总结正在复核，请先完成复核或退回后归档");
+    }
+    private static State recover(TrainingSummariesIntegration.WorkflowSnapshot snapshot)throws Exception{return recover(snapshot.project(),snapshot.revision());}
+    private static State recover(long project,long latestRevision)throws Exception {
+        State state=new State();Map<String,Object> head=Db.one("SELECT * FROM m08_summary_workflow_heads WHERE project_id=?",project);if(head==null){if(!Db.query("SELECT version FROM m08_summary_workflow_events WHERE project_id=?",project).isEmpty())corrupt();return state;}
+        try{long expected=number(head.get("version"),false);if(expected>LIMIT||eventChars(project)>MAX_EVENT_CHARS)corrupt();List<Map<String,Object>> rows=Db.query("SELECT * FROM m08_summary_workflow_events WHERE project_id=? ORDER BY version LIMIT ?",project,LIMIT+1);if(rows.size()!=expected)corrupt();
+            for(Map<String,Object> row:rows){String raw=str(row.get("payload_json"),30000);Map<String,Object> data=object(Json.parse(raw));if(!raw.equals(canonical(data)))corrupt();Event event=new Event(number(row.get("version"),false),number(row.get("revision"),false),str(row.get("action"),24),str(row.get("actor_code"),120),number(row.get("account_id"),false),str(row.get("config_version"),128),str(row.get("created_at"),40),data,digest(row.get("previous_hash")),digest(row.get("event_hash")));Instant.parse(event.at);
+                if(event.version!=state.version+1||event.revision>latestRevision||!event.previous.equals(state.hash)||!event.hash.equals(eventHash(project,event)))corrupt();
+                apply(project,state,event);state.version=event.version;state.hash=event.hash;state.events.add(event);
+            }
+            if(!state.hash.equals(digest(head.get("head_hash")))||(state.status.equals("SUBMITTED")&&state.revision!=latestRevision))corrupt();return state;
+        }catch(Api.ApiException|RuntimeException invalid){throw new Api.ApiException(409,"总结复核历史校验失败，请保留记录并核对");}
+    }
+    private static void apply(long project,State state,Event event)throws Exception {
+        Map<String,Object>d=event.data;
+        if(event.action.equals("SUBMIT")){
+            keys(d,Set.of("revision_hash","submitter_code","branch_reviewer_code","bp_reviewer_code","policy_version","review_order"));
+            if(state.status.equals("SUBMITTED")||event.revision<=state.revision)corrupt();
+            String submitter=str(d.get("submitter_code"),120),branch=str(d.get("branch_reviewer_code"),120),bp=str(d.get("bp_reviewer_code"),120),order=str(d.get("review_order"),32),policy=str(d.get("policy_version"),96);
+            if(!event.actor.equals(submitter)||branch.equals(bp)||submitter.equals(branch)||submitter.equals(bp)||!Set.of("BRANCH_THEN_BP","UNORDERED").contains(order))corrupt();
+            Map<String,Object>revision=Db.one("SELECT revision_hash,actor_code FROM m08_summary_revisions WHERE project_id=? AND revision=?",project,event.revision);if(revision==null||!Objects.equals(revision.get("revision_hash"),d.get("revision_hash"))||!submitter.equals(revision.get("actor_code")))corrupt();
+            state.revision=event.revision;state.revisionHash=digest(d.get("revision_hash"));state.submitter=submitter;state.submitterAccount=event.account;state.branch=branch;state.bp=bp;state.policy=new Policy(policy,order);state.approvals.clear();state.status="SUBMITTED";return;
+        }
+        if(event.revision!=state.revision)corrupt();
+        if(event.action.equals("EXPORT")){keys(d,Set.of("filename","document_hash"));if(!state.status.equals("APPROVED")||!Objects.equals(d.get("filename"),"training-summary-"+project+"-v"+event.revision+".docx"))corrupt();digest(d.get("document_hash"));return;}
+        if(!Set.of("APPROVE","RETURN").contains(event.action)||!state.status.equals("SUBMITTED"))corrupt();keys(d,Set.of("review_role","note"));String role=str(d.get("review_role"),16),note=note(d.get("note"));if(!Set.of("BRANCH","BP").contains(role)||state.approvals.containsKey(role)||!event.actor.equals(role.equals("BRANCH")?state.branch:state.bp))corrupt();
+        if(event.account==state.submitterAccount||state.approvals.values().stream().anyMatch(e->e.account==event.account))corrupt();
+        if(role.equals("BP")&&state.policy.order.equals("BRANCH_THEN_BP")&&!state.approvals.containsKey("BRANCH"))corrupt();
+        if(event.action.equals("RETURN")){if(note.isBlank())corrupt();state.status="RETURNED";return;}
+        state.approvals.put(role,event);if(state.approvals.size()==2)state.status="APPROVED";
+    }
+    private static Map<String,Object> eventView(Event e){Map<String,Object> out=map("workflow_version",e.version,"revision",e.revision,"action",e.action,"actor_code",e.actor,"created_at",e.at);if(e.action.equals("SUBMIT")){out.put("review_order",e.data.get("review_order"));out.put("policy_version",e.data.get("policy_version"));out.put("branch_reviewer_code",e.data.get("branch_reviewer_code"));out.put("bp_reviewer_code",e.data.get("bp_reviewer_code"));}else if(Set.of("APPROVE","RETURN").contains(e.action)){out.put("review_role",e.data.get("review_role"));out.put("note",e.data.get("note"));}else out.put("filename",e.data.get("filename"));return out;}
+    private static String eventHash(long project,Event e){return hash(canonical(map("format",FORMAT,"project_id",project,"version",e.version,"revision",e.revision,"action",e.action,"actor_code",e.actor,"account_id",e.account,"config_version",e.config,"created_at",e.at,"data",e.data,"previous_hash",e.previous)));}
+    private static Map<String,Object> request(Map<String,Object> input,String operation)throws Api.ApiException {
+        Set<String> allowed=new HashSet<>(Set.of("project_id","expected_version","expected_workflow_version","request_id"));if(operation.equals("review"))allowed.addAll(Set.of("review_role","decision","note"));if(input==null||!allowed.containsAll(input.keySet())||!input.keySet().containsAll(Set.of("project_id","expected_version","expected_workflow_version","request_id")))fail(400,"总结操作字段缺失或包含不支持的字段");
+        Map<String,Object> body=new LinkedHashMap<>(input);number(body.get("project_id"),false);number(body.get("expected_version"),false);number(body.get("expected_workflow_version"),true);requestId(body.get("request_id"));
+        if(operation.equals("review")){if(!(body.get("review_role") instanceof String role)||!(body.get("decision") instanceof String decision)||!Set.of("BRANCH","BP").contains(role)||!Set.of("APPROVE","RETURN").contains(decision))fail(400,"复核岗位或结论无效");body.put("note",note(body.getOrDefault("note","")));}return body;
+    }
+    private static String note(Object v)throws Api.ApiException {if(!(v instanceof String s)||s.length()>4000||s.codePoints().anyMatch(c->c<32&&c!=9&&c!=10&&c!=13))fail(400,"复核意见格式或长度无效");return (String)v;}
+    private static boolean editable(String s){return Set.of("待启动","进行中","已完成").contains(s);}
+    private static void requireMutable(TrainingSummariesIntegration.WorkflowSnapshot s)throws Api.ApiException{if(!editable(s.projectStatus()))fail(409,"项目已归档或当前状态只允许查看总结");}
+    private static boolean allowed(Auth.Session s,String resource,Action a,String org){return OrganizationAccessStore.authorize(s,resource,a,org).allowed();}
+    private static void require(Auth.Session s,String resource,Action a,String org)throws Api.ApiException{if(!allowed(s,resource,a,org))fail(403,"没有该项目机构范围内的总结操作权限");}
+    private static void noTransaction()throws Exception{if(!Db.get().getAutoCommit())fail(409,"总结流程接口不能嵌入事务");}
+    private static long number(Object v,boolean zero)throws Api.ApiException{try{if(!(v instanceof Number))throw new IllegalArgumentException();long n=new BigDecimal(v.toString()).longValueExact();if(n<(zero?0:1)||n>MAX)throw new IllegalArgumentException();return n;}catch(RuntimeException e){throw new Api.ApiException(400,"编号及版本须为安全整数");}}
+    private static String str(Object v,int max)throws Api.ApiException{if(!(v instanceof String s)||s.isBlank()||s.length()>max)fail(409,"总结流程字段无效");return (String)v;}
+    private static String digest(Object v)throws Api.ApiException{String s=str(v,64);if(!s.matches("[a-f0-9]{64}"))corrupt();return s;}
+    private static String requestId(Object v)throws Api.ApiException{if(!(v instanceof String s)||!s.matches("[A-Za-z0-9][A-Za-z0-9_.:-]{0,95}"))fail(400,"请求编号格式无效");return (String)v;}
+    @SuppressWarnings("unchecked") private static Map<String,Object> object(Object v)throws Api.ApiException{if(!(v instanceof Map<?,?>))fail(409,"总结流程数据格式无效");return (Map<String,Object>)v;}
+    private static void keys(Map<String,Object> m,Set<String> keys)throws Api.ApiException{if(!m.keySet().equals(keys))corrupt();}
+    static Map<String,Object> map(Object... values){Map<String,Object>m=new LinkedHashMap<>();for(int i=0;i<values.length;i+=2)m.put((String)values[i],values[i+1]);return m;}
+    static String canonical(Object v){return TrainingSummariesIntegration.canonicalForWorkflow(v);}
+    static String hash(String v){return hashBytes(v.getBytes(java.nio.charset.StandardCharsets.UTF_8));}
+    static String hashBytes(byte[] bytes){try{return HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes));}catch(Exception e){throw new IllegalStateException(e);}}
+    private static void corrupt()throws Api.ApiException{fail(409,"总结复核记录无效");}
+    private static void fail(int code,String text)throws Api.ApiException{throw new Api.ApiException(code,text);}
+}

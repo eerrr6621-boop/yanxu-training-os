@@ -2,6 +2,38 @@
 
 All notable changes to Yanxu Training OS. Dates follow the production release history; the format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+- Add optional offline BGE-small ONNX INT8 evidence assistance after rule-based
+  eligibility checks, preserving professional bands, local preference and manual
+  profile authority. Invalid, partial, busy or timed-out results retain the rule
+  ranking. No external model calls or fabricated qualifications.
+- Show matching source excerpts separately from professional scores, with explicit
+  model availability and similarity limitations.
+- Accept paired optional course times, retain conservative unknown-time conflicts,
+  and show adjacent-day course records for human itinerary checks.
+- Add a railway provider boundary and fixed official 12306 verification link.
+  No authorized railway API is configured; live services, fares and durations
+  remain unavailable. No flight lookup or booking is implemented.
+- Add isolated contract, real-model, quantization smoke and UI checks, deployment
+  instructions and private-cache retention documentation. Not deployed yet.
+
+## [1.10.0] — 2026-09-28 · Internal training workflow
+
+- Preserve the desktop interface while adding organization-scoped account and
+  post grants, email enrollment, login verification and trusted-device support.
+- Add internal demand approval, branch/regional review, returns, withdrawals,
+  combined-role handling, team acceptance and external bid-result registration.
+- Add course catalogs, course-specific instructor qualifications and qualified
+  recommendations with explicit missing-information states.
+- Add delivery records, teaching and development fees, per-entry policy approval,
+  paid/unpaid and cross-day corrections, legacy migration and coded exports.
+- Add scoped reports, imported survey-result review/replacement and internally
+  reviewed training summaries with photographs and Word export.
+- Keep real personnel, passwords, private materials and deployment data outside
+  source control. Public source synchronization on 2026-09-29 does not redeploy
+  the live site. See [release/setup notes](docs/RELEASE_V1_10.md).
+
 ## [1.9.0] — 2026-09-07 · Clarity & Native-feeling Workspace
 
 ### Production release

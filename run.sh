@@ -51,7 +51,7 @@ fi
 
 echo "研序培训运营中心已启动：http://localhost:$PORT"
 echo "关闭此窗口即可停止服务。"
-JAVA_ARGS=(-Dfile.encoding=UTF-8)
+JAVA_ARGS=(-Dfile.encoding=UTF-8 -Dbootstrap.demo=false)
 if [ "$DEMO_MODE" -eq 1 ]; then
   DEMO_BIND_ADDRESS="${TRAINING_BIND_ADDRESS:-127.0.0.1}"
   JAVA_ARGS+=(-Dbootstrap.demo=true -Ddata.dir=demo-data "-Dbind.address=$DEMO_BIND_ADDRESS")
